@@ -126,7 +126,7 @@ La idea es usar este checklist como secuencia oficial de construccion del proyec
 - [x] Configurar capa de config
 - [x] Configurar persistencia si corresponde
 - [x] Configurar estructura de modulos interna
-- [ ] Verificar arranque local
+- [x] Verificar arranque local
 
 ## Fase 5. Infraestructura local
 
@@ -143,7 +143,7 @@ La idea es usar este checklist como secuencia oficial de construccion del proyec
 - [x] Configurar volúmenes necesarios
 - [x] Configurar variables de entorno del entorno local
 - [x] Configurar `nginx` base
-- [ ] Confirmar que el entorno local levanta completo
+- [x] Confirmar que el entorno local levanta completo
 
 ## Fase 6. Pipeline inicial
 

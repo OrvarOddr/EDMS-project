@@ -11,6 +11,11 @@ services:
     networks:
       - backend
     restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
 
   minio:
     image: minio/minio
@@ -51,7 +56,8 @@ services:
       DATABASE_URL: postgresql://postgres:${POSTGRES_PASSWORD}@postgres:5432/edms?options=-csearch_path=auth
       JWT_SECRET_KEY: ${JWT_SECRET_KEY}
     depends_on:
-      - postgres
+      postgres:
+        condition: service_healthy
     networks:
       - backend
     restart: unless-stopped
@@ -63,7 +69,8 @@ services:
       WORKFLOW_SERVICE_URL: http://workflow-service:8003
       FILE_SERVICE_URL: http://file-service:8005
     depends_on:
-      - postgres
+      postgres:
+        condition: service_healthy
     networks:
       - backend
     restart: unless-stopped
@@ -74,7 +81,8 @@ services:
       DATABASE_URL: postgresql://postgres:${POSTGRES_PASSWORD}@postgres:5432/edms?options=-csearch_path=workflow
       DOCUMENT_SERVICE_URL: http://document-service:8002
     depends_on:
-      - postgres
+      postgres:
+        condition: service_healthy
     networks:
       - backend
     restart: unless-stopped
@@ -86,7 +94,8 @@ services:
       DOCUMENT_SERVICE_URL: http://document-service:8002
       WORKFLOW_SERVICE_URL: http://workflow-service:8003
     depends_on:
-      - postgres
+      postgres:
+        condition: service_healthy
     networks:
       - backend
     restart: unless-stopped
@@ -100,8 +109,10 @@ services:
       MINIO_SECRET_KEY: ${MINIO_ROOT_PASSWORD}
       MINIO_BUCKET: documents
     depends_on:
-      - postgres
-      - minio
+      postgres:
+        condition: service_healthy
+      minio:
+        condition: service_started
     networks:
       - backend
     restart: unless-stopped
