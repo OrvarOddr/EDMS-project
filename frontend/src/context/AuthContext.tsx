@@ -1,4 +1,4 @@
-import { createContext, useContext, useEffect, useState, ReactNode } from 'react'
+import { createContext, useContext, useEffect, useState, type ReactNode } from 'react'
 import { getMe, login as apiLogin, logout as apiLogout, type UserMe } from '../api/auth'
 
 interface AuthState {
@@ -8,7 +8,8 @@ interface AuthState {
   logout: () => Promise<void>
 }
 
-const AuthContext = createContext<AuthState | null>(null)
+// eslint-disable-next-line react-refresh/only-export-components
+export const AuthContext = createContext<AuthState | null>(null)
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<UserMe | null>(null)
@@ -16,7 +17,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     const token = localStorage.getItem('access_token')
-    if (!token) { setLoading(false); return }
+    if (!token) {
+      setLoading(false)
+      return
+    }
     getMe()
       .then((r) => setUser(r.data))
       .catch(() => {
@@ -49,6 +53,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   )
 }
 
+// eslint-disable-next-line react-refresh/only-export-components
 export function useAuth() {
   const ctx = useContext(AuthContext)
   if (!ctx) throw new Error('useAuth must be used within AuthProvider')
