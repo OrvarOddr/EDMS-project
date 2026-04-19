@@ -1,22 +1,29 @@
-# GPS Documental
+# EDMS Project
 
-Repositorio reiniciado para comenzar el proyecto desde cero.
+Repositorio reiniciado para reconstruir el sistema desde cero, conservando la documentación funcional y técnica como base del proyecto.
+
+## Punto de partida
+
+Empieza por:
+
+- [docs/README.md](docs/README.md)
+- [docs/foundation/PROJECT-FOUNDATION.md](docs/foundation/PROJECT-FOUNDATION.md)
 
 ## Qué se conservó
 
-- `docs/`: documentación funcional, historias de usuario, arquitectura y material de referencia
+- `docs/`
 - `.env.example`
 - `.gitignore`
 
 ## Estado actual
 
-La implementación anterior fue eliminada para reconstruir el proyecto sobre una base más limpia.
+La implementación anterior fue eliminada. Este repositorio quedó preparado para iniciar una nueva construcción siguiendo la documentación ya definida.
 
-## Siguiente paso sugerido
+## Próximo objetivo
 
-Definir nuevamente:
+Levantar el nuevo proyecto respetando:
 
-- stack técnico
-- arquitectura inicial
-- estructura de carpetas
-- MVP real a implementar
+- dominio
+- ownership entre microservicios
+- schemas por servicio
+- MVP v1

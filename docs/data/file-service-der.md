@@ -101,7 +101,7 @@ Notas:
 - `document_id` y `document_version_id` son referencias logicas a `document-service`
 - `uploader_user_id` referencia logica a `auth-service`
 - esta tabla permite detectar uploads incompletos o fallidos
-- una vez completado el upload, `document-service` recibe el `stored_file_id` para crear la version logica
+- una vez completado el upload, `document-service` recibe el `file_id` logico, que corresponde al `id` de `stored_files`
 
 ## Relaciones
 
@@ -160,7 +160,7 @@ Reglas de integridad:
 ## Limite con document-service
 
 - `file-service` es la fuente de verdad del archivo fisico
-- `document-service` guarda solo el `stored_file_id` como referencia logica en `document_versions`
+- `document-service` guarda solo `file_id` como referencia logica en `document_versions`
 - `document-service` no accede directamente al storage
 - la descarga de un archivo siempre pasa por `file-service`
 

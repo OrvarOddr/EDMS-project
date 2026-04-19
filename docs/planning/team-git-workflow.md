@@ -238,11 +238,10 @@ Responde asi:
 - si la siguiente tarjeta sigue el mismo tema tecnico, no
 - si la siguiente tarjeta abre otro bloque distinto, si
 
-## Regla actual para ti
+## Regla para el bloque actual
 
-En este momento:
+Si sigues trabajando en dominio, arquitectura y modelado:
 
-- sigue trabajando en `feature/domain-model`
-- no vuelvas a `develop` todavia
-- cierra primero el bloque de arquitectura y modelado
-- despues haces PR hacia `develop`
+- una rama como `feature/domain-model` sigue siendo valida
+- no vuelvas a `develop` hasta cerrar ese bloque coherente
+- cuando termines el bloque, abre PR hacia `develop`

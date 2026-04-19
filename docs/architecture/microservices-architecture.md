@@ -31,9 +31,9 @@ Responsabilidad:
 - login y refresh
 - JWT
 
-Base de datos:
+Persistencia del MVP:
 
-- `auth_db`
+- schema `auth`
 
 ### Document Service
 
@@ -45,9 +45,9 @@ Responsabilidad:
 - expedientes
 - versionado logico
 
-Base de datos:
+Persistencia del MVP:
 
-- `documents_db`
+- schema `documents`
 
 ### Workflow Service
 
@@ -60,9 +60,9 @@ Responsabilidad:
 - revisores
 - historial de cambio de estado
 
-Base de datos:
+Persistencia del MVP:
 
-- `workflow_db`
+- schema `workflow`
 
 ### Collaboration Service
 
@@ -74,9 +74,9 @@ Responsabilidad:
 - notificaciones internas
 - actividad
 
-Base de datos:
+Persistencia del MVP:
 
-- `collaboration_db`
+- schema `collaboration`
 
 ### File Service
 
@@ -87,15 +87,15 @@ Responsabilidad:
 - validaciones de archivo
 - referencia a MinIO
 
-Base de datos:
+Persistencia del MVP:
 
-- `files_db`
+- schema `files`
 
 Infraestructura:
 
 - MinIO
 
-## 3. Flujo principal del MVP
+## 3. Flujo objetivo del sistema
 
 1. El usuario inicia sesion por `api-gateway`.
 2. `api-gateway` deriva a `auth-service`.
@@ -111,7 +111,7 @@ Infraestructura:
 - Un servicio no lee tablas de otro servicio.
 - La integracion entre servicios se hace por HTTP interno en el MVP.
 - Los IDs entre servicios deben poder correlacionarse de forma estable.
-- La auditoria puede iniciar en `collaboration-service` o quedar distribuida por servicio, pero debe existir desde el principio.
+- La auditoria fuente debe pertenecer a cada servicio duenio de la accion; una timeline consolidada puede construirse despues como proyeccion.
 
 ## 5. Stack minimo local
 
@@ -132,7 +132,7 @@ Servicios para `docker-compose`:
 Para no sobredisenar:
 
 - usa una sola instancia de PostgreSQL
-- crea una base separada por servicio o schemas aislados
+- usa `schemas` aislados por servicio dentro de esa instancia
 - usa REST interno
 - deja mensajeria asincrona para fase posterior
 
@@ -159,14 +159,19 @@ Con eso ya puedes:
 
 - iniciar sesion
 - crear documento
-- definir encargado y personas asignadas basicas
 - subir archivo
 - listar documentos
+- ver detalle documental base
 
 Despues agregas:
 
 - `workflow-service`
 - `collaboration-service`
+
+Nota:
+
+- aunque `workflow-service` entre justo despues de este primer corte, las reglas de dominio para `Borrador` y `encargado` inicial ya quedan cerradas desde el comienzo
+- la integracion inmediata siguiente debe materializar esas reglas en el flujo de creacion documental
 
 ## 9. Convencion de repositorio sugerida
 

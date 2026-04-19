@@ -79,7 +79,7 @@ Pega cada bloque en la lista `Backlog`. En Trello, cada linea se convertira en u
 [P0] [Seguridad] US-005 Dar permisos por documento
 [P0] [Seguridad] US-006 Quitar permisos por documento
 [P0] [Backend] US-010 Editar metadata
-[P0] [Frontend] US-011 Ver detalle de documento
+[P0] [Frontend] US-011 Ver detalle base de documento
 [P0] [Backend] US-012 Subir nueva version
 [P0] [Frontend] US-013 Ver tablero kanban
 [P0] [Backend] US-014 Mover documento entre estados
@@ -145,7 +145,7 @@ Estas no vienen de historias funcionales, pero te conviene crearlas igual:
 
 Para cada US:
 
-1. Abre la historia correspondiente en `docs/user-stories-backlog.md`.
+1. Abre la historia correspondiente en `docs/product/user-stories-backlog.md`.
 2. Copia la descripcion y criterios de aceptacion.
 3. Pega eso dentro de la tarjeta.
 4. Asigna etiqueta de prioridad y area.
@@ -153,13 +153,13 @@ Para cada US:
 
 Para tarjetas tecnicas y para usar el texto completo ya preparado:
 
-6. Abre `docs/trello-card-catalog.md`.
+6. Abre `docs/planning/trello-card-catalog.md`.
 7. Copia la descripcion, checklist y definicion de terminado exactas.
-8. Para reglas de ramas, commits y PRs, abre `docs/team-git-workflow.md`.
+8. Para reglas de ramas, commits y PRs, abre `docs/planning/team-git-workflow.md`.
 
-## 8. Orden practico para hoy
+## 8. Orden practico para arrancar
 
-Si quieres arrancar ya, mueve estas tarjetas a `To Do`:
+Si quieres iniciar el proyecto desde esta base, mueve estas tarjetas a `To Do`:
 
 ```text
 [P0] [Arquitectura] Definir modelo de dominio global y bounded contexts
@@ -182,7 +182,7 @@ Si quieres arrancar ya, mueve estas tarjetas a `To Do`:
 Nota:
 
 - este orden maestro es la secuencia recomendada a nivel de arquitectura
-- si el tablero ya fue creado siguiendo la numeracion de `docs/trello-card-catalog.md`, se puede continuar con esa secuencia sin renumerar tarjetas
+- si el tablero ya fue creado siguiendo la numeracion de `docs/planning/trello-card-catalog.md`, se puede continuar con esa secuencia sin renumerar tarjetas
 - en ese caso, despues de `Diseñar DER de document-service` puede venir `Configurar api-gateway base`
 - los DER de `workflow-service`, `collaboration-service` y `file-service` siguen siendo necesarios, pero no bloquean el arranque de `api-gateway`, `auth-service`, `document-service` y `file-service` base
 - antes de implementar en serio `workflow-service` o `collaboration-service`, esos DER deben quedar cerrados
@@ -226,7 +226,7 @@ Nota:
 [P0] [Backend] US-004 Asignar rol global
 [P0] [Backend] US-008 Crear documento
 [P0] [Backend] US-009 Cargar archivo
-[P0] [Frontend] US-011 Ver detalle de documento
+[P0] [Frontend] US-011 Ver detalle base de documento
 [P0] [Frontend] US-023 Buscar documentos
 ```
 

@@ -70,7 +70,7 @@ Reglas:
 
 ## Entidades recomendadas en workflow-service
 
-### `document_assignment_roles`
+### `assignment_roles`
 
 Catalogo de roles internos.
 
@@ -181,7 +181,7 @@ Ejemplo:
 El DER de `workflow-service` debe salir de esta tarjeta con estas decisiones cerradas:
 
 - `document_assignments` es la fuente de verdad de encargado y personas asignadas
-- `document_assignment_roles` es el catalogo de roles internos
+- `assignment_roles` es el catalogo de roles internos
 - el encargado se resuelve como una asignacion activa con rol `encargado`
 - no se requieren joins con tablas de otros servicios
 - la trazabilidad de altas, bajas y cambios queda resuelta con la propia tabla de asignaciones
@@ -196,3 +196,17 @@ La tarjeta se considera cerrada cuando:
 - la trazabilidad de altas y bajas queda definida
 - la relacion entre asignaciones y permisos operativos queda clara
 - el equipo puede pasar al DER de `workflow-service` sin ambiguedades
+
+## Cierre dentro del Bloque 1
+
+Este documento completa el Bloque 1 junto con:
+
+- `foundation/PROJECT-FOUNDATION.md`
+- `domain/domain-model-and-bounded-contexts.md`
+
+Cuando estos tres documentos son consistentes entre si, queda cerrado:
+
+- como se modela el encargado
+- como se modelan las personas asignadas
+- que pertenece a `workflow-service`
+- que pertenece a `collaboration-service` en materia de permisos derivados

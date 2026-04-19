@@ -212,7 +212,7 @@ No debe manejar:
 
 ### document-service -> file-service
 
-- document-service referencia archivos subidos por `file_id` o equivalente
+- document-service referencia archivos subidos por `file_id`
 - file-service no modifica versiones logicas del documento
 
 ### workflow-service -> collaboration-service
@@ -254,3 +254,39 @@ No debe manejar:
 - cada entidad tiene un duenio unico
 - los contratos entre servicios estan claros a nivel conceptual
 - no quedan zonas grises sobre quien administra documentos, asignaciones, comentarios o archivos
+
+## Decisiones congeladas del Bloque 2
+
+Estas decisiones no deberian reabrirse durante la implementacion salvo cambio de producto explicitamente acordado:
+
+- `auth-service` es el unico duenio de identidad, autenticacion, roles globales y refresh tokens
+- `document-service` es el unico duenio de documentos, metadata, tipos documentales, expedientes y versiones logicas
+- `workflow-service` es el unico duenio de estado documental, encargado, personas asignadas, roles internos e historial de estado
+- `collaboration-service` es el unico duenio de comentarios, menciones, permisos documentales, notificaciones y actividad
+- `file-service` es el unico duenio del almacenamiento fisico y su referencia logica
+- `api-gateway` solo resuelve concerns de borde y routing; no implementa logica de negocio
+- ningun servicio lee tablas de otro servicio como dependencia normal del negocio
+- la integracion entre servicios se hace por HTTP interno en el MVP
+- la integracion entre servicios usa IDs logicos, no joins entre bases
+
+## Criterio de cierre del Bloque 2
+
+El Bloque 2 se considera cerrado cuando:
+
+- ownership por microservicio queda definido sin contradicciones con el Bloque 1
+- cada entidad principal tiene un duenio unico
+- las fronteras entre servicios estan documentadas
+- queda explicito que datos y procesos no deben duplicarse
+- quedan definidos los contratos conceptuales minimos entre servicios
+- queda claro que servicios entran en el primer corte tecnico y cuales quedan para despues
+
+## Siguiente paso despues del Bloque 2
+
+Con el Bloque 2 cerrado, el proyecto pasa a:
+
+- `architecture/database-schemas-by-service.md`
+- `data/auth-service-der.md`
+- `data/document-service-der.md`
+- `data/file-service-der.md`
+- `data/workflow-service-der.md`
+- `data/collaboration-service-der.md`

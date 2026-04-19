@@ -78,6 +78,7 @@ Restricciones:
 Notas:
 
 - `owner_user_id` es una referencia logica a `auth-service`
+- `owner_user_id` representa al propietario documental o titular de referencia del expediente, no al `encargado` operativo
 
 ### 3. `documents`
 
@@ -116,6 +117,7 @@ Valores sugeridos para `confidentiality_level`:
 Notas:
 
 - `owner_user_id` y `created_by_user_id` son referencias logicas a `auth-service`
+- `owner_user_id` representa al propietario documental en metadata; el encargado vigente se resuelve en `workflow-service`
 - el estado del documento no vive aqui
 - el encargado no vive aqui
 

@@ -135,6 +135,24 @@ No debe manejar:
 - `Collaboration` se relaciona con `Documents.Document` por `document_id`.
 - `Files` se relaciona con `Documents.DocumentVersion` por referencia logica a archivo almacenado.
 
+## Distinciones clave del dominio
+
+Estas definiciones deben mantenerse estables en todo el proyecto:
+
+- `propietario documental`: define la referencia responsable o titular del documento a nivel metadata y pertenece a `Documents`
+- `rol global`: define capacidades generales del usuario en el sistema y pertenece a `Auth`
+- `asignacion documental`: define participacion operativa de un usuario sobre un documento y pertenece a `Workflow`
+- `rol interno`: define la funcion operativa de una asignacion documental y pertenece a `Workflow`
+- `permiso documental`: define grants especificos de colaboracion sobre un documento y pertenece a `Collaboration`
+
+Reglas:
+
+- el propietario documental no reemplaza al encargado operativo
+- una asignacion documental no implica por si sola todos los permisos documentales finales
+- un permiso documental no convierte a un usuario en participante operativo del documento
+- un rol interno no reemplaza un rol global
+- el permiso efectivo final puede resultar de la combinacion entre rol global, asignacion y grants documentales
+
 ## Ownership inicial
 
 - `auth-service` es duenio de usuarios y roles.
@@ -237,3 +255,23 @@ La tarjeta se considera cerrada cuando el equipo acepta estas decisiones y las u
 - relaciones conceptuales entre contextos
 - ownership inicial por microservicio
 - decisiones base del dominio ya cerradas
+
+## Estado de cierre
+
+La tarjeta se considera cerrada y utilizable como base del proyecto cuando el equipo acepta que:
+
+- estas entidades son las entidades oficiales del dominio
+- estos bounded contexts son los contexts oficiales del sistema
+- las reglas de encargado, personas asignadas y revisores quedan cerradas
+- las distinciones entre rol global, asignacion, rol interno y permiso documental quedan cerradas
+
+## Fuera del alcance de esta tarjeta
+
+Esta tarjeta no decide todavia:
+
+- endpoints ni contratos HTTP
+- schemas o migraciones
+- DER fisico por microservicio
+- orden exacto del scaffolding tecnico
+
+Esas decisiones pertenecen a los bloques siguientes.
