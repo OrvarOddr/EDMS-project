@@ -67,6 +67,7 @@ Este bloque no resuelve todavia:
 
 - `User`
 - `Role`
+- `UserRole`
 - `RefreshToken`
 
 #### Documents
@@ -121,21 +122,22 @@ Reglas:
 
 - `User`
 - `Role`
+- `UserRole`
 - `RefreshToken`
 - `Document`
 - `DocumentVersion`
 - `DocumentType`
 - `Expedient`
-- `StoredFile`
-- `FileUpload`
-
-#### Entidades que quedan definidas, pero no necesariamente implementadas completas en el primer corte
-
 - `DocumentState`
 - `StateTransition`
 - `DocumentAssignment`
 - `AssignmentRole`
 - `StateHistory`
+- `StoredFile`
+- `FileUpload`
+
+#### Entidades que quedan definidas, pero no necesariamente implementadas completas en el primer corte
+
 - `Comment`
 - `Mention`
 - `DocumentPermission`
@@ -206,6 +208,7 @@ El proyecto se implementará con arquitectura de microservicios.
 - ningún servicio lee tablas de otro servicio
 - la integración entre servicios se hace por HTTP interno
 - PostgreSQL se usa con un schema por servicio en el MVP
+- `api-gateway` valida localmente el `access_token` emitido por `auth-service`
 
 ## 5. Ownership por servicio
 
@@ -282,6 +285,9 @@ El Bloque 2 se considera cerrado con estas decisiones:
 - `document-service` no guarda asignaciones documentales como fuente de verdad
 - `collaboration-service` no administra asignaciones documentales
 - `api-gateway` no implementa logica de negocio del dominio
+- cada servicio con persistencia propia usa un schema dedicado
+- los servicios intercambian IDs logicos oficiales emitidos por su servicio duenio
+- quedan definidos contratos minimos por servicio a nivel conceptual
 
 ## Documentos que cierran el Bloque 2
 
@@ -307,6 +313,21 @@ Schemas iniciales:
 - `collaboration`
 - `files`
 
+Mapeo:
+
+- `auth-service` -> `auth`
+- `document-service` -> `documents`
+- `workflow-service` -> `workflow`
+- `collaboration-service` -> `collaboration`
+- `file-service` -> `files`
+
+Restricciones:
+
+- `api-gateway` no tiene schema propio
+- `frontend` no tiene schema propio
+- no existen joins ni FK cruzadas entre servicios
+- los servicios se relacionan por IDs logicos y HTTP interno
+
 ## 7. MVP v1
 
 El primer corte funcional del proyecto debe permitir:
@@ -314,11 +335,16 @@ El primer corte funcional del proyecto debe permitir:
 - iniciar sesión
 - cerrar sesión
 - crear usuario
+- consultar catalogo de roles globales
 - asignar rol global
+- consultar tipos documentales
+- crear y listar expedientes base
 - crear documento
 - cargar archivo principal
 - listar documentos
 - ver detalle base de documento
+- dejar el documento en estado `Borrador`
+- dejar al creador como `encargado` inicial
 
 ### Reglas mínimas del MVP
 
@@ -326,11 +352,15 @@ El primer corte funcional del proyecto debe permitir:
 - el dominio define que el creador queda como `encargado` inicial
 - el archivo principal se almacena en `MinIO`
 - PostgreSQL guarda metadata y referencias lógicas
+- `workflow-service` minimo entra en el primer corte tecnico para materializar `Borrador` y la asignacion inicial de `encargado`
+- `document-service` no persiste estado ni asignaciones documentales como fuente de verdad, tampoco de forma temporal
+- la creacion de documento solo se considera cerrada cuando `workflow-service` registra el bootstrap operativo del documento
 
-Nota:
+Regla de autenticacion de borde:
 
-- si el primer corte técnico parte antes de integrar `workflow-service`, la creación inicial del documento puede existir primero en `document-service`
-- la siguiente integración obligatoria debe materializar en `workflow-service` el estado `Borrador` y la asignación inicial de `encargado`
+- `api-gateway` valida el `access_token` localmente con el JWT emitido por `auth-service`
+- `auth-service` sigue siendo el unico emisor y duenio del material de firma
+- el gateway no hace introspeccion sincronica por request para validar el token del frontend
 
 ## 8. Primer corte técnico
 
@@ -340,11 +370,11 @@ La implementación debe empezar por:
 - `auth-service`
 - `document-service`
 - `file-service`
+- `workflow-service` minimo
 - `frontend`
 
 Después se agregan:
 
-- `workflow-service`
 - `collaboration-service`
 
 ## 9. Orden recomendado de implementación
@@ -353,9 +383,9 @@ Después se agregan:
 2. `auth-service`
 3. `file-service`
 4. `document-service`
-5. `api-gateway`
-6. `frontend`
-7. `workflow-service`
+5. `workflow-service`
+6. `api-gateway`
+7. `frontend`
 8. `collaboration-service`
 
 ## 10. Documentos de apoyo

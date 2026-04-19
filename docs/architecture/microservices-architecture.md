@@ -11,7 +11,7 @@ Separar el sistema en microservicios reales sin destruir la velocidad del MVP. L
 Responsabilidad:
 
 - punto de entrada unico para el frontend
-- autenticacion basica de borde
+- validacion local del JWT de acceso emitido por `auth-service`
 - routing hacia servicios internos
 
 Endpoints orientativos:
@@ -59,6 +59,7 @@ Responsabilidad:
 - asignaciones de personas a documentos
 - revisores
 - historial de cambio de estado
+- bootstrap operativo del documento en el MVP: `Borrador` y `encargado` inicial
 
 Persistencia del MVP:
 
@@ -153,6 +154,7 @@ El primer corte que deberia quedar funcionando es:
 - `auth-service`
 - `document-service`
 - `file-service`
+- `workflow-service`
 - frontend
 
 Con eso ya puedes:
@@ -165,13 +167,13 @@ Con eso ya puedes:
 
 Despues agregas:
 
-- `workflow-service`
 - `collaboration-service`
 
 Nota:
 
-- aunque `workflow-service` entre justo despues de este primer corte, las reglas de dominio para `Borrador` y `encargado` inicial ya quedan cerradas desde el comienzo
-- la integracion inmediata siguiente debe materializar esas reglas en el flujo de creacion documental
+- `workflow-service` entra en el primer corte con una slice minima para materializar `Borrador` y `encargado` inicial
+- `document-service` puede invocar `InitializeWorkflow` al crear el documento, pero no se convierte en fuente de verdad para estado ni asignaciones
+- `api-gateway` valida el `access_token` del frontend localmente y no delega cada request a introspeccion sincronica
 
 ## 9. Convencion de repositorio sugerida
 
