@@ -55,6 +55,8 @@ services:
     environment:
       DATABASE_URL: postgresql://postgres:${POSTGRES_PASSWORD}@postgres:5432/edms?options=-csearch_path=auth
       JWT_SECRET_KEY: ${JWT_SECRET_KEY}
+    ports:
+      - "8001:8001"
     depends_on:
       postgres:
         condition: service_healthy
