@@ -108,24 +108,24 @@ La idea es usar este checklist como secuencia oficial de construccion del proyec
 
 ### Servicios y frontend base
 
-- [ ] Configurar `api-gateway` base
-- [ ] Configurar `auth-service` base
-- [ ] Configurar `document-service` base
-- [ ] Configurar `file-service` base
-- [ ] Configurar `workflow-service` base
-- [ ] Configurar `collaboration-service` base
-- [ ] Configurar `frontend` base con React + Vite + TypeScript
+- [x] Configurar `api-gateway` base
+- [x] Configurar `auth-service` base
+- [x] Configurar `document-service` base
+- [x] Configurar `file-service` base
+- [x] Configurar `workflow-service` base
+- [x] Configurar `collaboration-service` base
+- [x] Configurar `frontend` base con React + Vite + TypeScript
 
 ### Checklist minimo comun por servicio
 
-- [ ] Crear proyecto base
-- [ ] Crear estructura minima del servicio
-- [ ] Configurar variables de entorno
-- [ ] Configurar endpoint `health`
-- [ ] Configurar router base
-- [ ] Configurar capa de config
-- [ ] Configurar persistencia si corresponde
-- [ ] Configurar estructura de modulos interna
+- [x] Crear proyecto base
+- [x] Crear estructura minima del servicio
+- [x] Configurar variables de entorno
+- [x] Configurar endpoint `health`
+- [x] Configurar router base
+- [x] Configurar capa de config
+- [x] Configurar persistencia si corresponde
+- [x] Configurar estructura de modulos interna
 - [ ] Verificar arranque local
 
 ## Fase 5. Infraestructura local
