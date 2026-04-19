@@ -20,7 +20,7 @@ def _current_user(
         payload = decode_token(credentials.credentials)
     except JWTError:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Token inválido")
-    user = db.query(User).filter(User.id == payload["sub"], User.deleted_at == None).first()
+    user = db.query(User).filter(User.id == payload["sub"], User.deleted_at.is_(None)).first()
     if not user:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Usuario no encontrado")
     return user

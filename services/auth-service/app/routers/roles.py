@@ -23,7 +23,7 @@ def assign_role(
     if not actor.is_superuser:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Solo superusuarios pueden asignar roles")
 
-    target = db.query(User).filter(User.id == body.user_id, User.deleted_at == None).first()
+    target = db.query(User).filter(User.id == body.user_id, User.deleted_at.is_(None)).first()
     if not target:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Usuario no encontrado")
 
@@ -34,7 +34,7 @@ def assign_role(
     existing = db.query(UserRole).filter(
         UserRole.user_id == body.user_id,
         UserRole.role_id == body.role_id,
-        UserRole.is_active == True,
+        UserRole.is_active.is_(True),
     ).first()
     if existing:
         return

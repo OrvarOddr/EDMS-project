@@ -15,7 +15,7 @@ def _get_active_roles(db: Session, user_id: str) -> list[str]:
     rows = (
         db.query(Role.code)
         .join(UserRole, UserRole.role_id == Role.id)
-        .filter(UserRole.user_id == user_id, UserRole.is_active == True)
+        .filter(UserRole.user_id == user_id, UserRole.is_active.is_(True))
         .all()
     )
     return [r.code for r in rows]
@@ -23,7 +23,7 @@ def _get_active_roles(db: Session, user_id: str) -> list[str]:
 
 @router.post("/login", response_model=TokenResponse)
 def login(body: LoginRequest, request: Request, db: Session = Depends(get_db)):
-    user = db.query(User).filter(User.email == body.email, User.deleted_at == None).first()
+    user = db.query(User).filter(User.email == body.email, User.deleted_at.is_(None)).first()
     if not user or not verify_password(body.password, user.password_hash):
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Credenciales inválidas")
     if user.status != "active":
@@ -63,8 +63,8 @@ def refresh(body: RefreshRequest, request: Request, db: Session = Depends(get_db
     token_hash = hash_token(body.refresh_token)
     db_token = db.query(RefreshToken).filter(
         RefreshToken.token_hash == token_hash,
-        RefreshToken.is_active == True,
-        RefreshToken.revoked_at == None,
+        RefreshToken.is_active.is_(True),
+        RefreshToken.revoked_at.is_(None),
     ).first()
 
     if not db_token:
@@ -78,7 +78,7 @@ def refresh(body: RefreshRequest, request: Request, db: Session = Depends(get_db
     db_token.is_active = False
 
     user_id = payload["sub"]
-    user = db.query(User).filter(User.id == user_id, User.deleted_at == None).first()
+    user = db.query(User).filter(User.id == user_id, User.deleted_at.is_(None)).first()
     if not user or user.status != "active":
         db.commit()
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Usuario no disponible")
