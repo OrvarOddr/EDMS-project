@@ -17,17 +17,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     const token = localStorage.getItem('access_token')
-    if (!token) {
-      setLoading(false)
-      return
-    }
-    getMe()
-      .then((r) => setUser(r.data))
-      .catch(() => {
-        localStorage.removeItem('access_token')
-        localStorage.removeItem('refresh_token')
-      })
-      .finally(() => setLoading(false))
+    ;(token
+      ? getMe()
+          .then((r) => setUser(r.data))
+          .catch(() => {
+            localStorage.removeItem('access_token')
+            localStorage.removeItem('refresh_token')
+          })
+      : Promise.resolve()
+    ).finally(() => setLoading(false))
   }, [])
 
   async function login(email: string, password: string) {
