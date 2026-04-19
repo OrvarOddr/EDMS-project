@@ -69,27 +69,27 @@ La idea es usar este checklist como secuencia oficial de construccion del proyec
 
 ## Fase 2. Preparacion funcional del MVP
 
-- [ ] Revisar `product/user-stories-backlog.md`
-- [ ] Confirmar historias del primer corte tecnico
-- [ ] Confirmar historias que quedan fuera del primer corte
-- [ ] Confirmar dependencias entre historias
-- [ ] Confirmar orden de implementacion entre backend, frontend e infraestructura
+- [x] Revisar `product/user-stories-backlog.md`
+- [x] Confirmar historias del primer corte tecnico
+- [x] Confirmar historias que quedan fuera del primer corte
+- [x] Confirmar dependencias entre historias
+- [x] Confirmar orden de implementacion entre backend, frontend e infraestructura
 
 ### Historias minimas del primer corte tecnico
 
-- [ ] US-001 Iniciar sesion
-- [ ] US-002 Cerrar sesion
-- [ ] US-003 Crear usuario
-- [ ] US-004 Asignar rol global
-- [ ] US-008 Crear documento
-- [ ] US-009 Cargar archivo
-- [ ] US-011 Ver detalle base de documento
+- [x] US-001 Iniciar sesion
+- [x] US-002 Cerrar sesion
+- [x] US-003 Crear usuario
+- [x] US-004 Asignar rol global
+- [x] US-008 Crear documento
+- [x] US-009 Cargar archivo
+- [x] US-011 Ver detalle base de documento
 
 ### Slice minima adicional obligatoria del MVP
 
-- [ ] Materializar estado inicial `Borrador` en `workflow-service`
-- [ ] Materializar `encargado` inicial igual al creador del documento
-- [ ] Confirmar contrato entre `document-service` y `workflow-service` para bootstrap del documento
+- [x] Materializar estado inicial `Borrador` en `workflow-service`
+- [x] Materializar `encargado` inicial igual al creador del documento
+- [x] Confirmar contrato entre `document-service` y `workflow-service` para bootstrap del documento
 
 ## Fase 3. Estructura tecnica del repositorio
 
