@@ -147,14 +147,14 @@ La idea es usar este checklist como secuencia oficial de construccion del proyec
 
 ## Fase 6. Pipeline inicial
 
-- [ ] Crear workflow base de GitHub Actions
-- [ ] Agregar checkout del repositorio
-- [ ] Agregar validacion basica del repo
-- [ ] Agregar escaneo de secretos con `gitleaks`
-- [ ] Agregar validacion de Dockerfiles con `hadolint` cuando existan
-- [ ] Agregar lint/format del frontend cuando exista
-- [ ] Agregar lint/format del backend cuando exista
-- [ ] Confirmar que el pipeline corre en `push` y `pull_request`
+- [x] Crear workflow base de GitHub Actions
+- [x] Agregar checkout del repositorio
+- [x] Agregar validacion basica del repo
+- [x] Agregar escaneo de secretos con `gitleaks`
+- [x] Agregar validacion de Dockerfiles con `hadolint` cuando existan
+- [x] Agregar lint/format del frontend cuando exista
+- [x] Agregar lint/format del backend cuando exista
+- [x] Confirmar que el pipeline corre en `push` y `pull_request`
 
 ## Fase 7. Primer corte tecnico del MVP
 
