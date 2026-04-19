@@ -1,0 +1,56 @@
+import { createContext, useContext, useEffect, useState, ReactNode } from 'react'
+import { getMe, login as apiLogin, logout as apiLogout, type UserMe } from '../api/auth'
+
+interface AuthState {
+  user: UserMe | null
+  loading: boolean
+  login: (email: string, password: string) => Promise<void>
+  logout: () => Promise<void>
+}
+
+const AuthContext = createContext<AuthState | null>(null)
+
+export function AuthProvider({ children }: { children: ReactNode }) {
+  const [user, setUser] = useState<UserMe | null>(null)
+  const [loading, setLoading] = useState(true)
+
+  useEffect(() => {
+    const token = localStorage.getItem('access_token')
+    if (!token) { setLoading(false); return }
+    getMe()
+      .then((r) => setUser(r.data))
+      .catch(() => {
+        localStorage.removeItem('access_token')
+        localStorage.removeItem('refresh_token')
+      })
+      .finally(() => setLoading(false))
+  }, [])
+
+  async function login(email: string, password: string) {
+    const { data } = await apiLogin(email, password)
+    localStorage.setItem('access_token', data.access_token)
+    localStorage.setItem('refresh_token', data.refresh_token)
+    const me = await getMe()
+    setUser(me.data)
+  }
+
+  async function logout() {
+    const refresh = localStorage.getItem('refresh_token')
+    if (refresh) await apiLogout(refresh).catch(() => {})
+    localStorage.removeItem('access_token')
+    localStorage.removeItem('refresh_token')
+    setUser(null)
+  }
+
+  return (
+    <AuthContext.Provider value={{ user, loading, login, logout }}>
+      {children}
+    </AuthContext.Provider>
+  )
+}
+
+export function useAuth() {
+  const ctx = useContext(AuthContext)
+  if (!ctx) throw new Error('useAuth must be used within AuthProvider')
+  return ctx
+}
