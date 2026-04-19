@@ -24,6 +24,7 @@ Entidades:
 
 - `User`
 - `Role`
+- `UserRole`
 - `RefreshToken`
 
 No debe manejar:

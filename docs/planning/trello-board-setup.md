@@ -129,6 +129,7 @@ Estas no vienen de historias funcionales, pero te conviene crearlas igual:
 [P0] [Backend] Configurar auth-service base
 [P0] [Backend] Configurar document-service base
 [P0] [Backend] Configurar file-service base
+[P0] [Backend] Configurar workflow-service base
 [P0] [Frontend] Configurar React + Vite + TypeScript base
 [P0] [DevOps] Crear docker-compose con frontend gateway servicios postgres minio
 [P0] [Backend] Integrar autenticacion JWT en auth-service
@@ -184,8 +185,9 @@ Nota:
 - este orden maestro es la secuencia recomendada a nivel de arquitectura
 - si el tablero ya fue creado siguiendo la numeracion de `docs/planning/trello-card-catalog.md`, se puede continuar con esa secuencia sin renumerar tarjetas
 - en ese caso, despues de `Diseñar DER de document-service` puede venir `Configurar api-gateway base`
-- los DER de `workflow-service`, `collaboration-service` y `file-service` siguen siendo necesarios, pero no bloquean el arranque de `api-gateway`, `auth-service`, `document-service` y `file-service` base
-- antes de implementar en serio `workflow-service` o `collaboration-service`, esos DER deben quedar cerrados
+- los DER de `workflow-service`, `collaboration-service` y `file-service` siguen siendo necesarios, pero no bloquean el arranque inicial de `api-gateway`, `auth-service`, `document-service` y `file-service` base
+- antes de cerrar el primer corte tecnico, el DER de `workflow-service` debe estar cerrado porque `workflow-service` minimo entra en ese corte
+- antes de implementar en serio `collaboration-service`, su DER debe quedar cerrado
 
 ### Fase 1 - Dominio y arquitectura
 
@@ -208,6 +210,7 @@ Nota:
 [P0] [Backend] Configurar auth-service base
 [P0] [Backend] Configurar document-service base
 [P0] [Backend] Configurar file-service base
+[P0] [Backend] Configurar workflow-service base
 [P0] [Frontend] Configurar React + Vite + TypeScript base
 [P0] [DevOps] Definir entorno local y entorno Azure del MVP
 [P0] [DevOps] Configurar docker-compose con frontend gateway servicios postgres minio

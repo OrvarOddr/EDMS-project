@@ -25,6 +25,20 @@ Se proponen estos schemas:
 - `collaboration`
 - `files`
 
+## Mapeo servicio -> schema
+
+- `auth-service` -> `auth`
+- `document-service` -> `documents`
+- `workflow-service` -> `workflow`
+- `collaboration-service` -> `collaboration`
+- `file-service` -> `files`
+
+Nota:
+
+- `api-gateway` no tiene schema propio
+- `frontend` no tiene schema propio
+- `MinIO` es infraestructura de storage, no un schema de PostgreSQL
+
 ## Ownership por schema
 
 ### `auth`
@@ -142,6 +156,22 @@ Regla:
 - `collaboration-service` migra solo `collaboration`
 - `file-service` migra solo `files`
 
+## Decisiones congeladas del Bloque 2 relacionadas a persistencia
+
+Estas decisiones no deberian reabrirse durante la implementacion salvo cambio de arquitectura explicitamente acordado:
+
+- el MVP usa una sola instancia de `PostgreSQL`
+- cada microservicio con persistencia propia usa un schema dedicado
+- `api-gateway` y `frontend` no tienen persistencia relacional propia del dominio
+- no existen llaves foraneas cruzadas entre schemas de servicios distintos
+- las referencias entre servicios se hacen por IDs logicos
+- las migraciones se ejecutan por servicio, no desde un modulo central compartido
+- `workflow` es la fuente de verdad para encargado y personas asignadas
+- el schema `workflow` debe existir desde el primer corte tecnico para materializar `Borrador` y `encargado` inicial
+- `documents` no es fuente de verdad para asignaciones documentales
+- `collaboration` no es fuente de verdad para asignaciones documentales
+- `files` no es fuente de verdad para metadata documental principal
+
 ## Ventajas de esta decision
 
 - mantiene ownership claro
@@ -164,3 +194,13 @@ La tarjeta se considera cerrada cuando:
 - cada servicio tiene un espacio de persistencia definido
 - queda prohibido el acceso directo a tablas de otro servicio
 - la estrategia de migraciones independientes queda acordada
+
+## Siguiente paso despues de esta tarjeta
+
+Con esta tarjeta cerrada, el proyecto puede pasar a:
+
+- `data/auth-service-der.md`
+- `data/document-service-der.md`
+- `data/file-service-der.md`
+- `data/workflow-service-der.md`
+- `data/collaboration-service-der.md`

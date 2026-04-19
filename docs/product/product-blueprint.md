@@ -437,13 +437,14 @@ Incluye:
 - almacenamiento en MinIO
 - metadata minima
 - versionado inicial
+- bootstrap minimo de workflow: estado `Borrador` y `encargado` inicial
 - listado documental
 - detalle documental base
 
 ### 10.3 Lo que queda para la siguiente capa funcional
 
 - kanban por estados
-- asignacion explicita de encargado y personas
+- reasignacion explicita de encargado y gestion completa de personas asignadas
 - comentarios
 - permisos por documento
 - historial consolidado de actividad
@@ -459,6 +460,8 @@ El primer corte sera exitoso si un equipo puede:
 - cargar un archivo principal
 - listar documentos
 - abrir el detalle documental base
+- obtener el estado `Borrador` inicial del documento
+- obtener al creador como `encargado` inicial del documento
 - mantener metadata y referencia de archivo consistentes entre servicios
 
 ## 11. Roadmap por fases
@@ -479,14 +482,15 @@ El primer corte sera exitoso si un equipo puede:
 - auth-service
 - document-service
 - file-service
+- workflow-service minimo
 - login
 - creacion documental base
 - carga de archivo principal
 - listado y detalle documental base
+- bootstrap de `Borrador` y `encargado` inicial
 
 ### Fase 2 - Workflow documental
 
-- workflow-service
 - estados y transiciones
 - encargado inicial y reasignacion
 - personas asignadas por documento
@@ -695,8 +699,8 @@ Funciones:
 
 Nota de implementacion:
 
-- el primer corte tecnico arranca con `api-gateway`, `auth-service`, `document-service`, `file-service` y `frontend`
-- `workflow-service` y `collaboration-service` se integran en las siguientes capas funcionales
+- el primer corte tecnico arranca con `api-gateway`, `auth-service`, `document-service`, `file-service`, `workflow-service` minimo y `frontend`
+- `collaboration-service` y el workflow documental completo se integran en las siguientes capas funcionales
 
 ### 16.3 Servicios fuera del MVP
 
