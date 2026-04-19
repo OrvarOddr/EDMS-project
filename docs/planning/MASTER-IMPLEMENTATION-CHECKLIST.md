@@ -14,58 +14,58 @@ La idea es usar este checklist como secuencia oficial de construccion del proyec
 
 ## Fase 0. Base del repositorio
 
-- [ ] Inicializar el repositorio Git local
-- [ ] Conectar el repositorio local con GitHub
-- [ ] Dejar `main` como rama principal
-- [ ] Crear rama `develop`
-- [ ] Subir la base documental al remoto nuevo
-- [ ] Confirmar que `README.md`, `.gitignore` y `.env.example` quedaron alineados con el reinicio
+- [x] Inicializar el repositorio Git local
+- [x] Conectar el repositorio local con GitHub
+- [x] Dejar `main` como rama principal
+- [x] Crear rama `develop`
+- [x] Subir la base documental al remoto nuevo
+- [x] Confirmar que `README.md`, `.gitignore` y `.env.example` quedaron alineados con el reinicio
 
 ## Fase 1. Cierre documental obligatorio
 
 ### Bloque 1. Dominio
 
-- [ ] Cerrar `foundation/PROJECT-FOUNDATION.md`
-- [ ] Cerrar `domain/domain-model-and-bounded-contexts.md`
-- [ ] Cerrar `domain/document-assignments-and-internal-roles-model.md`
-- [ ] Confirmar bounded contexts oficiales
-- [ ] Confirmar entidades oficiales por contexto
-- [ ] Confirmar reglas base del negocio
-- [ ] Confirmar distincion entre rol global, propietario documental, asignacion, rol interno y permiso documental
-- [ ] Confirmar modelo conceptual de `encargado` y personas asignadas
+- [x] Cerrar `foundation/PROJECT-FOUNDATION.md`
+- [x] Cerrar `domain/domain-model-and-bounded-contexts.md`
+- [x] Cerrar `domain/document-assignments-and-internal-roles-model.md`
+- [x] Confirmar bounded contexts oficiales
+- [x] Confirmar entidades oficiales por contexto
+- [x] Confirmar reglas base del negocio
+- [x] Confirmar distincion entre rol global, propietario documental, asignacion, rol interno y permiso documental
+- [x] Confirmar modelo conceptual de `encargado` y personas asignadas
 
 ### Bloque 2. Ownership y contratos
 
-- [ ] Cerrar `architecture/contracts-and-service-ownership.md`
-- [ ] Confirmar ownership funcional por microservicio
-- [ ] Confirmar ownership unico por entidad
-- [ ] Confirmar fronteras entre `Documents`, `Workflow`, `Collaboration` y `Files`
-- [ ] Confirmar integracion entre servicios via HTTP interno
-- [ ] Confirmar que ningun servicio lee tablas de otro
-- [ ] Confirmar que `api-gateway` no implementa logica de negocio
+- [x] Cerrar `architecture/contracts-and-service-ownership.md`
+- [x] Confirmar ownership funcional por microservicio
+- [x] Confirmar ownership unico por entidad
+- [x] Confirmar fronteras entre `Documents`, `Workflow`, `Collaboration` y `Files`
+- [x] Confirmar integracion entre servicios via HTTP interno
+- [x] Confirmar que ningun servicio lee tablas de otro
+- [x] Confirmar que `api-gateway` no implementa logica de negocio
 
 ### Bloque 3. Persistencia
 
-- [ ] Cerrar `architecture/database-schemas-by-service.md`
-- [ ] Confirmar una sola instancia de PostgreSQL para el MVP
-- [ ] Confirmar un `schema` por microservicio
-- [ ] Confirmar que `workflow` es fuente de verdad para encargado y personas asignadas
-- [ ] Confirmar que `documents` no es fuente de verdad para asignaciones
-- [ ] Confirmar que `collaboration` no es fuente de verdad para asignaciones
-- [ ] Confirmar que no existiran FK cruzadas entre servicios
-- [ ] Confirmar que las referencias entre servicios seran por IDs logicos
-- [ ] Confirmar estrategia de migraciones independientes por servicio
+- [x] Cerrar `architecture/database-schemas-by-service.md`
+- [x] Confirmar una sola instancia de PostgreSQL para el MVP
+- [x] Confirmar un `schema` por microservicio
+- [x] Confirmar que `workflow` es fuente de verdad para encargado y personas asignadas
+- [x] Confirmar que `documents` no es fuente de verdad para asignaciones
+- [x] Confirmar que `collaboration` no es fuente de verdad para asignaciones
+- [x] Confirmar que no existiran FK cruzadas entre servicios
+- [x] Confirmar que las referencias entre servicios seran por IDs logicos
+- [x] Confirmar estrategia de migraciones independientes por servicio
 
 ### Bloque 4. Modelo relacional por servicio
 
-- [ ] Cerrar `data/auth-service-der.md`
-- [ ] Cerrar `data/document-service-der.md`
-- [ ] Cerrar `data/file-service-der.md`
-- [ ] Cerrar `data/workflow-service-der.md`
-- [ ] Cerrar `data/collaboration-service-der.md`
-- [ ] Confirmar PK, indices, unicidad y restricciones por servicio
-- [ ] Confirmar trazabilidad minima por entidad
-- [ ] Confirmar timestamps y estrategia de soft delete donde aplique
+- [x] Cerrar `data/auth-service-der.md`
+- [x] Cerrar `data/document-service-der.md`
+- [x] Cerrar `data/file-service-der.md`
+- [x] Cerrar `data/workflow-service-der.md`
+- [x] Cerrar `data/collaboration-service-der.md`
+- [x] Confirmar PK, indices, unicidad y restricciones por servicio
+- [x] Confirmar trazabilidad minima por entidad
+- [x] Confirmar timestamps y estrategia de soft delete donde aplique
 
 ## Fase 2. Preparacion funcional del MVP
 
