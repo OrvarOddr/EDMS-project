@@ -61,9 +61,9 @@ Notas:
 
 - `document_id` es referencia logica a `document-service`
 - `changed_by_user_id` es referencia logica a `auth-service`
-- el historial completo de estados vive en `document_state_history`
+- el historial completo de estados vive en `state_history`
 
-### 2. `document_state_transitions`
+### 2. `state_transitions`
 
 Catalogo de transiciones validas entre estados.
 
@@ -90,7 +90,7 @@ Transiciones sugeridas para el MVP:
 - `observado` -> `en_revision`
 - `aprobado` -> `archivado`
 
-### 3. `document_state_history`
+### 3. `state_history`
 
 Historial completo de cambios de estado por documento.
 
@@ -116,7 +116,7 @@ Notas:
 - `changed_by_user_id` referencia logica a `auth-service`
 - cada cambio de estado genera una fila en este historial
 
-### 4. `document_assignment_roles`
+### 4. `assignment_roles`
 
 Catalogo de roles internos disponibles para asignaciones.
 
@@ -174,17 +174,22 @@ Notas:
 
 ## Relaciones
 
-- `document_assignment_roles` 1 -> N `document_assignments`
+- `assignment_roles` 1 -> N `document_assignments`
 - `document_states` 1 -> 1 `document_id` (unico estado vigente)
-- `document_state_history` N -> 1 `document_id`
-- `document_state_transitions` define que pares `from_state/to_state` son validos
+- `state_history` N -> 1 `document_id`
+- `state_transitions` define que pares `from_state/to_state` son validos
 
 ## Diagrama relacional sugerido
 
+Nota:
+
+- el diagrama muestra solo relaciones internas reales dentro de `workflow-service`
+- `document_id` y `user_id` son referencias logicas a otros servicios
+- `state_transitions` valida pares de estados por catalogo, no por FK fisica a `document_states`
+
 ```mermaid
 erDiagram
-    document_assignment_roles ||--o{ document_assignments : defines
-    document_state_transitions }o--|| document_states : validates
+    assignment_roles ||--o{ document_assignments : defines
 
     document_states {
         uuid id PK
@@ -195,7 +200,7 @@ erDiagram
         text comment
     }
 
-    document_state_transitions {
+    state_transitions {
         uuid id PK
         varchar from_state
         varchar to_state
@@ -204,7 +209,7 @@ erDiagram
         boolean is_active
     }
 
-    document_state_history {
+    state_history {
         uuid id PK
         uuid document_id
         varchar from_state
@@ -214,7 +219,7 @@ erDiagram
         text comment
     }
 
-    document_assignment_roles {
+    assignment_roles {
         uuid id PK
         varchar code UK
         varchar name
@@ -242,10 +247,10 @@ erDiagram
 Indices sugeridos:
 
 - indice unico en `document_states.document_id`
-- indice unico en `document_assignment_roles.code`
-- indice unico en `document_state_transitions.from_state, document_state_transitions.to_state`
-- indice en `document_state_history.document_id`
-- indice en `document_state_history.changed_at`
+- indice unico en `assignment_roles.code`
+- indice unico en `state_transitions.from_state, state_transitions.to_state`
+- indice en `state_history.document_id`
+- indice en `state_history.changed_at`
 - indice en `document_assignments.document_id`
 - indice en `document_assignments.user_id`
 - indice en `document_assignments.is_active`
@@ -254,8 +259,8 @@ Reglas de integridad:
 
 - un documento tiene exactamente un estado actual en `document_states`
 - un documento tiene exactamente una asignacion activa con rol `encargado`
-- cada cambio de estado genera una fila inmutable en `document_state_history`
-- las transiciones deben validarse contra `document_state_transitions` antes de ejecutarse
+- cada cambio de estado genera una fila inmutable en `state_history`
+- las transiciones deben validarse contra `state_transitions` antes de ejecutarse
 - los campos de baja nunca se eliminan, se marcan con `is_active = false`
 
 ## Limite con document-service
@@ -275,7 +280,7 @@ Reglas de integridad:
 
 - usar `uuid` como PK en todas las tablas
 - `workflow-service` migra solo el schema `workflow`
-- poblar `document_assignment_roles` y `document_state_transitions` con datos iniciales al migrar
+- poblar `assignment_roles` y `state_transitions` con datos iniciales al migrar
 - el encargado inicial se crea como asignacion al momento de crear el documento en `document-service` via llamada interna
 - nunca borrar filas de asignaciones ni historial
 

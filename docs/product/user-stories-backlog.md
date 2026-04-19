@@ -9,7 +9,7 @@
 Nota:
 
 - este documento contiene solo historias de usuario funcionales
-- las tarjetas tecnicas y el texto completo para Trello estan en `docs/trello-card-catalog.md`
+- las tarjetas tecnicas y el texto completo para Trello estan en `docs/planning/trello-card-catalog.md`
 
 ## Epic 1 - Autenticacion y acceso
 
@@ -65,7 +65,7 @@ Sprint sugerido: 1
 
 ### US-005 Dar permisos por documento
 
-Como propietario quiero otorgar permisos especificos a otro usuario para colaborar en un documento.
+Como usuario con permiso `manage_permissions` quiero otorgar permisos especificos a otro usuario para colaborar en un documento.
 
 Criterios de aceptacion:
 
@@ -77,7 +77,7 @@ Sprint sugerido: 2
 
 ### US-006 Quitar permisos por documento
 
-Como propietario quiero quitar permisos para proteger informacion sensible o cerrar acceso cuando ya no se necesita.
+Como usuario con permiso `manage_permissions` quiero quitar permisos para proteger informacion sensible o cerrar acceso cuando ya no se necesita.
 
 Criterios de aceptacion:
 
@@ -90,7 +90,7 @@ Sprint sugerido: 2
 
 ### US-007 Permisos con expiracion
 
-Como propietario quiero dar acceso temporal para evitar compartir informacion de forma indefinida.
+Como usuario con permiso `manage_permissions` quiero dar acceso temporal para evitar compartir informacion de forma indefinida.
 
 Criterios de aceptacion:
 
@@ -109,8 +109,8 @@ Como usuario quiero crear un documento para iniciar su ciclo de trabajo.
 Criterios de aceptacion:
 
 - se puede ingresar titulo, tipo documental, descripcion y expediente opcional
-- el documento nace en estado `Borrador`
 - el sistema registra creador y fecha
+- el documento queda disponible para asociar archivo y continuar el flujo documental
 
 Prioridad: P0
 Sprint sugerido: 1
@@ -140,13 +140,14 @@ Criterios de aceptacion:
 Prioridad: P0
 Sprint sugerido: 2
 
-### US-011 Ver detalle de documento
+### US-011 Ver detalle base de documento
 
-Como usuario quiero abrir un documento y ver archivo, metadata, estado, encargado, personas asignadas, comentarios e historial.
+Como usuario quiero abrir un documento y ver su detalle base para trabajar con el archivo y la metadata sin salir de la plataforma.
 
 Criterios de aceptacion:
 
-- el detalle muestra informacion consolidada
+- el detalle muestra archivo o acceso de descarga
+- el detalle muestra metadata principal, tipo documental, expediente y version vigente si existe
 - solo se muestran acciones permitidas al usuario
 
 Prioridad: P0

@@ -8,7 +8,7 @@ Reglas:
 
 - las tarjetas tecnicas conviven con historias de usuario
 - este catalogo sirve para poblar descripciones, checklist y definicion de terminado en Trello
-- el backlog funcional oficial sigue estando en `user-stories-backlog.md`
+- el backlog funcional oficial sigue estando en `../product/user-stories-backlog.md`
 - la estructura del tablero y el orden maestro siguen estando en `trello-board-setup.md`
 
 ## Tarjetas tecnicas
@@ -349,10 +349,9 @@ Checklist:
 - Implementar POST /documents en document-service
 - Validar titulo, tipo documental y descripcion
 - Registrar creador y fecha
-- Crear documento con estado logico inicial Borrador
 - Devolver ID y datos minimos al frontend
 - Validar que solo usuarios autenticados puedan crear
-- Definir si el creador queda como encargado inicial o si el documento queda pendiente de asignacion
+- Dejar preparado el contrato de integracion para que `workflow-service` materialice el estado `Borrador` y el `encargado` inicial
 - Verificar que el documento aparezca en listado inicial
 
 Definicion de terminado:
@@ -360,8 +359,7 @@ Definicion de terminado:
 - Un usuario autenticado puede crear un documento
 - El documento queda persistido en document-service
 - El sistema devuelve el ID del documento creado
-- El documento nace en estado Borrador
-- Queda definida la regla inicial del encargado
+- Queda listo el contrato para integrar `workflow-service` con estado `Borrador` y `encargado` inicial
 - El flujo funciona de punta a punta entre frontend, gateway y document-service
 
 ### 15. [P0] [Backend] US-009 Cargar archivo
@@ -515,35 +513,31 @@ Definicion de terminado:
 - La UI muestra la metadata actualizada
 - No se mezclan campos de metadata con campos de workflow
 
-### 21. [P0] [Frontend] US-011 Ver detalle de documento
+### 21. [P0] [Frontend] US-011 Ver detalle base de documento
 
 Descripcion:
-Como usuario quiero abrir un documento y ver archivo, metadata, estado, encargado, personas asignadas, comentarios e historial.
+Como usuario quiero abrir un documento y ver su detalle base para trabajar con el archivo y la metadata sin salir de la plataforma.
 
 Checklist:
 
 - Crear pantalla de detalle de documento
 - Cargar metadata desde document-service via api-gateway
-- Cargar estado y asignaciones desde workflow-service via api-gateway
-- Cargar comentarios e historial desde collaboration-service via api-gateway
 - Mostrar archivo o acceso de descarga
-- Mostrar encargado y personas asignadas
 - Mostrar metadata principal
-- Mostrar estado actual
-- Mostrar comentarios e historial
+- Mostrar tipo documental, expediente y version vigente si existe
 - Mostrar solo acciones permitidas segun el usuario autenticado
 
 Definicion de terminado:
 
-- El detalle consolida informacion de los servicios necesarios
-- El usuario puede ver archivo, metadata, estado, encargado y personas asignadas
+- El detalle consolida la informacion documental base necesaria
+- El usuario puede ver archivo, metadata, tipo documental, expediente y version vigente si existe
 - La pantalla respeta permisos
-- El documento queda navegable como centro operativo principal
+- El documento queda navegable como centro documental base
 
 ### 22. [P0] [Seguridad] US-005 Dar permisos por documento
 
 Descripcion:
-Como propietario quiero otorgar permisos especificos a otro usuario para colaborar en un documento.
+Como usuario con permiso `manage_permissions` quiero otorgar permisos especificos a otro usuario para colaborar en un documento.
 
 Checklist:
 
@@ -568,7 +562,7 @@ Definicion de terminado:
 ### 23. [P0] [Seguridad] US-006 Quitar permisos por documento
 
 Descripcion:
-Como propietario quiero quitar permisos por documento para proteger informacion sensible o cerrar acceso cuando ya no se necesita.
+Como usuario con permiso `manage_permissions` quiero quitar permisos por documento para proteger informacion sensible o cerrar acceso cuando ya no se necesita.
 
 Checklist:
 
@@ -624,7 +618,7 @@ Checklist:
 
 - Exponer ruta de historial en api-gateway
 - Implementar consulta de actividad en collaboration-service
-- Registrar eventos de permisos, comentarios, asignaciones y cambios relevantes
+- Mostrar actividad propia de colaboracion y eventos resumidos recibidos desde otros servicios cuando exista timeline consolidada
 - Incluir actor, fecha, accion y contexto
 - Permitir filtrar por tipo de evento si aplica
 - Mostrar historial en orden cronologico
@@ -637,7 +631,7 @@ Definicion de terminado:
 - Cada evento incluye actor, fecha y contexto
 - Solo usuarios autorizados pueden verlo
 - La informacion queda disponible de forma consistente en la UI
-- El flujo funciona entre frontend, gateway y collaboration-service
+- El flujo funciona entre frontend, gateway y collaboration-service sin convertirlo en fuente unica de auditoria del sistema
 
 ### 26. [P0] [Frontend] US-026 Ver historial de versiones
 

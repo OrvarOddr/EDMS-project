@@ -185,17 +185,19 @@ Permisos sugeridos:
 - `move_state`
 - `approve`
 - `manage_permissions`
-- `delete`
 - `share`
 
-### 6.4 Reglas de permisos
+### 6.4 Reglas de permisos y propiedad
 
-- El creador del documento sera propietario inicial y encargado inicial.
-- El admin puede reasignar propietario o encargado.
+- El creador del documento sera `propietario documental` inicial y `encargado` inicial por defecto.
+- El admin puede reasignar propietario documental o encargado.
+- El `propietario documental` vive como referencia de metadata en `document-service`.
+- El `encargado` vive como asignacion operativa en `workflow-service`.
+- La administracion de grants documentales la realiza un usuario con `manage_permissions`, que puede coincidir o no con el propietario documental.
 - El encargado administra las personas asignadas al documento salvo restriccion superior.
 - Un documento puede tener multiples revisores y aprobadores, siempre entre las personas asignadas.
 - Los permisos pueden ser permanentes o con fecha de expiracion.
-- Los permisos pueden heredarse desde expediente o definirse de forma individual.
+- La herencia de permisos desde expediente queda fuera del primer corte tecnico.
 - Todo cambio de permiso queda auditado.
 
 ## 7. Entidades principales
@@ -213,7 +215,7 @@ Campos clave:
 - tipo documental
 - estado actual
 - nivel de confidencialidad
-- propietario
+- propietario documental
 - encargado actual
 - personas asignadas
 - fecha de creacion
@@ -268,8 +270,8 @@ Campos clave:
 - autor
 - texto
 - menciones
-- adjuntos opcionales
-- estado de lectura
+- referencia opcional a version
+- estado resuelto
 
 ### Actividad
 
@@ -292,7 +294,6 @@ Ejemplos:
 Estados iniciales propuestos:
 
 - `Borrador`
-- `Pendiente de revision`
 - `En revision`
 - `Observado`
 - `Aprobado`
@@ -304,10 +305,6 @@ Estados iniciales propuestos:
 #### Borrador
 
 Documento recien creado o aun incompleto.
-
-#### Pendiente de revision
-
-Documento listo para ser tomado por un revisor.
 
 #### En revision
 
@@ -331,14 +328,13 @@ Documento finalizado, inactivo o cerrado.
 
 ### 8.3 Reglas de transicion
 
-- `Borrador -> Pendiente de revision`: requiere archivo cargado y metadatos minimos completos.
-- `Pendiente de revision -> En revision`: la toma un revisor o coordinador.
+- `Borrador -> En revision`: requiere archivo cargado y metadatos minimos completos.
 - `En revision -> Observado`: requiere comentario obligatorio.
 - `En revision -> Aprobado`: solo revisor o aprobador habilitado.
-- `Observado -> Pendiente de revision`: requiere nueva version o respuesta del encargado.
+- `En revision -> Rechazado`: solo roles habilitados y con motivo obligatorio.
+- `Observado -> En revision`: requiere nueva version o respuesta del encargado.
 - `Aprobado -> Archivado`: lo puede ejecutar encargado, coordinador o admin.
 - `Aprobado -> Borrador`: no permitido; debe generarse nueva version o nuevo documento.
-- `Cualquier estado -> Rechazado`: solo roles habilitados y con motivo obligatorio.
 
 ### 8.4 Vista kanban
 
@@ -401,14 +397,13 @@ El tablero principal mostrara columnas por estado. Cada tarjeta deberia incluir:
 - comentar en documento o version
 - mencionar usuarios
 - marcar comentarios resueltos
-- registrar lectura
 
 ### 9.7 Permisos y comparticion
 
 - compartir con usuarios y roles
 - dar y quitar permisos
 - definir expiracion
-- herencia desde expediente
+- herencia desde expediente en una fase posterior
 
 ### 9.8 Auditoria
 
@@ -425,53 +420,46 @@ El tablero principal mostrara columnas por estado. Cada tarjeta deberia incluir:
 - flujos
 - configuracion base
 
-## 10. MVP
+## 10. Primer corte técnico (MVP v1)
 
-### 10.1 Objetivo del MVP
+### 10.1 Objetivo del primer corte
 
-Validar que el sistema permite gestionar documentos como unidades operativas con trazabilidad real.
+Validar la base tecnica del sistema y dejar funcionando el flujo documental inicial sin mezclar aun todo el alcance operativo completo.
 
-### 10.2 Alcance del MVP
+### 10.2 Alcance del primer corte
 
 Incluye:
 
 - autenticacion
 - gestion basica de usuarios
 - roles globales basicos
-- carga de documentos
+- creacion de documentos
 - almacenamiento en MinIO
 - metadata minima
-- tablero kanban por estado
-- asignacion de encargado
-- personas asignadas por documento
+- versionado inicial
+- listado documental
+- detalle documental base
+
+### 10.3 Lo que queda para la siguiente capa funcional
+
+- kanban por estados
+- asignacion explicita de encargado y personas
 - comentarios
 - permisos por documento
-- historial de actividad
-- versionado basico
-- filtros y busqueda simple
+- historial consolidado de actividad
+- notificaciones internas
+- filtros operativos avanzados
 
-### 10.3 No incluye en MVP
+### 10.4 Definicion de exito del primer corte
 
-- workflows por tipo muy complejos
-- OCR
-- firma digital
-- automatizaciones avanzadas
-- integraciones externas
-- notificaciones por multiples canales
-
-### 10.4 Definicion de exito del MVP
-
-El MVP sera exitoso si un equipo puede:
+El primer corte sera exitoso si un equipo puede:
 
 - iniciar sesion
 - crear un documento
-- asignar encargado
-- asignar personas al documento
-- moverlo entre estados
-- comentar observaciones
-- otorgar y quitar permisos
-- subir nueva version
-- revisar historial completo
+- cargar un archivo principal
+- listar documentos
+- abrir el detalle documental base
+- mantener metadata y referencia de archivo consistentes entre servicios
 
 ## 11. Roadmap por fases
 
@@ -484,27 +472,37 @@ El MVP sera exitoso si un equipo puede:
 - modelos base
 - docker compose local
 
-### Fase 1 - MVP operativo
+### Fase 1 - Primer corte tecnico
 
-- dashboard inicial
-- CRUD documental
+- frontend base
+- api-gateway
+- auth-service
+- document-service
+- file-service
+- login
+- creacion documental base
+- carga de archivo principal
+- listado y detalle documental base
+
+### Fase 2 - Workflow documental
+
+- workflow-service
+- estados y transiciones
+- encargado inicial y reasignacion
+- personas asignadas por documento
 - kanban por estados
-- asignaciones documentales
+- versionado operativo con nueva version
+
+### Fase 3 - Colaboracion y permisos
+
+- collaboration-service
 - comentarios
+- menciones
 - permisos por documento
-- versionado basico
-- auditoria
+- timeline consolidada de actividad
+- notificaciones internas
 
-### Fase 2 - Operacion ampliada
-
-- expedientes
-- notificaciones
-- vencimientos
-- checklist por documento
-- tareas asociadas
-- aprobaciones mas robustas
-
-### Fase 3 - Escalamiento
+### Fase 4 - Escalamiento
 
 - OCR
 - full text search
@@ -512,7 +510,7 @@ El MVP sera exitoso si un equipo puede:
 - reporteria
 - integraciones externas
 
-## 12. Historias de usuario clave del MVP
+## 12. Historias de usuario clave del producto
 
 ### Autenticacion
 
@@ -544,15 +542,15 @@ El MVP sera exitoso si un equipo puede:
 
 ### Permisos
 
-- Como propietario quiero dar acceso a otro usuario para que pueda revisar o comentar.
-- Como propietario quiero quitar acceso a un usuario para proteger informacion sensible.
+- Como usuario con `manage_permissions` quiero dar acceso a otro usuario para que pueda revisar o comentar.
+- Como usuario con `manage_permissions` quiero quitar acceso a un usuario para proteger informacion sensible.
 
 ### Trazabilidad
 
 - Como auditor quiero ver el historial del documento para saber quien hizo cada cambio.
 - Como usuario quiero ver la version vigente para evitar trabajar sobre archivos obsoletos.
 
-## 13. Priorizacion MoSCoW
+## 13. Priorizacion funcional posterior al primer corte tecnico
 
 ### Must have
 
@@ -620,7 +618,7 @@ El sistema debera implementarse con arquitectura de microservicios. Para que el 
 - la comunicacion inicial puede ser REST sincrona
 - los eventos asincronos pueden incorporarse en una fase posterior
 
-### 16.2 Microservicios propuestos para el MVP
+### 16.2 Microservicios previstos del sistema
 
 #### API Gateway
 
@@ -682,7 +680,7 @@ Funciones:
 - menciones
 - notificaciones internas
 - permisos por documento
-- bitacora de actividad si se decide centralizar aqui
+- actividad propia de colaboracion y, si se necesita, proyeccion de timeline consolidada
 
 #### File Service
 
@@ -694,6 +692,11 @@ Funciones:
 - integracion con MinIO
 - validacion de tipo y tamano
 - gestion de buckets y claves de objeto
+
+Nota de implementacion:
+
+- el primer corte tecnico arranca con `api-gateway`, `auth-service`, `document-service`, `file-service` y `frontend`
+- `workflow-service` y `collaboration-service` se integran en las siguientes capas funcionales
 
 ### 16.3 Servicios fuera del MVP
 
@@ -735,7 +738,7 @@ PostgreSQL como motor comun, pero con propiedad de datos por servicio.
 Estrategia recomendada para el MVP:
 
 - una sola instancia de PostgreSQL
-- una base o schema separado por servicio
+- un schema separado por servicio
 - sin acceso cruzado directo entre tablas de distintos servicios
 
 ### Almacenamiento
@@ -744,7 +747,6 @@ MinIO para:
 
 - archivos principales
 - nuevas versiones
-- adjuntos de comentarios
 
 ## 18. Modelo inicial de datos por servicio
 
@@ -765,15 +767,15 @@ MinIO para:
 ### Workflow Service
 
 - `document_states`
-- `document_state_history`
+- `state_history`
 - `document_assignments`
-- `document_assignment_roles`
+- `assignment_roles`
 
 ### Collaboration Service
 
 - `document_permissions`
 - `comments`
-- `comment_mentions`
+- `mentions`
 - `notifications`
 - `activities`
 

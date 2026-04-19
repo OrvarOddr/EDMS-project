@@ -6,18 +6,18 @@ Diseñar el modelo entidad-relacion del servicio de colaboracion para soportar:
 
 - comentarios sobre documentos
 - menciones de usuarios en comentarios
-- permisos documentales efectivos por usuario
+- permisos documentales administrados por este servicio
 - notificaciones internas
-- registro de actividad y auditoria
+- registro de actividad propia del dominio de colaboracion
 
 ## Scope del servicio
 
 `collaboration-service` es duenio de:
 
 - comentarios y menciones
-- permisos efectivos por documento y usuario
+- permisos documentales sobre documentos
 - notificaciones internas del sistema
-- actividad auditable de todas las acciones relevantes
+- actividad propia del dominio de colaboracion
 
 No debe guardar:
 
@@ -80,7 +80,14 @@ Notas:
 
 ### 3. `document_permissions`
 
-Permisos efectivos por usuario sobre un documento especifico.
+Permisos documentales administrados por `collaboration-service`.
+
+Nota importante:
+
+- esta tabla no representa el “permiso efectivo final” calculado del sistema
+- representa grants documentales persistidos por este servicio
+- el permiso efectivo para un usuario puede resultar de la combinacion entre rol global, asignacion operativa y grants documentales
+- por eso es necesario distinguir si el permiso fue otorgado manualmente o derivado de una asignacion
 
 Campos sugeridos:
 
@@ -88,6 +95,8 @@ Campos sugeridos:
 - `document_id` uuid not null
 - `user_id` uuid not null
 - `permission` varchar not null
+- `source_type` varchar not null
+- `source_reference_id` uuid null
 - `granted_by_user_id` uuid not null
 - `revoked_by_user_id` uuid null
 - `granted_at` timestamptz not null
@@ -99,6 +108,7 @@ Restricciones:
 
 - unique parcial por `document_id` + `user_id` + `permission` cuando `is_active = true`
 - `permission` solo acepta valores del catalogo definido
+- `source_type` solo acepta valores del catalogo definido
 
 Catalogo de permisos:
 
@@ -112,12 +122,21 @@ Catalogo de permisos:
 - `manage_permissions`
 - `share`
 
+Catalogo de origen sugerido:
+
+- `direct`
+- `workflow_assignment`
+- `administrative_exception`
+
 Notas:
 
 - `document_id` referencia logica a `document-service`
 - `user_id` y `granted_by_user_id` referencian logicamente a `auth-service`
 - los permisos no se eliminan, se revocan con `is_active = false`
 - `expires_at` permite permisos temporales para el futuro
+- `source_reference_id` permite enlazar logicamente el origen del grant, por ejemplo una asignacion de `workflow-service`
+- cuando `workflow-service` desasigna a una persona, solo deben revocarse automaticamente los permisos con `source_type = 'workflow_assignment'`
+- los permisos con `source_type = 'direct'` o `administrative_exception` no deben caer por una desasignacion automatica
 
 ### 4. `notifications`
 
@@ -158,7 +177,13 @@ Notas:
 
 ### 5. `activities`
 
-Registro auditable de todas las acciones relevantes sobre los documentos.
+Registro auditable de las acciones propias del dominio de colaboracion.
+
+Decision:
+
+- `collaboration-service` no sera la fuente de verdad de toda la auditoria global del sistema
+- cada servicio debe auditar sus propias acciones
+- este servicio solo registra actividad de colaboracion y, si el equipo lo necesita, puede almacenar eventos externos como proyeccion ligera para vistas de timeline
 
 Campos sugeridos:
 
@@ -166,6 +191,7 @@ Campos sugeridos:
 - `document_id` uuid not null
 - `actor_user_id` uuid not null
 - `action` varchar not null
+- `origin_service` varchar not null default 'collaboration-service'
 - `payload` jsonb null
 - `created_at` timestamptz not null
 
@@ -174,29 +200,27 @@ Restricciones:
 - `document_id` obligatorio
 - `actor_user_id` obligatorio
 - `action` no nulo
+- `origin_service` no nulo
 - las filas de actividad son inmutables una vez creadas
 
 Acciones sugeridas para el catalogo:
 
-- `documento_creado`
-- `estado_cambiado`
-- `encargado_asignado`
-- `persona_asignada`
-- `persona_desasignada`
 - `comentario_agregado`
 - `comentario_resuelto`
 - `permiso_otorgado`
 - `permiso_revocado`
-- `archivo_cargado`
-- `version_subida`
-- `metadata_editada`
+- `mencion_generada`
+- `notificacion_generada`
+- `notificacion_leida`
 
 Notas:
 
 - `document_id` referencia logica a `document-service`
 - `actor_user_id` referencia logica a `auth-service`
-- `payload` guarda el contexto relevante del evento como estado anterior, estado nuevo, rol asignado, etc.
+- `payload` guarda el contexto relevante del evento
 - este registro nunca se edita ni se borra
+- si el proyecto quiere mostrar una linea de tiempo global consolidada, los eventos externos deben llegar ya resumidos desde su servicio de origen y marcarse con `origin_service`
+- esa proyeccion no reemplaza la auditoria fuente de cada servicio
 
 ## Relaciones
 
@@ -206,6 +230,12 @@ Notas:
 - `activities` N -> 1 `document_id` (logico)
 
 ## Diagrama relacional sugerido
+
+Nota:
+
+- el diagrama muestra solo relaciones internas reales dentro de `collaboration-service`
+- las referencias a `document-service`, `auth-service` u otros servicios son logicas y no se representan como FK cruzadas
+- por eso la unica relacion fisica dibujada es `comments -> mentions`
 
 ```mermaid
 erDiagram
@@ -236,6 +266,8 @@ erDiagram
         uuid document_id
         uuid user_id
         varchar permission
+        varchar source_type
+        uuid source_reference_id
         uuid granted_by_user_id
         uuid revoked_by_user_id
         timestamptz granted_at
@@ -261,6 +293,7 @@ erDiagram
         uuid document_id
         uuid actor_user_id
         varchar action
+        varchar origin_service
         jsonb payload
         timestamptz created_at
     }
@@ -277,10 +310,12 @@ Indices sugeridos:
 - indice en `document_permissions.document_id`
 - indice en `document_permissions.user_id`
 - indice en `document_permissions.is_active`
+- indice en `document_permissions.source_type`
 - indice en `notifications.user_id`
 - indice en `notifications.is_read`
 - indice en `notifications.created_at`
 - indice en `activities.document_id`
+- indice en `activities.origin_service`
 - indice en `activities.created_at`
 
 Reglas de integridad:
@@ -293,21 +328,22 @@ Reglas de integridad:
 ## Limite con workflow-service
 
 - `workflow-service` define quien participa y con que rol operativo
-- `collaboration-service` aplica los permisos efectivos
+- `collaboration-service` administra grants documentales derivados o directos
 - cuando `workflow-service` asigna a alguien, `collaboration-service` puede recibir una llamada para crear permisos por defecto segun el rol
-- cuando `workflow-service` desasigna, `collaboration-service` debe revocar los permisos derivados de esa asignacion
+- cuando `workflow-service` desasigna, `collaboration-service` debe revocar solo los permisos derivados de esa asignacion
 
 ## Limite con document-service
 
 - `collaboration-service` usa `document_id` como referencia logica
 - `collaboration-service` no modifica metadata documental
-- `collaboration-service` registra la actividad de cambios que ocurren en otros servicios
+- `collaboration-service` no es duenio de la auditoria fuente de `document-service`
 
 ## Reglas de implementacion para el MVP
 
 - usar `uuid` como PK en todas las tablas
 - `collaboration-service` migra solo el schema `collaboration`
-- los eventos de actividad deben registrarse tanto desde este servicio como desde otros servicios via llamada HTTP interna
+- este servicio registra actividad propia de colaboracion
+- si se necesita una timeline consolidada, los otros servicios deben publicar eventos resumidos y claramente marcados por origen
 - no usar FK cruzadas entre schemas
 - el campo `payload` en `activities` y `notifications` debe ser suficiente para mostrar contexto sin joins a otros servicios
 
