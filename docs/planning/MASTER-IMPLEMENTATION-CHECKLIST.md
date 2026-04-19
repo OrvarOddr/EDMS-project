@@ -93,16 +93,16 @@ La idea es usar este checklist como secuencia oficial de construccion del proyec
 
 ## Fase 3. Estructura tecnica del repositorio
 
-- [ ] Crear `frontend/`
-- [ ] Crear `services/`
-- [ ] Crear `services/api-gateway/`
-- [ ] Crear `services/auth-service/`
-- [ ] Crear `services/document-service/`
-- [ ] Crear `services/workflow-service/`
-- [ ] Crear `services/collaboration-service/`
-- [ ] Crear `services/file-service/`
-- [ ] Crear `infra/docker/`
-- [ ] Confirmar estructura del repo alineada con `architecture/microservices-architecture.md`
+- [x] Crear `frontend/`
+- [x] Crear `services/`
+- [x] Crear `services/api-gateway/`
+- [x] Crear `services/auth-service/`
+- [x] Crear `services/document-service/`
+- [x] Crear `services/workflow-service/`
+- [x] Crear `services/collaboration-service/`
+- [x] Crear `services/file-service/`
+- [x] Crear `infra/docker/`
+- [x] Confirmar estructura del repo alineada con `architecture/microservices-architecture.md`
 
 ## Fase 4. Scaffold tecnico base
 
