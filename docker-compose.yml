@@ -40,6 +40,8 @@ services:
       WORKFLOW_SERVICE_URL: http://workflow-service:8003
       COLLABORATION_SERVICE_URL: http://collaboration-service:8004
       FILE_SERVICE_URL: http://file-service:8005
+    ports:
+      - "8000:8000"
     depends_on:
       - auth-service
       - document-service
