@@ -130,19 +130,19 @@ La idea es usar este checklist como secuencia oficial de construccion del proyec
 
 ## Fase 5. Infraestructura local
 
-- [ ] Crear `docker-compose.yml`
-- [ ] Agregar `postgres`
-- [ ] Agregar `minio`
-- [ ] Agregar `frontend`
-- [ ] Agregar `api-gateway`
-- [ ] Agregar `auth-service`
-- [ ] Agregar `document-service`
-- [ ] Agregar `workflow-service`
-- [ ] Agregar `collaboration-service`
-- [ ] Agregar `file-service`
-- [ ] Configurar volúmenes necesarios
-- [ ] Configurar variables de entorno del entorno local
-- [ ] Configurar `nginx` base
+- [x] Crear `docker-compose.yml`
+- [x] Agregar `postgres`
+- [x] Agregar `minio`
+- [x] Agregar `frontend`
+- [x] Agregar `api-gateway`
+- [x] Agregar `auth-service`
+- [x] Agregar `document-service`
+- [x] Agregar `workflow-service`
+- [x] Agregar `collaboration-service`
+- [x] Agregar `file-service`
+- [x] Configurar volúmenes necesarios
+- [x] Configurar variables de entorno del entorno local
+- [x] Configurar `nginx` base
 - [ ] Confirmar que el entorno local levanta completo
 
 ## Fase 6. Pipeline inicial
