@@ -280,6 +280,10 @@ Regla congelada del MVP para `access_token`:
 - `api-gateway` valida localmente firma, expiracion, `issuer` y `audience` del JWT emitido por `auth-service`
 - `auth-service` sigue siendo el unico emisor del token y el unico duenio del material de firma
 - el gateway no hace introspeccion sincronica por request para validar el `access_token` del frontend
+- solo usuarios con `status = active` pueden recibir tokens validos de sesion; usuarios `inactive` o `blocked` deben rechazarse en login
+- el `access_token` debe incluir al menos `sub`, `email`, `status`, `roles`, `iss`, `aud`, `exp`, `iat` y `type = access`
+- el frontend puede usar los claims del `access_token` para proteccion basica de rutas, pero `GetCurrentUser` sigue siendo la consulta autoritativa del usuario autenticado
+- el login exitoso debe persistir el refresh token solo por hash y actualizar `last_login_at` del usuario autenticado
 - login, refresh y consulta de usuario autenticado siguen resolviendose en `auth-service`
 
 ### auth-service

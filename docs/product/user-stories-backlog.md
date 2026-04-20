@@ -21,6 +21,8 @@ Criterios de aceptacion:
 
 - dado un usuario activo con credenciales validas, cuando inicia sesion, entonces recibe acceso a la plataforma
 - dado un usuario con credenciales invalidas, cuando intenta iniciar sesion, entonces ve mensaje de error
+- dado un usuario `inactive` o `blocked`, cuando intenta iniciar sesion, entonces no recibe acceso y ve un mensaje acorde a su estado
+- dado un login exitoso, cuando el sistema inicia la sesion, entonces entrega credenciales renovables y el contexto de autorizacion necesario para navegar segun rol
 - dado un usuario autenticado, cuando navega la plataforma, entonces solo ve acciones autorizadas
 
 Prioridad: P0
