@@ -42,326 +42,195 @@ export default function LoginPage() {
     }
   }
 
-  const shellStyle = {
-    background: 'var(--bg)',
-    color: 'var(--fg)',
-    fontFamily: "'Inter Tight', ui-sans-serif, system-ui, sans-serif",
-  }
-
-  const inputStyle = {
-    background: 'var(--bg-elev)',
-    borderColor: 'var(--border-strong)',
-    color: 'var(--fg)',
-  }
-
   return (
-    <div className="relative min-h-[100dvh] overflow-x-hidden" style={shellStyle}>
-      <div aria-hidden className="pointer-events-none absolute inset-0 overflow-hidden">
-        <div
-          className="absolute inset-[-10%] opacity-60"
-          style={{
-            backgroundImage:
-              'linear-gradient(var(--border) 1px, transparent 1px), linear-gradient(90deg, var(--border) 1px, transparent 1px)',
-            backgroundSize: '48px 48px',
-          }}
-        />
-        <div
-          className="absolute inset-0"
-          style={{
-            background: 'radial-gradient(ellipse 60% 50% at 50% 52%, oklch(0.35 0.1 255 / 0.22) 0%, transparent 70%)',
-          }}
-        />
-        <div
-          className="absolute -left-24 top-10 h-56 w-56 rounded-full blur-3xl sm:h-72 sm:w-72"
-          style={{ background: 'oklch(0.52 0.1 210 / 0.16)' }}
-        />
-        <div
-          className="absolute -right-20 bottom-0 h-64 w-64 rounded-full blur-3xl sm:h-80 sm:w-80"
-          style={{ background: 'oklch(0.72 0.13 255 / 0.16)' }}
-        />
+    <div style={{
+      position: 'relative',
+      display: 'flex',
+      height: '100vh',
+      width: '100vw',
+      overflow: 'hidden',
+      background: 'var(--bg)',
+      color: 'var(--fg)',
+      fontFamily: "'Inter Tight', ui-sans-serif, system-ui, sans-serif",
+    }}>
+      {/* Background */}
+      <div style={{ position: 'fixed', inset: 0, zIndex: 0, pointerEvents: 'none' }}>
+        <div style={{
+          position: 'absolute', inset: '-10%',
+          backgroundImage: 'linear-gradient(var(--border) 1px, transparent 1px), linear-gradient(90deg, var(--border) 1px, transparent 1px)',
+          backgroundSize: '48px 48px', opacity: 0.6,
+        }} />
+        <div style={{
+          position: 'absolute', inset: 0,
+          background: 'radial-gradient(ellipse 60% 50% at 50% 52%, oklch(0.35 0.1 255 / 0.22) 0%, transparent 70%)',
+        }} />
       </div>
 
-      <div className="relative z-10 grid min-h-[100dvh] xl:grid-cols-[minmax(0,1.08fr)_minmax(0,0.92fr)]">
-        <section
-          className="flex flex-col justify-between gap-10 border-b px-5 py-6 sm:px-8 sm:py-8 xl:min-h-[100dvh] xl:border-b-0 xl:border-r xl:px-16 xl:py-10"
-          style={{ borderColor: 'var(--border)' }}
-        >
-          <div className="flex items-center gap-3">
-            <img
-              src={logo}
-              alt="Muninn"
-              className="h-12 w-auto object-contain opacity-90 invert sm:h-16 xl:h-20"
-            />
-            <span
-              className="text-2xl font-bold tracking-[-0.05em] sm:text-3xl"
-              style={{ color: 'var(--fg)' }}
-            >
-              Muninn
-            </span>
+      {/* Left panel */}
+      <div style={{
+        position: 'relative', zIndex: 1,
+        flex: 1, display: 'flex', flexDirection: 'column',
+        justifyContent: 'space-between',
+        padding: '40px 52px',
+        borderRight: '1px solid var(--border)',
+      }}>
+        {/* Logo */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+          <img src={logo} alt="Muninn" style={{ height: 100, width: 'auto', objectFit: 'contain', filter: 'invert(1)', opacity: 0.9 }} />
+          <span style={{ fontSize: 30, fontWeight: 700, letterSpacing: '-0.04em', color: 'var(--fg)' }}>Muninn</span>
+        </div>
+
+        {/* Hero */}
+        <div style={{ flex: 1, display: 'flex', flexDirection: 'column', justifyContent: 'center', maxWidth: 440 }}>
+          <h2 style={{
+            fontSize: 'clamp(28px, 3vw, 40px)', fontWeight: 600,
+            lineHeight: 1.15, letterSpacing: '-0.025em',
+            marginBottom: 20, textWrap: 'pretty' as never,
+          }}>
+            Gestiona cada documento con{' '}
+            <em style={{ fontStyle: 'normal', color: 'var(--accent)' }}>precisión absoluta.</em>
+          </h2>
+          <ul style={{ listStyle: 'none', display: 'flex', flexDirection: 'column', gap: 14 }}>
+            {features.map((f) => (
+              <li key={f.label} style={{ display: 'flex', alignItems: 'flex-start', gap: 12, fontSize: 14, color: 'var(--fg-muted)', lineHeight: 1.4 }}>
+                <div style={{
+                  width: 26, height: 26, borderRadius: 7, flexShrink: 0,
+                  background: 'var(--bg-elev-2)', border: '1px solid var(--border-strong)',
+                  display: 'flex', alignItems: 'center', justifyContent: 'center',
+                  color: 'var(--accent)',
+                }}>
+                  <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M20 6L9 17l-5-5"/></svg>
+                </div>
+                <div><strong style={{ color: 'var(--fg)', fontWeight: 500 }}>{f.label}</strong> — {f.desc}</div>
+              </li>
+            ))}
+          </ul>
+        </div>
+
+        {/* Footer */}
+        <footer style={{ fontSize: 11.5, color: 'var(--fg-dim)' }}>
+          © 2026 UBB · GPS Documental
+        </footer>
+      </div>
+
+      {/* Right panel */}
+      <div style={{
+        position: 'relative', zIndex: 1,
+        width: 640, flexShrink: 0,
+        display: 'flex', alignItems: 'center', justifyContent: 'center',
+        padding: '60px 72px',
+      }}>
+        <div style={{ width: '100%', maxWidth: 480 }}>
+          {/* Header */}
+          <div style={{ marginBottom: 28 }}>
+            <h1 style={{ fontSize: 28, fontWeight: 600, letterSpacing: '-0.02em', marginBottom: 6 }}>
+              Bienvenido de nuevo
+            </h1>
+            <p style={{ fontSize: 13.5, color: 'var(--fg-muted)' }}>
+              Ingresa tus credenciales para continuar
+            </p>
           </div>
 
-          <div className="mx-auto flex w-full max-w-2xl flex-1 flex-col justify-center">
-            <div className="max-w-xl">
-              <div
-                className="mb-4 inline-flex items-center gap-2 rounded-full border px-3 py-1 text-[11px] font-medium uppercase tracking-[0.16em] sm:text-xs"
-                style={{
-                  borderColor: 'var(--border-strong)',
-                  background: 'rgba(20, 22, 27, 0.72)',
-                  color: 'var(--fg-dim)',
-                }}
-              >
-                Sistema de gestion documental
-              </div>
-              <h2
-                className="max-w-xl text-[clamp(2rem,7vw,4.35rem)] font-semibold leading-[0.98] tracking-[-0.06em]"
-                style={{ color: 'var(--fg)' }}
-              >
-                Gestiona cada documento con{' '}
-                <span style={{ color: 'var(--accent)' }}>precision absoluta.</span>
-              </h2>
-              <p
-                className="mt-4 max-w-lg text-sm leading-6 sm:text-base"
-                style={{ color: 'var(--fg-muted)' }}
-              >
-                Versionado, aprobaciones y trazabilidad en un espacio pensado para equipos que trabajan con procesos reales.
-              </p>
+          {/* Error */}
+          {error && (
+            <div style={{
+              display: 'flex', alignItems: 'center', gap: 7,
+              padding: '10px 12px', borderRadius: 7, marginBottom: 14,
+              background: 'oklch(0.7 0.17 25 / 0.1)', border: '1px solid oklch(0.7 0.17 25 / 0.3)',
+              color: 'var(--danger)', fontSize: 12.5,
+            }}>
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M10.3 3.3L2 20h20L13.7 3.3a2 2 0 0 0-3.4 0zM12 9v5M12 17.5v.5"/></svg>
+              {error}
             </div>
+          )}
 
-            <ul className="mt-8 grid gap-3 sm:grid-cols-2 xl:max-w-3xl">
-              {features.map((feature) => (
-                <li
-                  key={feature.label}
-                  className="rounded-2xl border p-4 backdrop-blur-sm sm:p-5"
+          <form onSubmit={handleSubmit}>
+            {/* Email */}
+            <div style={{ marginBottom: 14 }}>
+              <label style={{ display: 'block', fontSize: 12.5, fontWeight: 500, color: 'var(--fg-muted)', marginBottom: 6 }}>
+                Correo electrónico
+              </label>
+              <div style={{ position: 'relative' }}>
+                <input
+                  type="email"
+                  autoComplete="email"
+                  placeholder="usuario@dominio.cl"
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                  required
                   style={{
-                    borderColor: 'var(--border)',
-                    background: 'rgba(20, 22, 27, 0.64)',
+                    width: '100%', height: 48,
+                    background: 'var(--bg-elev)', border: '1px solid var(--border-strong)',
+                    borderRadius: 8, padding: '0 40px 0 12px',
+                    fontSize: 15, color: 'var(--fg)', outline: 'none',
+                    fontFamily: 'inherit',
                   }}
-                >
-                  <div className="flex items-start gap-3">
-                    <div
-                      className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-xl border"
-                      style={{
-                        background: 'var(--bg-elev-2)',
-                        borderColor: 'var(--border-strong)',
-                        color: 'var(--accent)',
-                      }}
-                    >
-                      <svg
-                        width="12"
-                        height="12"
-                        viewBox="0 0 24 24"
-                        fill="none"
-                        stroke="currentColor"
-                        strokeWidth="2.2"
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                      >
-                        <path d="M20 6L9 17l-5-5" />
-                      </svg>
-                    </div>
-                    <div>
-                      <p className="text-sm font-semibold sm:text-[15px]" style={{ color: 'var(--fg)' }}>
-                        {feature.label}
-                      </p>
-                      <p className="mt-1 text-sm leading-5" style={{ color: 'var(--fg-muted)' }}>
-                        {feature.desc}
-                      </p>
-                    </div>
-                  </div>
-                </li>
-              ))}
-            </ul>
-          </div>
-
-          <footer className="text-xs leading-5 sm:text-[13px]" style={{ color: 'var(--fg-dim)' }}>
-            © 2026 UBB · GPS Documental
-          </footer>
-        </section>
-
-        <section className="flex items-center justify-center px-4 py-6 sm:px-8 sm:py-10 xl:px-12 xl:py-12">
-          <div
-            className="w-full max-w-[34rem] rounded-[28px] border p-5 shadow-2xl sm:p-8"
-            style={{
-              background: 'rgba(20, 22, 27, 0.92)',
-              borderColor: 'var(--border-strong)',
-              boxShadow: '0 32px 80px rgba(0, 0, 0, 0.35)',
-            }}
-          >
-            <div className="mb-7">
-              <p
-                className="mb-2 inline-flex rounded-full border px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.16em]"
-                style={{
-                  borderColor: 'var(--border)',
-                  color: 'var(--fg-dim)',
-                }}
-              >
-                Acceso protegido
-              </p>
-              <h1 className="text-3xl font-semibold tracking-[-0.04em] sm:text-[2rem]">
-                Bienvenido de nuevo
-              </h1>
-              <p className="mt-2 text-sm leading-6 sm:text-[15px]" style={{ color: 'var(--fg-muted)' }}>
-                Ingresa tus credenciales para continuar con el flujo documental.
-              </p>
+                  onFocus={(e) => { e.target.style.borderColor = 'var(--accent)'; e.target.style.boxShadow = '0 0 0 3px var(--accent-soft)' }}
+                  onBlur={(e) => { e.target.style.borderColor = 'var(--border-strong)'; e.target.style.boxShadow = 'none' }}
+                />
+                <span style={{ position: 'absolute', right: 11, top: '50%', transform: 'translateY(-50%)', color: 'var(--fg-dim)', pointerEvents: 'none' }}>
+                  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"><path d="M4 4h16a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2zM22 7l-10 7L2 7"/></svg>
+                </span>
+              </div>
             </div>
 
-            {error && (
-              <div
-                className="mb-4 flex items-start gap-3 rounded-2xl border px-4 py-3 text-sm leading-5"
-                style={{
-                  background: 'oklch(0.7 0.17 25 / 0.1)',
-                  borderColor: 'oklch(0.7 0.17 25 / 0.3)',
-                  color: 'var(--danger)',
-                }}
-              >
-                <svg
-                  className="mt-0.5 shrink-0"
-                  width="16"
-                  height="16"
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth="2"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
+            {/* Password */}
+            <div style={{ marginBottom: 16 }}>
+              <label style={{ display: 'block', fontSize: 12.5, fontWeight: 500, color: 'var(--fg-muted)', marginBottom: 6 }}>
+                Contraseña
+              </label>
+              <div style={{ position: 'relative' }}>
+                <input
+                  type={showPwd ? 'text' : 'password'}
+                  autoComplete="current-password"
+                  placeholder="••••••••"
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  required
+                  style={{
+                    width: '100%', height: 48,
+                    background: 'var(--bg-elev)', border: '1px solid var(--border-strong)',
+                    borderRadius: 8, padding: '0 40px 0 12px',
+                    fontSize: 15, color: 'var(--fg)', outline: 'none',
+                    fontFamily: 'inherit',
+                  }}
+                  onFocus={(e) => { e.target.style.borderColor = 'var(--accent)'; e.target.style.boxShadow = '0 0 0 3px var(--accent-soft)' }}
+                  onBlur={(e) => { e.target.style.borderColor = 'var(--border-strong)'; e.target.style.boxShadow = 'none' }}
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowPwd(!showPwd)}
+                  style={{ position: 'absolute', right: 10, top: '50%', transform: 'translateY(-50%)', color: 'var(--fg-dim)', background: 'none', border: 'none', cursor: 'pointer', display: 'flex', padding: 4 }}
                 >
-                  <path d="M10.3 3.3L2 20h20L13.7 3.3a2 2 0 0 0-3.4 0zM12 9v5M12 17.5v.5" />
-                </svg>
-                <span>{error}</span>
+                  {showPwd
+                    ? <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"><path d="M17.9 17.9A10.9 10.9 0 0 1 12 20C5 20 1 12 1 12a19 19 0 0 1 5.1-6.1M9.9 4.2A10 10 0 0 1 12 4c7 0 11 8 11 8a19.1 19.1 0 0 1-2.3 3.6M3 3l18 18"/></svg>
+                    : <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8S1 12 1 12zM12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6z"/></svg>
+                  }
+                </button>
               </div>
-            )}
+            </div>
 
-            <form onSubmit={handleSubmit} className="space-y-4">
-              <div>
-                <label
-                  htmlFor="email"
-                  className="mb-2 block text-sm font-medium"
-                  style={{ color: 'var(--fg-muted)' }}
-                >
-                  Correo electrónico
-                </label>
-                <div className="relative">
-                  <input
-                    id="email"
-                    type="email"
-                    autoComplete="email"
-                    placeholder="usuario@dominio.cl"
-                    value={email}
-                    onChange={(e) => setEmail(e.target.value)}
-                    required
-                    className="h-12 w-full rounded-xl border px-4 pr-11 text-[15px] outline-none transition focus:border-transparent focus:ring-2"
-                    style={{
-                      ...inputStyle,
-                      boxShadow: 'none',
-                    }}
-                  />
-                  <span
-                    className="pointer-events-none absolute right-4 top-1/2 -translate-y-1/2"
-                    style={{ color: 'var(--fg-dim)' }}
-                  >
-                    <svg
-                      width="16"
-                      height="16"
-                      viewBox="0 0 24 24"
-                      fill="none"
-                      stroke="currentColor"
-                      strokeWidth="1.7"
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                    >
-                      <path d="M4 4h16a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2zM22 7l-10 7L2 7" />
-                    </svg>
-                  </span>
-                </div>
-              </div>
-
-              <div>
-                <label
-                  htmlFor="password"
-                  className="mb-2 block text-sm font-medium"
-                  style={{ color: 'var(--fg-muted)' }}
-                >
-                  Contraseña
-                </label>
-                <div className="relative">
-                  <input
-                    id="password"
-                    type={showPwd ? 'text' : 'password'}
-                    autoComplete="current-password"
-                    placeholder="••••••••"
-                    value={password}
-                    onChange={(e) => setPassword(e.target.value)}
-                    required
-                    className="h-12 w-full rounded-xl border px-4 pr-12 text-[15px] outline-none transition focus:border-transparent focus:ring-2"
-                    style={{
-                      ...inputStyle,
-                      boxShadow: 'none',
-                    }}
-                  />
-                  <button
-                    type="button"
-                    aria-label={showPwd ? 'Ocultar contraseña' : 'Mostrar contraseña'}
-                    onClick={() => setShowPwd(!showPwd)}
-                    className="absolute right-3 top-1/2 flex -translate-y-1/2 cursor-pointer items-center justify-center rounded-lg p-2 transition"
-                    style={{ color: 'var(--fg-dim)' }}
-                  >
-                    {showPwd ? (
-                      <svg
-                        width="16"
-                        height="16"
-                        viewBox="0 0 24 24"
-                        fill="none"
-                        stroke="currentColor"
-                        strokeWidth="1.7"
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                      >
-                        <path d="M17.9 17.9A10.9 10.9 0 0 1 12 20C5 20 1 12 1 12a19 19 0 0 1 5.1-6.1M9.9 4.2A10 10 0 0 1 12 4c7 0 11 8 11 8a19.1 19.1 0 0 1-2.3 3.6M3 3l18 18" />
-                      </svg>
-                    ) : (
-                      <svg
-                        width="16"
-                        height="16"
-                        viewBox="0 0 24 24"
-                        fill="none"
-                        stroke="currentColor"
-                        strokeWidth="1.7"
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                      >
-                        <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8S1 12 1 12zM12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6z" />
-                      </svg>
-                    )}
-                  </button>
-                </div>
-              </div>
-
-              <button
-                type="submit"
-                disabled={loading}
-                className="mt-2 h-12 w-full rounded-xl border-0 text-sm font-semibold tracking-[0.01em] transition disabled:cursor-not-allowed disabled:opacity-60"
-                style={{
-                  background: 'var(--accent)',
-                  color: 'var(--accent-fg)',
-                  boxShadow: '0 10px 30px oklch(0.72 0.13 255 / 0.26)',
-                }}
-              >
-                {loading ? 'Verificando…' : 'Iniciar sesión'}
-              </button>
-            </form>
-
-            <div
-              className="mt-5 rounded-2xl border px-4 py-3 text-sm leading-6"
+            <button
+              type="submit"
+              disabled={loading}
               style={{
-                borderColor: 'var(--border)',
-                background: 'rgba(14, 15, 18, 0.72)',
-                color: 'var(--fg-dim)',
+                width: '100%', height: 48, borderRadius: 8,
+                background: 'var(--accent)', color: 'var(--accent-fg)',
+                fontSize: 13.5, fontWeight: 600, letterSpacing: '0.01em',
+                border: 'none', cursor: loading ? 'not-allowed' : 'pointer',
+                opacity: loading ? 0.55 : 1,
+                boxShadow: '0 4px 14px oklch(0.72 0.13 255 / 0.3)',
+                fontFamily: 'inherit',
               }}
             >
-              Solo usuarios registrados por el administrador pueden acceder al sistema.
-            </div>
-          </div>
-        </section>
+              {loading ? 'Verificando…' : 'Iniciar sesión'}
+            </button>
+          </form>
+
+          <p style={{ fontSize: 11.5, color: 'var(--fg-dim)', textAlign: 'center', marginTop: 16, lineHeight: 1.6 }}>
+            Acceso protegido. Solo usuarios registrados por el administrador.
+          </p>
+        </div>
       </div>
     </div>
   )
