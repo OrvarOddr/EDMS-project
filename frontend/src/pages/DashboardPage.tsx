@@ -7,6 +7,7 @@ import {
   type ReactNode,
 } from 'react'
 import { useAuth } from '../context/AuthContext'
+import { createUser, listRoles, type RoleItem } from '../api/auth'
 
 type ViewMode = 'list' | 'grid'
 type DocKind = 'pdf' | 'doc' | 'sheet' | 'slide' | 'image' | 'sig'
@@ -274,6 +275,11 @@ function initialsFromLabel(label: string) {
     .filter(Boolean)
     .slice(0, 2)
   return parts.map((part) => part[0]?.toUpperCase() ?? '').join('') || 'ED'
+}
+
+function getApiErrorMessage(error: unknown, fallback: string) {
+  const detail = (error as { response?: { data?: { detail?: unknown } } })?.response?.data?.detail
+  return typeof detail === 'string' && detail.trim() ? detail : fallback
 }
 
 function flattenFolders(folders: FolderItem[], acc: FolderItem[] = []) {
@@ -2740,6 +2746,291 @@ function DropZoneOverlay({ active }: { active: boolean }) {
   )
 }
 
+function TeamManagerModal({
+  onClose,
+  onCreated,
+}: {
+  onClose: () => void
+  onCreated: (userName: string) => void
+}) {
+  const [roles, setRoles] = useState<RoleItem[]>([])
+  const [loadingRoles, setLoadingRoles] = useState(true)
+  const [submitting, setSubmitting] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const [form, setForm] = useState({
+    first_name: '',
+    last_name: '',
+    email: '',
+    password: '',
+    role_id: '',
+    status: 'active' as 'active' | 'inactive' | 'blocked',
+  })
+
+  useEffect(() => {
+    listRoles()
+      .then((response) => {
+        setRoles(response.data)
+        setForm((current) => ({
+          ...current,
+          role_id: current.role_id || response.data[0]?.id || '',
+        }))
+      })
+      .catch((err) => setError(getApiErrorMessage(err, 'No se pudieron cargar los roles')))
+      .finally(() => setLoadingRoles(false))
+  }, [])
+
+  useEffect(() => {
+    function handleEscape(event: KeyboardEvent) {
+      if (event.key === 'Escape' && !submitting) onClose()
+    }
+
+    document.addEventListener('keydown', handleEscape)
+    return () => document.removeEventListener('keydown', handleEscape)
+  }, [onClose, submitting])
+
+  async function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    setSubmitting(true)
+    setError(null)
+
+    try {
+      const payload = {
+        ...form,
+        first_name: form.first_name.trim(),
+        last_name: form.last_name.trim(),
+        email: form.email.trim(),
+      }
+      const { data } = await createUser(payload)
+      onCreated(userLabelFromAuth(data.first_name, data.last_name, data.email))
+      setForm({
+        first_name: '',
+        last_name: '',
+        email: '',
+        password: '',
+        role_id: roles[0]?.id ?? '',
+        status: 'active',
+      })
+    } catch (err) {
+      setError(getApiErrorMessage(err, 'No se pudo crear el usuario'))
+    } finally {
+      setSubmitting(false)
+    }
+  }
+
+  const fieldStyle: CSSProperties = {
+    width: '100%',
+    borderRadius: 8,
+    border: '1px solid var(--border)',
+    background: 'var(--bg-elev-2)',
+    color: 'var(--fg)',
+    padding: '10px 12px',
+    fontSize: 13,
+    outline: 'none',
+  }
+
+  return (
+    <>
+      <div
+        onClick={() => !submitting && onClose()}
+        style={{
+          position: 'fixed',
+          inset: 0,
+          zIndex: 120,
+          background: 'rgba(3, 6, 12, 0.62)',
+          backdropFilter: 'blur(6px)',
+        }}
+      />
+      <div
+        style={{
+          position: 'fixed',
+          inset: 0,
+          zIndex: 130,
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          padding: 24,
+          pointerEvents: 'none',
+        }}
+      >
+        <form
+          onSubmit={handleSubmit}
+          style={{
+            width: 'min(560px, 100%)',
+            background: 'var(--bg-elev)',
+            border: '1px solid var(--border-strong)',
+            borderRadius: 14,
+            boxShadow: 'var(--shadow)',
+            overflow: 'hidden',
+            pointerEvents: 'auto',
+          }}
+        >
+          <div style={{ padding: '16px 18px', borderBottom: '1px solid var(--border)' }}>
+            <div style={{ fontSize: 16, fontWeight: 600, color: 'var(--fg)', marginBottom: 4 }}>Crear usuario</div>
+            <div style={{ fontSize: 12.5, color: 'var(--fg-muted)' }}>
+              Crea una cuenta con rol global y estado inicial para habilitar acceso al equipo.
+            </div>
+          </div>
+
+          <div style={{ padding: 18, display: 'grid', gap: 14 }}>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+              <label style={{ display: 'grid', gap: 6 }}>
+                <span style={{ fontSize: 12.5, color: 'var(--fg-muted)' }}>Nombre</span>
+                <input
+                  required
+                  value={form.first_name}
+                  onChange={(event) => setForm((current) => ({ ...current, first_name: event.target.value }))}
+                  style={fieldStyle}
+                  placeholder="Laura"
+                />
+              </label>
+              <label style={{ display: 'grid', gap: 6 }}>
+                <span style={{ fontSize: 12.5, color: 'var(--fg-muted)' }}>Apellido</span>
+                <input
+                  required
+                  value={form.last_name}
+                  onChange={(event) => setForm((current) => ({ ...current, last_name: event.target.value }))}
+                  style={fieldStyle}
+                  placeholder="Ibáñez"
+                />
+              </label>
+            </div>
+
+            <label style={{ display: 'grid', gap: 6 }}>
+              <span style={{ fontSize: 12.5, color: 'var(--fg-muted)' }}>Correo electrónico</span>
+              <input
+                required
+                type="email"
+                value={form.email}
+                onChange={(event) => setForm((current) => ({ ...current, email: event.target.value }))}
+                style={fieldStyle}
+                placeholder="usuario@dominio.cl"
+              />
+            </label>
+
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 12 }}>
+              <label style={{ display: 'grid', gap: 6 }}>
+                <span style={{ fontSize: 12.5, color: 'var(--fg-muted)' }}>Contraseña inicial</span>
+                <input
+                  required
+                  minLength={8}
+                  type="password"
+                  value={form.password}
+                  onChange={(event) => setForm((current) => ({ ...current, password: event.target.value }))}
+                  style={fieldStyle}
+                  placeholder="********"
+                />
+              </label>
+              <label style={{ display: 'grid', gap: 6 }}>
+                <span style={{ fontSize: 12.5, color: 'var(--fg-muted)' }}>Rol</span>
+                <select
+                  required
+                  disabled={loadingRoles}
+                  value={form.role_id}
+                  onChange={(event) => setForm((current) => ({ ...current, role_id: event.target.value }))}
+                  style={fieldStyle}
+                >
+                  {roles.map((role) => (
+                    <option key={role.id} value={role.id}>
+                      {role.name}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label style={{ display: 'grid', gap: 6 }}>
+                <span style={{ fontSize: 12.5, color: 'var(--fg-muted)' }}>Estado</span>
+                <select
+                  value={form.status}
+                  onChange={(event) =>
+                    setForm((current) => ({
+                      ...current,
+                      status: event.target.value as 'active' | 'inactive' | 'blocked',
+                    }))
+                  }
+                  style={fieldStyle}
+                >
+                  <option value="active">Activo</option>
+                  <option value="inactive">Inactivo</option>
+                  <option value="blocked">Bloqueado</option>
+                </select>
+              </label>
+            </div>
+
+            <div
+              style={{
+                borderRadius: 10,
+                border: '1px solid var(--border)',
+                background: 'var(--bg-elev-2)',
+                padding: '10px 12px',
+                fontSize: 12,
+                color: 'var(--fg-muted)',
+              }}
+            >
+              El usuario creado solo podrá iniciar sesión si queda en estado <strong style={{ color: 'var(--fg)' }}>Activo</strong>.
+            </div>
+
+            {error && (
+              <div
+                style={{
+                  borderRadius: 8,
+                  border: '1px solid color-mix(in oklch, var(--danger) 55%, var(--border))',
+                  background: 'color-mix(in oklch, var(--danger) 10%, var(--bg-elev))',
+                  color: 'var(--fg)',
+                  padding: '10px 12px',
+                  fontSize: 12.5,
+                }}
+              >
+                {error}
+              </div>
+            )}
+          </div>
+
+          <div
+            style={{
+              padding: '14px 18px',
+              borderTop: '1px solid var(--border)',
+              display: 'flex',
+              justifyContent: 'flex-end',
+              gap: 10,
+            }}
+          >
+            <button
+              type="button"
+              onClick={onClose}
+              disabled={submitting}
+              style={{
+                borderRadius: 8,
+                border: '1px solid var(--border)',
+                background: 'transparent',
+                color: 'var(--fg)',
+                padding: '9px 14px',
+                fontSize: 12.5,
+              }}
+            >
+              Cancelar
+            </button>
+            <button
+              type="submit"
+              disabled={submitting || loadingRoles || !form.role_id}
+              style={{
+                borderRadius: 8,
+                border: '1px solid color-mix(in oklch, var(--accent) 60%, transparent)',
+                background: 'var(--accent)',
+                color: '#fff',
+                padding: '9px 14px',
+                fontSize: 12.5,
+                fontWeight: 600,
+                opacity: submitting || loadingRoles || !form.role_id ? 0.7 : 1,
+              }}
+            >
+              {submitting ? 'Creando...' : 'Crear usuario'}
+            </button>
+          </div>
+        </form>
+      </div>
+    </>
+  )
+}
+
 function Toast({ toast, onClose }: { toast: string | null; onClose: () => void }) {
   useEffect(() => {
     if (!toast) return
@@ -2786,6 +3077,7 @@ export default function DashboardPage() {
   const [openDocId, setOpenDocId] = useState<string | null>(null)
   const [ctxMenu, setCtxMenu] = useState<ContextMenuState | null>(null)
   const [notifOpen, setNotifOpen] = useState(false)
+  const [teamModalOpen, setTeamModalOpen] = useState(false)
   const [dragging, setDragging] = useState(false)
   const [toast, setToast] = useState<string | null>(null)
   const dragCounter = useRef(0)
@@ -2880,6 +3172,15 @@ export default function DashboardPage() {
   }
 
   function handleAction(action: string, docId?: string) {
+    if (action === 'team') {
+      if (!user?.is_superuser) {
+        setToast('Solo administradores pueden gestionar usuarios')
+        return
+      }
+      setTeamModalOpen(true)
+      return
+    }
+
     const messages: Record<string, string> = {
       upload: 'Selecciona archivos para subir',
       new: 'Nuevo documento creado',
@@ -3167,6 +3468,15 @@ export default function DashboardPage() {
       <ContextMenu ctx={ctxMenu} onClose={() => setCtxMenu(null)} onAction={handleAction} />
       <NotifPopover open={notifOpen} onClose={() => setNotifOpen(false)} />
       <DropZoneOverlay active={dragging} />
+      {teamModalOpen && (
+        <TeamManagerModal
+          onClose={() => setTeamModalOpen(false)}
+          onCreated={(userName) => {
+            setTeamModalOpen(false)
+            setToast(`Usuario ${userName} creado`)
+          }}
+        />
+      )}
       <Toast toast={toast} onClose={() => setToast(null)} />
     </div>
   )
