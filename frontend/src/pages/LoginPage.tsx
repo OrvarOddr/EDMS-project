@@ -81,16 +81,16 @@ export default function LoginPage() {
         />
       </div>
 
-      <div className="relative z-10 grid min-h-[100dvh] xl:grid-cols-[minmax(0,1.08fr)_minmax(0,0.92fr)]">
+      <div className="relative z-10 grid min-h-[100dvh] lg:grid-cols-[minmax(0,1.08fr)_minmax(0,0.92fr)]">
         <section
-          className="flex flex-col justify-between gap-10 border-b px-5 py-6 sm:px-8 sm:py-8 xl:min-h-[100dvh] xl:border-b-0 xl:border-r xl:px-16 xl:py-10"
+          className="flex flex-col justify-between gap-10 border-b px-5 py-6 sm:px-8 sm:py-8 lg:min-h-[100dvh] lg:border-b-0 lg:border-r lg:px-12 lg:py-10 xl:px-16"
           style={{ borderColor: 'var(--border)' }}
         >
           <div className="flex items-center gap-3">
             <img
               src={logo}
               alt="Muninn"
-              className="h-12 w-auto object-contain opacity-90 invert sm:h-16 xl:h-20"
+              className="h-12 w-auto object-contain opacity-90 invert sm:h-16 lg:h-20"
             />
             <span
               className="text-2xl font-bold tracking-[-0.05em] sm:text-3xl"
@@ -178,7 +178,7 @@ export default function LoginPage() {
           </footer>
         </section>
 
-        <section className="flex items-center justify-center px-4 py-6 sm:px-8 sm:py-10 xl:px-12 xl:py-12">
+        <section className="flex items-center justify-center px-4 py-6 sm:px-8 sm:py-10 lg:px-12 lg:py-12">
           <div
             className="w-full max-w-[34rem] rounded-[28px] border p-5 shadow-2xl sm:p-8"
             style={{
