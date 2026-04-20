@@ -5,6 +5,7 @@ from app.config import settings
 PUBLIC_ROUTES = {
     ("POST", "/auth/login"),
     ("POST", "/auth/refresh"),
+    ("POST", "/auth/logout"),
     ("GET",  "/health"),
 }
 
