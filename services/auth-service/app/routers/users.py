@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 from app.database import get_db
-from app.models import User
+from app.models import User, Role, UserRole
 from app.schemas import CreateUserRequest, UserResponse
 from app.security import hash_password, decode_token
 from app.routers.auth import _get_active_roles
@@ -40,22 +40,36 @@ def create_user(
     if not actor.is_superuser:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Solo superusuarios pueden crear usuarios")
 
-    existing = db.query(User).filter(User.email == body.email).first()
+    normalized_email = body.email.strip().lower()
+    existing = db.query(User).filter(User.email == normalized_email, User.deleted_at.is_(None)).first()
     if existing:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Email ya registrado")
 
+    role = db.query(Role).filter(Role.id == body.role_id).first()
+    if not role:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Rol no encontrado")
+
     user = User(
-        email=body.email,
+        email=normalized_email,
         password_hash=hash_password(body.password),
         first_name=body.first_name,
         last_name=body.last_name,
-        is_superuser=body.is_superuser,
+        status=body.status,
+        is_superuser=role.code == "admin",
     )
     db.add(user)
+    db.flush()
+
+    assignment = UserRole(
+        user_id=user.id,
+        role_id=role.id,
+        assigned_by_user_id=actor.id,
+    )
+    db.add(assignment)
     db.commit()
     db.refresh(user)
 
-    roles = _get_active_roles(db, user.id)
+    roles = [role.code]
     return UserResponse(
         id=user.id,
         email=user.email,

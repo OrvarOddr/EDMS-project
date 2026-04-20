@@ -7,7 +7,7 @@ from app.routers import auth, users, roles
 
 
 def _seed(db):
-    from app.models import Role, User
+    from app.models import Role, User, UserRole
     from app.security import hash_password
     import os
 
@@ -22,16 +22,28 @@ def _seed(db):
         if not db.query(Role).filter(Role.code == code).first():
             db.add(Role(code=code, name=name, description=desc))
 
-    admin_email = os.getenv("BOOTSTRAP_ADMIN_EMAIL", "admin@edms.dev")
+    admin_email = os.getenv("BOOTSTRAP_ADMIN_EMAIL", "admin@edms.dev").strip().lower()
     admin_password = os.getenv("BOOTSTRAP_ADMIN_PASSWORD", "changeme123")
-    if not db.query(User).filter(User.email == admin_email).first():
-        db.add(User(
+    admin_user = db.query(User).filter(User.email == admin_email).first()
+    if not admin_user:
+        admin_user = User(
             email=admin_email,
             password_hash=hash_password(admin_password),
             first_name="Admin",
             last_name="Sistema",
             is_superuser=True,
-        ))
+        )
+        db.add(admin_user)
+        db.flush()
+
+    admin_role = db.query(Role).filter(Role.code == "admin").first()
+    has_admin_role = db.query(UserRole).filter(
+        UserRole.user_id == admin_user.id,
+        UserRole.role_id == admin_role.id if admin_role else None,
+        UserRole.is_active.is_(True),
+    ).first()
+    if admin_role and not has_admin_role:
+        db.add(UserRole(user_id=admin_user.id, role_id=admin_role.id))
 
     db.commit()
 

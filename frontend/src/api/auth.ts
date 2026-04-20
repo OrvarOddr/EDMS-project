@@ -16,6 +16,22 @@ export interface UserMe {
   roles: string[]
 }
 
+export interface RoleItem {
+  id: string
+  code: string
+  name: string
+  description?: string | null
+}
+
+export interface CreateUserPayload {
+  email: string
+  password: string
+  first_name: string
+  last_name: string
+  role_id: string
+  status: 'active' | 'inactive' | 'blocked'
+}
+
 export const login = (email: string, password: string) =>
   client.post<TokenResponse>('/auth/login', { email, password })
 
@@ -28,3 +44,9 @@ export const getMe = (accessToken?: string) =>
       Authorization: `Bearer ${accessToken}`,
     },
   } : undefined)
+
+export const listRoles = () =>
+  client.get<RoleItem[]>('/roles')
+
+export const createUser = (payload: CreateUserPayload) =>
+  client.post<UserMe>('/users', payload)

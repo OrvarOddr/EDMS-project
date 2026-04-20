@@ -1,3 +1,4 @@
+from typing import Literal
 from pydantic import BaseModel, EmailStr
 
 
@@ -21,7 +22,8 @@ class CreateUserRequest(BaseModel):
     password: str
     first_name: str
     last_name: str
-    is_superuser: bool = False
+    role_id: str
+    status: Literal["active", "inactive", "blocked"] = "active"
 
 
 class UserResponse(BaseModel):

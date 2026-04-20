@@ -23,7 +23,8 @@ def _get_active_roles(db: Session, user_id: str) -> list[str]:
 
 @router.post("/login", response_model=TokenResponse)
 def login(body: LoginRequest, request: Request, db: Session = Depends(get_db)):
-    user = db.query(User).filter(User.email == body.email, User.deleted_at.is_(None)).first()
+    normalized_email = body.email.strip().lower()
+    user = db.query(User).filter(User.email == normalized_email, User.deleted_at.is_(None)).first()
     if not user or not verify_password(body.password, user.password_hash):
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Credenciales inválidas")
     if user.status != "active":
