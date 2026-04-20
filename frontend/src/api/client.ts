@@ -5,6 +5,11 @@ const client = axios.create({
   headers: { 'Content-Type': 'application/json' },
 })
 
+function isAuthFlowRequest(url?: string) {
+  const normalized = String(url ?? '')
+  return normalized.includes('/auth/login') || normalized.includes('/auth/refresh') || normalized.includes('/auth/logout')
+}
+
 client.interceptors.request.use((config) => {
   const token = localStorage.getItem('access_token')
   const authorizationHeader = config.headers?.Authorization ?? config.headers?.['authorization']
@@ -19,7 +24,7 @@ client.interceptors.response.use(
   (res) => res,
   async (err) => {
     const original = err.config
-    if (err.response?.status === 401 && !original._retry) {
+    if (err.response?.status === 401 && !original?._retry && !isAuthFlowRequest(original?.url)) {
       original._retry = true
       const refresh = localStorage.getItem('refresh_token')
       if (refresh) {
