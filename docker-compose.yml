@@ -26,7 +26,7 @@ services:
     volumes:
       - minio_data:/data
     ports:
-      - "8057:9000"
+      - "8057:9001"
     networks:
       - backend
     restart: unless-stopped
