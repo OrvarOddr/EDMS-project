@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import axios from 'axios'
 import { useNavigate } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
 import logo from '../assets/logo.png'
@@ -27,7 +28,14 @@ export default function LoginPage() {
     try {
       await login(email, password)
       navigate('/', { replace: true })
-    } catch {
+    } catch (error) {
+      if (axios.isAxiosError(error)) {
+        const detail = typeof error.response?.data?.detail === 'string' ? error.response.data.detail : null
+        if (detail) {
+          setError(detail)
+          return
+        }
+      }
       setError('Credenciales incorrectas. Inténtalo de nuevo.')
     } finally {
       setLoading(false)

@@ -7,7 +7,11 @@ const client = axios.create({
 
 client.interceptors.request.use((config) => {
   const token = localStorage.getItem('access_token')
-  if (token) config.headers.Authorization = `Bearer ${token}`
+  const authorizationHeader = config.headers?.Authorization ?? config.headers?.['authorization']
+  if (token && !authorizationHeader) {
+    config.headers = config.headers ?? {}
+    config.headers.Authorization = `Bearer ${token}`
+  }
   return config
 })
 
@@ -23,6 +27,7 @@ client.interceptors.response.use(
           const { data } = await axios.post('/api/auth/refresh', { refresh_token: refresh })
           localStorage.setItem('access_token', data.access_token)
           localStorage.setItem('refresh_token', data.refresh_token)
+          original.headers = original.headers ?? {}
           original.headers.Authorization = `Bearer ${data.access_token}`
           return client(original)
         } catch {

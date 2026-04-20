@@ -22,5 +22,9 @@ export const login = (email: string, password: string) =>
 export const logout = (refresh_token: string) =>
   client.post('/auth/logout', { refresh_token })
 
-export const getMe = () =>
-  client.get<UserMe>('/users/me')
+export const getMe = (accessToken?: string) =>
+  client.get<UserMe>('/users/me', accessToken ? {
+    headers: {
+      Authorization: `Bearer ${accessToken}`,
+    },
+  } : undefined)
