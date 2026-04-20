@@ -131,6 +131,13 @@ Restricciones:
 - no guardar el refresh token en texto plano
 - solo tokens vigentes pueden usarse para renovar sesion
 
+## Reglas operativas de login
+
+- solo usuarios con `status = active` pueden autenticarse exitosamente
+- usuarios `inactive` o `blocked` no deben recibir `access_token` ni `refresh_token`
+- cada login exitoso debe actualizar `users.last_login_at`
+- cada login exitoso debe persistir solo el hash del `refresh_token`, nunca el token en texto plano
+
 ## Relaciones
 
 - `users` 1 -> N `user_roles`

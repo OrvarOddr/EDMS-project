@@ -5,6 +5,8 @@ class Settings(BaseSettings):
     SERVICE_PORT: int = 8000
     JWT_SECRET_KEY: str
     JWT_ALGORITHM: str = "HS256"
+    JWT_ISSUER: str = "edms-auth"
+    JWT_AUDIENCE: str = "edms"
     AUTH_SERVICE_URL: str = "http://auth-service:8001"
     DOCUMENT_SERVICE_URL: str = "http://document-service:8002"
     WORKFLOW_SERVICE_URL: str = "http://workflow-service:8003"

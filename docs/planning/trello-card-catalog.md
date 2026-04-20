@@ -323,8 +323,13 @@ Checklist:
 - Exponer ruta de login en api-gateway
 - Implementar autenticacion en auth-service
 - Validar credenciales contra users
+- Rechazar usuarios con estado `inactive` o `blocked`
 - Generar JWT y refresh token
+- Definir claims obligatorios del `access_token` para `sub`, `email`, `status`, `roles`, `issuer`, `audience`, expiracion y tipo
+- Persistir el refresh token de forma hasheada en `auth-service`
+- Actualizar `last_login_at` cuando la autenticacion sea exitosa
 - Guardar sesion en frontend
+- Resolver acceso del frontend usando los claims del `access_token` y dejar disponible la consulta autoritativa de usuario autenticado
 - Proteger rutas privadas
 - Mostrar error con credenciales invalidas
 - Verificar acceso segun rol del usuario
@@ -333,7 +338,10 @@ Definicion de terminado:
 
 - Un usuario valido puede iniciar sesion
 - Un usuario invalido recibe error claro
+- Un usuario `inactive` o `blocked` no recibe tokens
 - El frontend guarda la sesion correctamente
+- El refresh token queda persistido de forma segura y renovable
+- El acceso segun rol queda resuelto sin ambiguedad entre frontend, gateway y auth-service
 - Las rutas protegidas requieren autenticacion
 - El login funciona de punta a punta entre frontend, gateway y auth-service
 

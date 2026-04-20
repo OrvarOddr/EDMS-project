@@ -35,6 +35,8 @@ services:
     build: ./services/api-gateway
     environment:
       JWT_SECRET_KEY: ${JWT_SECRET_KEY}
+      JWT_ISSUER: ${JWT_ISSUER}
+      JWT_AUDIENCE: ${JWT_AUDIENCE}
       AUTH_SERVICE_URL: http://auth-service:8001
       DOCUMENT_SERVICE_URL: http://document-service:8002
       WORKFLOW_SERVICE_URL: http://workflow-service:8003
@@ -55,6 +57,8 @@ services:
     environment:
       DATABASE_URL: postgresql://postgres:${POSTGRES_PASSWORD}@postgres:5432/edms?options=-csearch_path=auth
       JWT_SECRET_KEY: ${JWT_SECRET_KEY}
+      JWT_ISSUER: ${JWT_ISSUER}
+      JWT_AUDIENCE: ${JWT_AUDIENCE}
     depends_on:
       postgres:
         condition: service_healthy

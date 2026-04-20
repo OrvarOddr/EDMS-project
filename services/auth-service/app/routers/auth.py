@@ -33,7 +33,7 @@ def login(body: LoginRequest, request: Request, db: Session = Depends(get_db)):
     access_token = create_access_token(user.id, roles)
     refresh_token = create_refresh_token(user.id)
 
-    payload = decode_token(refresh_token)
+    payload = decode_token(refresh_token, expected_type="refresh")
     expires_at = datetime.fromtimestamp(payload["exp"], tz=timezone.utc)
 
     db_token = RefreshToken(
@@ -53,11 +53,8 @@ def login(body: LoginRequest, request: Request, db: Session = Depends(get_db)):
 @router.post("/refresh", response_model=TokenResponse)
 def refresh(body: RefreshRequest, request: Request, db: Session = Depends(get_db)):
     try:
-        payload = decode_token(body.refresh_token)
+        payload = decode_token(body.refresh_token, expected_type="refresh")
     except JWTError:
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Token inválido")
-
-    if payload.get("type") != "refresh":
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Token inválido")
 
     token_hash = hash_token(body.refresh_token)
@@ -87,7 +84,7 @@ def refresh(body: RefreshRequest, request: Request, db: Session = Depends(get_db
     new_access = create_access_token(user_id, roles)
     new_refresh = create_refresh_token(user_id)
 
-    new_payload = decode_token(new_refresh)
+    new_payload = decode_token(new_refresh, expected_type="refresh")
     new_expires = datetime.fromtimestamp(new_payload["exp"], tz=timezone.utc)
 
     new_db_token = RefreshToken(
