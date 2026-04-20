@@ -839,6 +839,221 @@ function Crumb({
   )
 }
 
+function UserMenu({
+  userLabel,
+  userEmail,
+  userInitials,
+  onOpenNotifs,
+  onAction,
+  onLogout,
+}: {
+  userLabel: string
+  userEmail: string
+  userInitials: string
+  onOpenNotifs: () => void
+  onAction: (action: string) => void
+  onLogout: () => Promise<void>
+}) {
+  const [open, setOpen] = useState(false)
+  const ref = useRef<HTMLDivElement | null>(null)
+
+  useEffect(() => {
+    function handleOutside(event: MouseEvent) {
+      if (ref.current && !ref.current.contains(event.target as Node)) {
+        setOpen(false)
+      }
+    }
+
+    document.addEventListener('mousedown', handleOutside)
+    return () => document.removeEventListener('mousedown', handleOutside)
+  }, [])
+
+  async function handleLogout() {
+    setOpen(false)
+    await onLogout()
+  }
+
+  const menuItems = [
+    { id: 'settings', label: 'Configuración', icon: <Icon.Panel size={14} />, onClick: () => onAction('settings') },
+    { id: 'notifications', label: 'Notificaciones', icon: <Icon.Bell size={14} />, onClick: onOpenNotifs },
+    { id: 'team', label: 'Gestionar equipo', icon: <Icon.Users size={14} />, onClick: () => onAction('team') },
+  ] as const
+
+  return (
+    <div ref={ref} style={{ position: 'relative', marginLeft: 6 }}>
+      <button
+        onClick={() => setOpen((value) => !value)}
+        className="edms-nav-item"
+        title={userLabel}
+        style={{
+          display: 'flex',
+          alignItems: 'center',
+          gap: 8,
+          padding: '4px 8px 4px 4px',
+          borderRadius: 9,
+          background: open ? 'var(--bg-active)' : 'transparent',
+          border: `1px solid ${open ? 'var(--border-strong)' : 'transparent'}`,
+          minWidth: 0,
+        }}
+      >
+        <div
+          style={{
+            width: 28,
+            height: 28,
+            borderRadius: 14,
+            background: 'oklch(0.7 0.14 30)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            color: '#fff',
+            fontSize: 11,
+            fontWeight: 700,
+            flexShrink: 0,
+          }}
+        >
+          {userInitials}
+        </div>
+        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start', minWidth: 0 }}>
+          <span
+            style={{
+              maxWidth: 140,
+              whiteSpace: 'nowrap',
+              overflow: 'hidden',
+              textOverflow: 'ellipsis',
+              color: 'var(--fg)',
+              fontSize: 12.5,
+              fontWeight: 600,
+              lineHeight: 1.15,
+            }}
+          >
+            {userLabel}
+          </span>
+          <span style={{ color: 'var(--fg-dim)', fontSize: 10.5, lineHeight: 1.15 }}>
+            Mi cuenta
+          </span>
+        </div>
+        <Icon.ChevDown size={12} style={{ color: open ? 'var(--fg)' : 'var(--fg-dim)' }} />
+      </button>
+
+      {open && (
+        <div
+          style={{
+            position: 'absolute',
+            top: 'calc(100% + 8px)',
+            right: 0,
+            width: 220,
+            background: 'var(--bg-elev)',
+            border: '1px solid var(--border-strong)',
+            borderRadius: 10,
+            boxShadow: 'var(--shadow)',
+            overflow: 'hidden',
+            zIndex: 80,
+          }}
+        >
+          <div
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: 10,
+              padding: '12px 12px 10px',
+              borderBottom: '1px solid var(--border)',
+            }}
+          >
+            <div
+              style={{
+                width: 34,
+                height: 34,
+                borderRadius: 17,
+                background: 'oklch(0.7 0.14 30)',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                color: '#fff',
+                fontSize: 12,
+                fontWeight: 700,
+                flexShrink: 0,
+              }}
+            >
+              {userInitials}
+            </div>
+            <div style={{ minWidth: 0 }}>
+              <div
+                style={{
+                  color: 'var(--fg)',
+                  fontSize: 12.5,
+                  fontWeight: 600,
+                  whiteSpace: 'nowrap',
+                  overflow: 'hidden',
+                  textOverflow: 'ellipsis',
+                }}
+              >
+                {userLabel}
+              </div>
+              <div
+                style={{
+                  color: 'var(--fg-dim)',
+                  fontSize: 11,
+                  whiteSpace: 'nowrap',
+                  overflow: 'hidden',
+                  textOverflow: 'ellipsis',
+                }}
+              >
+                {userEmail}
+              </div>
+            </div>
+          </div>
+
+          <div style={{ padding: 6 }}>
+            {menuItems.map((item) => (
+              <button
+                key={item.id}
+                onClick={() => {
+                  setOpen(false)
+                  item.onClick()
+                }}
+                className="edms-nav-item"
+                style={{
+                  width: '100%',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 8,
+                  padding: '8px 10px',
+                  borderRadius: 7,
+                  color: 'var(--fg-muted)',
+                  fontSize: 12.5,
+                  textAlign: 'left',
+                }}
+              >
+                {item.icon}
+                <span>{item.label}</span>
+              </button>
+            ))}
+
+            <button
+              onClick={handleLogout}
+              className="edms-nav-item"
+              style={{
+                width: '100%',
+                display: 'flex',
+                alignItems: 'center',
+                gap: 8,
+                padding: '8px 10px',
+                borderRadius: 7,
+                color: 'var(--danger)',
+                fontSize: 12.5,
+                textAlign: 'left',
+              }}
+            >
+              <Icon.Arrow size={14} style={{ transform: 'rotate(180deg)' }} />
+              <span>Cerrar sesión</span>
+            </button>
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
 function Topbar({
   breadcrumb,
   onCrumbClick,
@@ -852,6 +1067,8 @@ function Topbar({
   notifCount,
   userLabel,
   userInitials,
+  userEmail,
+  onLogout,
 }: {
   breadcrumb: { id: string; label: string }[]
   onCrumbClick: (crumb: { id: string; label: string }) => void
@@ -865,6 +1082,8 @@ function Topbar({
   notifCount: number
   userLabel: string
   userInitials: string
+  userEmail: string
+  onLogout: () => Promise<void>
 }) {
   return (
     <div
@@ -1003,24 +1222,14 @@ function Topbar({
           </button>
         </div>
 
-        <div
-          title={userLabel}
-          style={{
-            width: 28,
-            height: 28,
-            borderRadius: 14,
-            background: 'oklch(0.7 0.14 30)',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            color: '#fff',
-            fontSize: 11,
-            fontWeight: 600,
-            marginLeft: 6,
-          }}
-        >
-          {userInitials}
-        </div>
+        <UserMenu
+          userLabel={userLabel}
+          userEmail={userEmail}
+          userInitials={userInitials}
+          onOpenNotifs={onOpenNotifs}
+          onAction={onAction}
+          onLogout={onLogout}
+        />
       </div>
     </div>
   )
@@ -2565,7 +2774,7 @@ function Toast({ toast, onClose }: { toast: string | null; onClose: () => void }
 }
 
 export default function DashboardPage() {
-  const { user } = useAuth()
+  const { user, logout } = useAuth()
   const [tweaks, setTweaks] = useState(initialTweaks)
   const [selectedView, setSelectedView] = useState<SelectedView>('inicio')
   const [selectedFolder, setSelectedFolder] = useState('root')
@@ -2585,6 +2794,7 @@ export default function DashboardPage() {
     ? userLabelFromAuth(user.first_name, user.last_name, user.email)
     : 'Laura Ibáñez'
   const currentUserInitials = user ? initialsFromLabel(currentUserLabel) : 'LI'
+  const currentUserEmail = user?.email ?? 'laura@nimbera.com'
   const firstName = currentUserLabel.split(' ')[0]
 
   useEffect(() => {
@@ -2797,6 +3007,8 @@ export default function DashboardPage() {
           notifCount={4}
           userLabel={currentUserLabel}
           userInitials={currentUserInitials}
+          userEmail={currentUserEmail}
+          onLogout={logout}
         />
 
         <div style={{ padding: '18px 18px 8px', display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between', gap: 16 }}>
