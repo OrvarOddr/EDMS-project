@@ -2,7 +2,7 @@ from datetime import datetime, timezone
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 from app.database import get_db
-from app.models import Role, UserRole, User
+from app.models import AuditEvent, Role, UserRole, User
 from app.schemas import RoleResponse, AssignRoleRequest, UserResponse
 from app.routers.users import _current_user, _to_user_response
 
@@ -40,6 +40,11 @@ def assign_role(
 
     now = datetime.now(timezone.utc)
     active_target_role = next((item for item in active_assignments if item.role_id == body.role_id), None)
+    previous_role_ids = [assignment.role_id for assignment in active_assignments]
+    previous_roles = {
+        item.id: item.code
+        for item in db.query(Role).filter(Role.id.in_(previous_role_ids)).all()
+    } if previous_role_ids else {}
 
     for assignment in active_assignments:
         if assignment is active_target_role:
@@ -47,6 +52,9 @@ def assign_role(
         assignment.revoked_at = now
         assignment.is_active = False
 
+    role_changed = active_target_role is None or any(
+        assignment is not active_target_role for assignment in active_assignments
+    )
     if not active_target_role:
         db.add(UserRole(
             user_id=body.user_id,
@@ -55,6 +63,21 @@ def assign_role(
         ))
 
     target.is_superuser = role.code == "admin"
+    if role_changed:
+        db.add(AuditEvent(
+            actor_user_id=actor.id,
+            target_user_id=target.id,
+            action="global_role_assigned",
+            resource_type="user",
+            resource_id=target.id,
+            details={
+                "source": "role_assignment",
+                "previous_roles": [previous_roles.get(role_id, role_id) for role_id in previous_role_ids],
+                "new_role": role.code,
+                "new_role_id": role.id,
+            },
+        ))
+
     db.commit()
     db.refresh(target)
 
