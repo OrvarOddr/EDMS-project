@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 from app.database import get_db
-from app.models import User, Role, UserRole
+from app.models import AuditEvent, User, Role, UserRole
 from app.schemas import CreateUserRequest, UserResponse
 from app.security import hash_password, decode_token
 from app.routers.auth import _get_active_roles
@@ -79,6 +79,19 @@ def create_user(
         assigned_by_user_id=actor.id,
     )
     db.add(assignment)
+    db.add(AuditEvent(
+        actor_user_id=actor.id,
+        target_user_id=user.id,
+        action="global_role_assigned",
+        resource_type="user",
+        resource_id=user.id,
+        details={
+            "source": "user_creation",
+            "previous_roles": [],
+            "new_role": role.code,
+            "new_role_id": role.id,
+        },
+    ))
     db.commit()
     db.refresh(user)
 
