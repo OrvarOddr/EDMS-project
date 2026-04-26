@@ -7,7 +7,7 @@ import {
   type ReactNode,
 } from 'react'
 import { useAuth } from '../context/AuthContext'
-import { createUser, listRoles, type RoleItem } from '../api/auth'
+import { assignRole, createUser, listRoles, listUsers, type RoleItem, type UserMe } from '../api/auth'
 
 type ViewMode = 'list' | 'grid'
 type DocKind = 'pdf' | 'doc' | 'sheet' | 'slide' | 'image' | 'sig'
@@ -2754,9 +2754,12 @@ function TeamManagerModal({
   onCreated: (userName: string) => void
 }) {
   const [roles, setRoles] = useState<RoleItem[]>([])
-  const [loadingRoles, setLoadingRoles] = useState(true)
+  const [users, setUsers] = useState<UserMe[]>([])
+  const [loadingTeam, setLoadingTeam] = useState(true)
   const [submitting, setSubmitting] = useState(false)
+  const [savingRoleUserId, setSavingRoleUserId] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
+  const [notice, setNotice] = useState<string | null>(null)
   const [form, setForm] = useState({
     first_name: '',
     last_name: '',
@@ -2767,16 +2770,17 @@ function TeamManagerModal({
   })
 
   useEffect(() => {
-    listRoles()
-      .then((response) => {
-        setRoles(response.data)
+    Promise.all([listRoles(), listUsers()])
+      .then(([rolesResponse, usersResponse]) => {
+        setRoles(rolesResponse.data)
+        setUsers(usersResponse.data)
         setForm((current) => ({
           ...current,
-          role_id: current.role_id || response.data[0]?.id || '',
+          role_id: current.role_id || rolesResponse.data[0]?.id || '',
         }))
       })
-      .catch((err) => setError(getApiErrorMessage(err, 'No se pudieron cargar los roles')))
-      .finally(() => setLoadingRoles(false))
+      .catch((err) => setError(getApiErrorMessage(err, 'No se pudo cargar el equipo')))
+      .finally(() => setLoadingTeam(false))
   }, [])
 
   useEffect(() => {
@@ -2788,10 +2792,32 @@ function TeamManagerModal({
     return () => document.removeEventListener('keydown', handleEscape)
   }, [onClose, submitting])
 
+  function getPrimaryRoleId(item: UserMe) {
+    const primaryRole = item.roles[0]
+    return roles.find((role) => role.code === primaryRole)?.id ?? ''
+  }
+
+  async function handleRoleChange(userId: string, roleId: string) {
+    setSavingRoleUserId(userId)
+    setError(null)
+    setNotice(null)
+
+    try {
+      const { data } = await assignRole({ user_id: userId, role_id: roleId })
+      setUsers((current) => current.map((item) => (item.id === data.id ? data : item)))
+      setNotice(`Rol actualizado para ${userLabelFromAuth(data.first_name, data.last_name, data.email)}`)
+    } catch (err) {
+      setError(getApiErrorMessage(err, 'No se pudo actualizar el rol'))
+    } finally {
+      setSavingRoleUserId(null)
+    }
+  }
+
   async function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault()
     setSubmitting(true)
     setError(null)
+    setNotice(null)
 
     try {
       const payload = {
@@ -2801,6 +2827,7 @@ function TeamManagerModal({
         email: form.email.trim(),
       }
       const { data } = await createUser(payload)
+      setUsers((current) => [data, ...current.filter((item) => item.id !== data.id)])
       onCreated(userLabelFromAuth(data.first_name, data.last_name, data.email))
       setForm({
         first_name: '',
@@ -2855,23 +2882,141 @@ function TeamManagerModal({
         <form
           onSubmit={handleSubmit}
           style={{
-            width: 'min(560px, 100%)',
+            width: 'min(880px, 100%)',
             background: 'var(--bg-elev)',
             border: '1px solid var(--border-strong)',
             borderRadius: 14,
             boxShadow: 'var(--shadow)',
             overflow: 'hidden',
             pointerEvents: 'auto',
+            maxHeight: 'calc(100vh - 48px)',
+            overflowY: 'auto',
           }}
         >
           <div style={{ padding: '16px 18px', borderBottom: '1px solid var(--border)' }}>
-            <div style={{ fontSize: 16, fontWeight: 600, color: 'var(--fg)', marginBottom: 4 }}>Crear usuario</div>
+            <div style={{ fontSize: 16, fontWeight: 600, color: 'var(--fg)', marginBottom: 4 }}>Gestionar equipo</div>
             <div style={{ fontSize: 12.5, color: 'var(--fg-muted)' }}>
-              Crea una cuenta con rol global y estado inicial para habilitar acceso al equipo.
+              Administra usuarios y roles globales del sistema.
             </div>
           </div>
 
           <div style={{ padding: 18, display: 'grid', gap: 14 }}>
+            <section style={{ display: 'grid', gap: 10 }}>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
+                <div>
+                  <div style={{ fontSize: 13.5, fontWeight: 600, color: 'var(--fg)' }}>Usuarios registrados</div>
+                  <div style={{ fontSize: 11.5, color: 'var(--fg-muted)' }}>
+                    {loadingTeam ? 'Cargando equipo...' : `${users.length} usuarios`}
+                  </div>
+                </div>
+              </div>
+
+              <div
+                style={{
+                  border: '1px solid var(--border)',
+                  borderRadius: 10,
+                  overflow: 'hidden',
+                  background: 'var(--bg-elev-2)',
+                }}
+              >
+                {loadingTeam ? (
+                  <div style={{ padding: 14, fontSize: 12.5, color: 'var(--fg-muted)' }}>Cargando usuarios...</div>
+                ) : users.length === 0 ? (
+                  <div style={{ padding: 14, fontSize: 12.5, color: 'var(--fg-muted)' }}>No hay usuarios creados.</div>
+                ) : (
+                  users.map((item) => {
+                    const label = userLabelFromAuth(item.first_name, item.last_name, item.email)
+                    const roleId = getPrimaryRoleId(item)
+                    const isSaving = savingRoleUserId === item.id
+
+                    return (
+                      <div
+                        key={item.id}
+                        style={{
+                          display: 'grid',
+                          gridTemplateColumns: 'minmax(220px, 1fr) 120px 220px',
+                          alignItems: 'center',
+                          gap: 12,
+                          padding: '10px 12px',
+                          borderBottom: item === users[users.length - 1] ? 'none' : '1px solid var(--border)',
+                        }}
+                      >
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 10, minWidth: 0 }}>
+                          <div
+                            style={{
+                              width: 30,
+                              height: 30,
+                              borderRadius: 15,
+                              background: item.is_superuser ? 'oklch(0.7 0.14 30)' : 'var(--bg-active)',
+                              color: item.is_superuser ? '#fff' : 'var(--fg)',
+                              display: 'flex',
+                              alignItems: 'center',
+                              justifyContent: 'center',
+                              fontSize: 11,
+                              fontWeight: 700,
+                              flexShrink: 0,
+                            }}
+                          >
+                            {initialsFromLabel(label)}
+                          </div>
+                          <div style={{ minWidth: 0 }}>
+                            <div style={{ color: 'var(--fg)', fontSize: 12.5, fontWeight: 600, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                              {label}
+                            </div>
+                            <div style={{ color: 'var(--fg-dim)', fontSize: 11, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                              {item.email}
+                            </div>
+                          </div>
+                        </div>
+
+                        <span
+                          style={{
+                            justifySelf: 'start',
+                            borderRadius: 999,
+                            border: '1px solid var(--border)',
+                            padding: '3px 8px',
+                            color: item.status === 'active' ? 'var(--ok)' : item.status === 'blocked' ? 'var(--danger)' : 'var(--fg-muted)',
+                            fontSize: 11,
+                            fontWeight: 600,
+                          }}
+                        >
+                          {item.status}
+                        </span>
+
+                        <select
+                          value={roleId}
+                          disabled={isSaving || roles.length === 0}
+                          onChange={(event) => handleRoleChange(item.id, event.target.value)}
+                          style={{
+                            ...fieldStyle,
+                            padding: '8px 10px',
+                            fontSize: 12.5,
+                            opacity: isSaving ? 0.7 : 1,
+                          }}
+                        >
+                          {roles.map((role) => (
+                            <option key={role.id} value={role.id}>
+                              {isSaving ? 'Actualizando...' : role.name}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+                    )
+                  })
+                )}
+              </div>
+            </section>
+
+            <div style={{ height: 1, background: 'var(--border)' }} />
+
+            <section style={{ display: 'grid', gap: 14 }}>
+              <div>
+                <div style={{ fontSize: 13.5, fontWeight: 600, color: 'var(--fg)' }}>Nuevo usuario</div>
+                <div style={{ fontSize: 11.5, color: 'var(--fg-muted)' }}>
+                  Crea una cuenta con rol global y estado inicial.
+                </div>
+              </div>
+
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
               <label style={{ display: 'grid', gap: 6 }}>
                 <span style={{ fontSize: 12.5, color: 'var(--fg-muted)' }}>Nombre</span>
@@ -2922,12 +3067,12 @@ function TeamManagerModal({
               </label>
               <label style={{ display: 'grid', gap: 6 }}>
                 <span style={{ fontSize: 12.5, color: 'var(--fg-muted)' }}>Rol</span>
-                <select
-                  required
-                  disabled={loadingRoles}
-                  value={form.role_id}
-                  onChange={(event) => setForm((current) => ({ ...current, role_id: event.target.value }))}
-                  style={fieldStyle}
+                  <select
+                    required
+                    disabled={loadingTeam}
+                    value={form.role_id}
+                    onChange={(event) => setForm((current) => ({ ...current, role_id: event.target.value }))}
+                    style={fieldStyle}
                 >
                   {roles.map((role) => (
                     <option key={role.id} value={role.id}>
@@ -2954,6 +3099,7 @@ function TeamManagerModal({
                 </select>
               </label>
             </div>
+            </section>
 
             <div
               style={{
@@ -2967,6 +3113,21 @@ function TeamManagerModal({
             >
               El usuario creado solo podrá iniciar sesión si queda en estado <strong style={{ color: 'var(--fg)' }}>Activo</strong>.
             </div>
+
+            {notice && (
+              <div
+                style={{
+                  borderRadius: 8,
+                  border: '1px solid color-mix(in oklch, var(--ok) 55%, var(--border))',
+                  background: 'color-mix(in oklch, var(--ok) 10%, var(--bg-elev))',
+                  color: 'var(--fg)',
+                  padding: '10px 12px',
+                  fontSize: 12.5,
+                }}
+              >
+                {notice}
+              </div>
+            )}
 
             {error && (
               <div
@@ -3010,7 +3171,7 @@ function TeamManagerModal({
             </button>
             <button
               type="submit"
-              disabled={submitting || loadingRoles || !form.role_id}
+              disabled={submitting || loadingTeam || !form.role_id}
               style={{
                 borderRadius: 8,
                 border: '1px solid color-mix(in oklch, var(--accent) 60%, transparent)',
@@ -3019,7 +3180,7 @@ function TeamManagerModal({
                 padding: '9px 14px',
                 fontSize: 12.5,
                 fontWeight: 600,
-                opacity: submitting || loadingRoles || !form.role_id ? 0.7 : 1,
+                opacity: submitting || loadingTeam || !form.role_id ? 0.7 : 1,
               }}
             >
               {submitting ? 'Creando...' : 'Crear usuario'}

@@ -31,6 +31,19 @@ def _current_user(
     return user
 
 
+def _to_user_response(db: Session, user: User) -> UserResponse:
+    roles = _get_active_roles(db, user.id)
+    return UserResponse(
+        id=user.id,
+        email=user.email,
+        first_name=user.first_name,
+        last_name=user.last_name,
+        status=user.status,
+        is_superuser=user.is_superuser,
+        roles=roles,
+    )
+
+
 @router.post("", response_model=UserResponse, status_code=status.HTTP_201_CREATED)
 def create_user(
     body: CreateUserRequest,
@@ -69,27 +82,23 @@ def create_user(
     db.commit()
     db.refresh(user)
 
-    roles = [role.code]
-    return UserResponse(
-        id=user.id,
-        email=user.email,
-        first_name=user.first_name,
-        last_name=user.last_name,
-        status=user.status,
-        is_superuser=user.is_superuser,
-        roles=roles,
+    return _to_user_response(db, user)
+
+
+@router.get("", response_model=list[UserResponse])
+def list_users(db: Session = Depends(get_db), actor: User = Depends(_current_user)):
+    if not actor.is_superuser:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Solo superusuarios pueden listar usuarios")
+
+    users = (
+        db.query(User)
+        .filter(User.deleted_at.is_(None))
+        .order_by(User.first_name.asc(), User.last_name.asc(), User.email.asc())
+        .all()
     )
+    return [_to_user_response(db, user) for user in users]
 
 
 @router.get("/me", response_model=UserResponse)
 def get_me(db: Session = Depends(get_db), actor: User = Depends(_current_user)):
-    roles = _get_active_roles(db, actor.id)
-    return UserResponse(
-        id=actor.id,
-        email=actor.email,
-        first_name=actor.first_name,
-        last_name=actor.last_name,
-        status=actor.status,
-        is_superuser=actor.is_superuser,
-        roles=roles,
-    )
+    return _to_user_response(db, actor)

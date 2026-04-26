@@ -32,6 +32,11 @@ export interface CreateUserPayload {
   status: 'active' | 'inactive' | 'blocked'
 }
 
+export interface AssignRolePayload {
+  user_id: string
+  role_id: string
+}
+
 export const login = (email: string, password: string) =>
   client.post<TokenResponse>('/auth/login', { email, password })
 
@@ -50,3 +55,9 @@ export const listRoles = () =>
 
 export const createUser = (payload: CreateUserPayload) =>
   client.post<UserMe>('/users', payload)
+
+export const listUsers = () =>
+  client.get<UserMe[]>('/users')
+
+export const assignRole = (payload: AssignRolePayload) =>
+  client.post<UserMe>('/roles/assign', payload)
