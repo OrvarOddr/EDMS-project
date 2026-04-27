@@ -328,6 +328,24 @@ function docKindFromMime(mimeType: string): DocKind {
   return 'doc'
 }
 
+function fileKindLabel(mimeType: string) {
+  if (mimeType === 'application/pdf') return 'PDF'
+  if (mimeType === 'image/png') return 'PNG'
+  if (mimeType === 'image/jpeg') return 'JPG'
+  return 'ARCH'
+}
+
+function fileTone(mimeType: string) {
+  if (mimeType === 'application/pdf') return '#ff6b6b'
+  if (mimeType.startsWith('image/')) return '#34d399'
+  return '#6aa8ff'
+}
+
+function shortChecksum(value?: string | null) {
+  if (!value) return 'pendiente'
+  return value.length > 18 ? `${value.slice(0, 12)}...${value.slice(-6)}` : value
+}
+
 async function fetchFileLists() {
   const [unassignedResponse, trashedResponse] = await Promise.all([
     listUnassignedFiles(),
@@ -2617,6 +2635,208 @@ const btnStyleGhost: CSSProperties = {
   border: '1px solid var(--border)',
 }
 
+function FileDetailDrawer({
+  file,
+  busy,
+  uploaderLabel,
+  onClose,
+  onTrash,
+  onCreateDocument,
+}: {
+  file: StoredFileItem | null
+  busy: boolean
+  uploaderLabel: string
+  onClose: () => void
+  onTrash: (file: StoredFileItem) => void
+  onCreateDocument: (file: StoredFileItem) => void
+}) {
+  useEffect(() => {
+    if (!file) return
+    function handleEscape(event: KeyboardEvent) {
+      if (event.key === 'Escape') onClose()
+    }
+    document.addEventListener('keydown', handleEscape)
+    return () => document.removeEventListener('keydown', handleEscape)
+  }, [file, onClose])
+
+  if (!file) return null
+
+  const label = fileKindLabel(file.mime_type)
+  const tone = fileTone(file.mime_type)
+  const uploadedAt = formatUploadedAt(file.uploaded_at)
+
+  return (
+    <aside
+      style={{
+        width: 380,
+        height: '100%',
+        flexShrink: 0,
+        background: 'var(--bg-elev)',
+        borderLeft: '1px solid var(--border)',
+        display: 'flex',
+        flexDirection: 'column',
+        animation: 'edms-slide-in 0.18s ease-out',
+      }}
+    >
+      <div style={{ padding: '12px 14px', display: 'flex', alignItems: 'center', gap: 8, borderBottom: '1px solid var(--border)' }}>
+        <span
+          style={{
+            fontFamily: "'JetBrains Mono', ui-monospace, monospace",
+            fontSize: 10,
+            fontWeight: 700,
+            padding: '3px 7px',
+            borderRadius: 5,
+            color: tone,
+            background: `color-mix(in oklch, ${tone} 16%, var(--bg-elev-2))`,
+          }}
+        >
+          {label}
+        </span>
+        <span style={{ flex: 1, fontSize: 12, color: 'var(--fg-muted)' }}>Archivo sin asignar</span>
+        <button className="edms-nav-item" title="Vista previa" style={{ width: 26, height: 26, borderRadius: 5, display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--fg-muted)' }}>
+          <Icon.Eye size={14} />
+        </button>
+        <button onClick={onClose} className="edms-nav-item" title="Cerrar" style={{ width: 26, height: 26, borderRadius: 5, display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--fg-muted)' }}>
+          <Icon.Close size={14} />
+        </button>
+      </div>
+
+      <div style={{ flex: 1, overflow: 'auto' }}>
+        <div style={{ padding: '14px 14px 0' }}>
+          <div
+            style={{
+              aspectRatio: file.mime_type.startsWith('image/') ? '16 / 10' : '8.5 / 11',
+              borderRadius: 9,
+              overflow: 'hidden',
+              background: `linear-gradient(135deg, color-mix(in oklch, ${tone} 18%, var(--bg-elev-2)), var(--bg-elev-2))`,
+              border: '1px solid var(--border)',
+              position: 'relative',
+              padding: 18,
+            }}
+          >
+            <svg width="100%" height="100%" style={{ position: 'absolute', inset: 0, opacity: 0.38 }}>
+              <defs>
+                <pattern id={`stripes-file-${file.id}`} patternUnits="userSpaceOnUse" width="8" height="8" patternTransform="rotate(45)">
+                  <line x1="0" y1="0" x2="0" y2="8" stroke={tone} strokeWidth="1" opacity="0.3" />
+                </pattern>
+              </defs>
+              <rect width="100%" height="100%" fill={`url(#stripes-file-${file.id})`} />
+            </svg>
+            <div style={{ position: 'relative', display: 'flex', flexDirection: 'column', gap: 7 }}>
+              <div style={{ height: 9, width: '76%', background: 'color-mix(in oklch, currentColor 35%, transparent)', borderRadius: 2, color: tone }} />
+              <div style={{ height: 4, width: '48%', background: 'color-mix(in oklch, currentColor 24%, transparent)', borderRadius: 1, color: tone, marginBottom: 12 }} />
+              {file.mime_type.startsWith('image/')
+                ? (
+                  <div
+                    style={{
+                      minHeight: 150,
+                      borderRadius: 8,
+                      border: `1px solid color-mix(in oklch, ${tone} 34%, transparent)`,
+                      background: `radial-gradient(circle at 25% 25%, color-mix(in oklch, ${tone} 28%, transparent), transparent 30%), radial-gradient(circle at 70% 60%, color-mix(in oklch, ${tone} 18%, transparent), transparent 34%)`,
+                    }}
+                  />
+                )
+                : Array.from({ length: 9 }).map((_, index) => (
+                  <div
+                    key={index}
+                    style={{
+                      height: 4,
+                      width: `${88 - (index % 4) * 9}%`,
+                      background: 'color-mix(in oklch, currentColor 16%, transparent)',
+                      borderRadius: 1,
+                      color: tone,
+                    }}
+                  />
+                ))}
+            </div>
+            <div
+              style={{
+                position: 'absolute',
+                bottom: 10,
+                right: 12,
+                fontFamily: "'JetBrains Mono', ui-monospace, monospace",
+                fontSize: 10,
+                color: tone,
+                opacity: 0.72,
+              }}
+            >
+              Vista previa · archivo suelto
+            </div>
+          </div>
+        </div>
+
+        <div style={{ padding: 14 }}>
+          <div style={{ fontSize: 15, fontWeight: 600, color: 'var(--fg)', marginBottom: 6, lineHeight: 1.3, wordBreak: 'break-word' }}>
+            {file.original_filename}
+          </div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12 }}>
+            <span style={{ color: 'var(--fg-muted)', fontSize: 12 }}>Sin documento asociado</span>
+            <span style={{ color: 'var(--fg-dim)', fontSize: 11 }}>·</span>
+            <span style={{ color: 'var(--fg-muted)', fontSize: 12 }}>{uploadedAt}</span>
+          </div>
+
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 6, marginBottom: 14 }}>
+            <button
+              className="edms-button edms-button-primary"
+              disabled={busy}
+              onClick={() => onCreateDocument(file)}
+              style={{ ...btnStylePrimary, opacity: busy ? 0.7 : 1 }}
+            >
+              <Icon.File size={13} /> Crear documento
+            </button>
+            <button
+              className="edms-button"
+              disabled={busy}
+              onClick={() => onTrash(file)}
+              style={{ ...btnStyleGhost, color: 'var(--danger)', opacity: busy ? 0.7 : 1 }}
+            >
+              <Icon.Trash size={13} /> Papelera
+            </button>
+          </div>
+
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 0 }}>
+            {[
+              ['Subido por', uploaderLabel],
+              ['Tipo MIME', file.mime_type],
+              ['Tipo visible', label],
+              ['Tamaño', formatFileSize(file.size_bytes)],
+              ['Fecha de carga', uploadedAt],
+              ['Estado', file.upload_status],
+              ['Checksum', <span style={{ fontFamily: "'JetBrains Mono', ui-monospace, monospace" }}>{shortChecksum(file.checksum)}</span>],
+              ['ID archivo', <span style={{ fontFamily: "'JetBrains Mono', ui-monospace, monospace" }}>{file.id.slice(0, 8)}</span>],
+              ['ID carga', <span style={{ fontFamily: "'JetBrains Mono', ui-monospace, monospace" }}>{file.upload_id.slice(0, 8)}</span>],
+            ].map(([labelText, value], index) => (
+              <div
+                key={String(labelText)}
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 12,
+                  padding: '8px 0',
+                  borderTop: index === 0 ? 'none' : '1px solid var(--border)',
+                  fontSize: 12.5,
+                }}
+              >
+                <span style={{ width: 96, color: 'var(--fg-dim)', flexShrink: 0 }}>{labelText}</span>
+                <span style={{ color: 'var(--fg)', flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis' }}>{value as ReactNode}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        <div style={{ padding: '0 14px 16px' }}>
+          <div style={{ fontSize: 11, color: 'var(--fg-dim)', letterSpacing: '0.06em', textTransform: 'uppercase', fontWeight: 600, marginBottom: 8, display: 'flex', alignItems: 'center', gap: 6 }}>
+            <Icon.Branch size={11} /> Siguiente paso
+          </div>
+          <div style={{ border: '1px solid var(--border)', borderRadius: 8, background: 'var(--bg-elev-2)', padding: 11, color: 'var(--fg-muted)', fontSize: 12.5, lineHeight: 1.5 }}>
+            Este archivo esta guardado en MinIO, pero todavia no forma parte del expediente documental. Puedes crear un documento desde este archivo o enviarlo a papelera si fue una carga equivocada.
+          </div>
+        </div>
+      </div>
+    </aside>
+  )
+}
+
 function ContextMenu({
   ctx,
   onClose,
@@ -3102,23 +3322,41 @@ function UploadFileModal({
 function FileRow({
   file,
   busy,
+  active,
+  onSelect,
   onTrash,
   onCreateDocument,
 }: {
   file: StoredFileItem
   busy?: boolean
+  active?: boolean
+  onSelect?: (file: StoredFileItem) => void
   onTrash?: (file: StoredFileItem) => void
   onCreateDocument?: (file: StoredFileItem) => void
 }) {
+  const tone = fileTone(file.mime_type)
+
   return (
     <div
+      role={onSelect ? 'button' : undefined}
+      tabIndex={onSelect ? 0 : undefined}
+      onClick={onSelect ? () => onSelect(file) : undefined}
+      onKeyDown={onSelect ? (event) => {
+        if (event.key === 'Enter' || event.key === ' ') {
+          event.preventDefault()
+          onSelect(file)
+        }
+      } : undefined}
+      className={onSelect ? 'edms-nav-item' : undefined}
       style={{
         display: 'grid',
-        gridTemplateColumns: 'minmax(220px, 1fr) auto',
+        gridTemplateColumns: 'minmax(240px, 1.4fr) minmax(110px, 0.5fr) minmax(130px, 0.6fr) auto',
         alignItems: 'center',
         gap: 12,
-        padding: '11px 12px',
+        padding: '11px 14px',
         borderTop: '1px solid var(--border)',
+        background: active ? 'var(--bg-active)' : 'transparent',
+        cursor: onSelect ? 'pointer' : 'default',
       }}
     >
       <div style={{ display: 'flex', alignItems: 'center', gap: 10, minWidth: 0 }}>
@@ -3127,25 +3365,31 @@ function FileRow({
             width: 34,
             height: 34,
             borderRadius: 8,
-            background: 'var(--accent-soft)',
-            color: 'var(--accent)',
+            background: `color-mix(in oklch, ${tone} 16%, var(--bg-elev-2))`,
+            color: tone,
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'center',
             flexShrink: 0,
+            fontFamily: "'JetBrains Mono', ui-monospace, monospace",
+            fontSize: 9,
+            fontWeight: 700,
           }}
         >
-          <Icon.File size={15} />
+          {fileKindLabel(file.mime_type)}
         </div>
         <div style={{ minWidth: 0 }}>
           <div style={{ color: 'var(--fg)', fontSize: 12.5, fontWeight: 600, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
             {file.original_filename}
           </div>
           <div style={{ color: 'var(--fg-muted)', fontSize: 11.5 }}>
-            {formatFileSize(file.size_bytes)} · {formatUploadedAt(file.uploaded_at)}
+            Sin documento asociado
           </div>
         </div>
       </div>
+
+      <div style={{ color: 'var(--fg-muted)', fontSize: 12 }}>{formatFileSize(file.size_bytes)}</div>
+      <div style={{ color: 'var(--fg-muted)', fontSize: 12 }}>{formatUploadedAt(file.uploaded_at)}</div>
 
       <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
         {onCreateDocument && (
@@ -3153,7 +3397,10 @@ function FileRow({
             type="button"
             className="edms-button edms-button-primary"
             disabled={busy}
-            onClick={() => onCreateDocument(file)}
+            onClick={(event) => {
+              event.stopPropagation()
+              onCreateDocument(file)
+            }}
             style={{
               borderRadius: 8,
               border: '1px solid color-mix(in oklch, var(--accent) 60%, transparent)',
@@ -3173,7 +3420,10 @@ function FileRow({
             type="button"
             className="edms-button"
             disabled={busy}
-            onClick={() => onTrash(file)}
+            onClick={(event) => {
+              event.stopPropagation()
+              onTrash(file)
+            }}
             title="Enviar a papelera"
             style={{
               width: 32,
@@ -3200,25 +3450,36 @@ function UnassignedFilesPanel({
   files,
   loading,
   busyFileId,
+  selectedFileId,
+  onSelect,
   onTrash,
   onCreateDocument,
 }: {
   files: StoredFileItem[]
   loading: boolean
   busyFileId: string | null
+  selectedFileId: string | null
+  onSelect: (file: StoredFileItem) => void
   onTrash: (file: StoredFileItem) => void
   onCreateDocument: (file: StoredFileItem) => void
 }) {
   return (
     <div style={{ flex: 1, overflow: 'auto', padding: '14px 18px 24px' }}>
       <div style={{ background: 'var(--bg-elev)', border: '1px solid var(--border)', borderRadius: 10, overflow: 'hidden' }}>
-        <div style={{ padding: '12px 14px' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 14, fontWeight: 600, color: 'var(--fg)' }}>
-            <Icon.File size={15} />
-            Archivos sin asignar
-          </div>
-          <div style={{ marginTop: 3, fontSize: 12, color: 'var(--fg-muted)' }}>
-            Archivos cargados que aun no pertenecen a un documento.
+        <div style={{ padding: '14px 16px' }}>
+          <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 12 }}>
+            <div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 15, fontWeight: 600, color: 'var(--fg)' }}>
+                <Icon.File size={15} />
+                Archivos sin asignar
+              </div>
+              <div style={{ marginTop: 3, fontSize: 12, color: 'var(--fg-muted)' }}>
+                Archivos cargados que aun no pertenecen a un documento.
+              </div>
+            </div>
+            <span style={{ color: 'var(--fg-dim)', fontSize: 12, fontVariantNumeric: 'tabular-nums' }}>
+              {files.length} pendiente{files.length === 1 ? '' : 's'}
+            </span>
           </div>
         </div>
         {loading ? (
@@ -3228,15 +3489,37 @@ function UnassignedFilesPanel({
             No hay archivos sueltos. Cuando subas archivos sin documento apareceran aqui.
           </div>
         ) : (
-          files.map((file) => (
-            <FileRow
-              key={file.id}
-              file={file}
-              busy={busyFileId === file.id}
-              onTrash={onTrash}
-              onCreateDocument={onCreateDocument}
-            />
-          ))
+          <>
+            <div
+              style={{
+                display: 'grid',
+                gridTemplateColumns: 'minmax(240px, 1.4fr) minmax(110px, 0.5fr) minmax(130px, 0.6fr) auto',
+                gap: 12,
+                padding: '8px 14px',
+                borderTop: '1px solid var(--border)',
+                color: 'var(--fg-dim)',
+                fontSize: 11,
+                letterSpacing: '0.04em',
+                textTransform: 'uppercase',
+              }}
+            >
+              <span>Archivo</span>
+              <span>Tamaño</span>
+              <span>Cargado</span>
+              <span style={{ width: 154 }}>Acciones</span>
+            </div>
+            {files.map((file) => (
+              <FileRow
+                key={file.id}
+                file={file}
+                busy={busyFileId === file.id}
+                active={selectedFileId === file.id}
+                onSelect={onSelect}
+                onTrash={onTrash}
+                onCreateDocument={onCreateDocument}
+              />
+            ))}
+          </>
         )}
       </div>
     </div>
@@ -3768,6 +4051,7 @@ export default function DashboardPage() {
   const [uploadInitialFiles, setUploadInitialFiles] = useState<File[]>([])
   const [unassignedFiles, setUnassignedFiles] = useState<StoredFileItem[]>([])
   const [trashedFiles, setTrashedFiles] = useState<StoredFileItem[]>([])
+  const [selectedUnassignedFileId, setSelectedUnassignedFileId] = useState<string | null>(null)
   const [createdDocs, setCreatedDocs] = useState<DocumentItem[]>([])
   const [loadingFileLists, setLoadingFileLists] = useState(true)
   const [busyFileId, setBusyFileId] = useState<string | null>(null)
@@ -3782,6 +4066,10 @@ export default function DashboardPage() {
   const currentUserEmail = user?.email ?? 'laura@nimbera.com'
   const firstName = currentUserLabel.split(' ')[0]
   const allDocs = useMemo(() => [...createdDocs, ...dashboardData.docs], [createdDocs])
+  const selectedUnassignedFile = useMemo(
+    () => unassignedFiles.find((file) => file.id === selectedUnassignedFileId) ?? null,
+    [selectedUnassignedFileId, unassignedFiles],
+  )
 
   useEffect(() => {
     document.documentElement.setAttribute('data-theme', tweaks.theme)
@@ -3906,6 +4194,7 @@ export default function DashboardPage() {
       const { data } = await moveFileToTrash(file.id)
       setUnassignedFiles((current) => current.filter((item) => item.id !== file.id))
       setTrashedFiles((current) => [data, ...current.filter((item) => item.id !== data.id)])
+      if (selectedUnassignedFileId === file.id) setSelectedUnassignedFileId(null)
       setToast(`${file.original_filename} enviado a papelera`)
     } catch (err) {
       setToast(getApiErrorMessage(err, 'No se pudo enviar el archivo a papelera'))
@@ -3919,6 +4208,7 @@ export default function DashboardPage() {
     try {
       const { data } = await createDocumentFromFile(file.id)
       setUnassignedFiles((current) => current.filter((item) => item.id !== file.id))
+      if (selectedUnassignedFileId === file.id) setSelectedUnassignedFileId(null)
       setCreatedDocs((current) => [
         {
           id: data.document_id,
@@ -4059,6 +4349,7 @@ export default function DashboardPage() {
           setSelectedView(view)
           setSelected(new Set())
           setSearch('')
+          if (view !== 'archivos-sin-asignar') setSelectedUnassignedFileId(null)
         }}
         selectedFolder={selectedFolder}
         onSelectFolder={setSelectedFolder}
@@ -4221,6 +4512,8 @@ export default function DashboardPage() {
                 files={unassignedFiles}
                 loading={loadingFileLists}
                 busyFileId={busyFileId}
+                selectedFileId={selectedUnassignedFileId}
+                onSelect={(file) => setSelectedUnassignedFileId(file.id)}
                 onTrash={handleTrashFile}
                 onCreateDocument={handleCreateDocumentFromFile}
               />
@@ -4262,6 +4555,14 @@ export default function DashboardPage() {
       </main>
 
       <DetailDrawer doc={openDocObj} onClose={() => setOpenDocId(null)} />
+      <FileDetailDrawer
+        file={selectedView === 'archivos-sin-asignar' ? selectedUnassignedFile : null}
+        busy={selectedUnassignedFile ? busyFileId === selectedUnassignedFile.id : false}
+        uploaderLabel={currentUserLabel}
+        onClose={() => setSelectedUnassignedFileId(null)}
+        onTrash={handleTrashFile}
+        onCreateDocument={handleCreateDocumentFromFile}
+      />
       <ContextMenu ctx={ctxMenu} onClose={() => setCtxMenu(null)} onAction={handleAction} />
       <NotifPopover open={notifOpen} onClose={() => setNotifOpen(false)} />
       <DropZoneOverlay active={dragging} />
