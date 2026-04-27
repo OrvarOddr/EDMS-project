@@ -8,6 +8,7 @@ import {
 } from 'react'
 import { useAuth } from '../context/AuthContext'
 import { assignRole, createUser, listRoles, listUsers, type RoleItem, type UserMe } from '../api/auth'
+import { uploadDocumentFile } from '../api/files'
 
 type ViewMode = 'list' | 'grid'
 type DocKind = 'pdf' | 'doc' | 'sheet' | 'slide' | 'image' | 'sig'
@@ -2746,6 +2747,255 @@ function DropZoneOverlay({ active }: { active: boolean }) {
   )
 }
 
+function UploadFileModal({
+  docs,
+  defaultDocId,
+  initialFile,
+  onClose,
+  onUploaded,
+}: {
+  docs: DocumentItem[]
+  defaultDocId: string | null
+  initialFile: File | null
+  onClose: () => void
+  onUploaded: (message: string) => void
+}) {
+  const [documentId, setDocumentId] = useState(defaultDocId ?? docs[0]?.id ?? '')
+  const [selectedFile, setSelectedFile] = useState<File | null>(initialFile)
+  const [versionComment, setVersionComment] = useState('')
+  const [submitting, setSubmitting] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+
+  async function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    if (!selectedFile) {
+      setError('Selecciona un archivo para subir')
+      return
+    }
+    if (!documentId) {
+      setError('Selecciona el documento al que se asociara el archivo')
+      return
+    }
+
+    setSubmitting(true)
+    setError(null)
+    try {
+      const { data } = await uploadDocumentFile({
+        file: selectedFile,
+        document_id: documentId,
+        version_comment: versionComment,
+      })
+      const doc = docs.find((item) => item.id === documentId)
+      onUploaded(`Archivo subido a ${doc?.name ?? 'documento'} · v${data.version_number ?? 1}`)
+      onClose()
+    } catch (err) {
+      setError(getApiErrorMessage(err, 'No se pudo subir el archivo'))
+    } finally {
+      setSubmitting(false)
+    }
+  }
+
+  const fieldStyle: CSSProperties = {
+    width: '100%',
+    borderRadius: 8,
+    border: '1px solid var(--border)',
+    background: 'var(--bg-elev-2)',
+    color: 'var(--fg)',
+    padding: '10px 12px',
+    fontSize: 13,
+    outline: 'none',
+  }
+
+  return (
+    <>
+      <div
+        onClick={() => !submitting && onClose()}
+        style={{
+          position: 'fixed',
+          inset: 0,
+          zIndex: 120,
+          background: 'oklch(0 0 0 / 0.56)',
+          backdropFilter: 'blur(10px)',
+          pointerEvents: 'auto',
+        }}
+      />
+      <div
+        role="dialog"
+        aria-modal="true"
+        style={{
+          position: 'fixed',
+          inset: 0,
+          zIndex: 121,
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          padding: 24,
+          pointerEvents: 'none',
+        }}
+      >
+        <form
+          onSubmit={handleSubmit}
+          style={{
+            width: 'min(560px, 100%)',
+            background: 'var(--bg-elev)',
+            border: '1px solid var(--border-strong)',
+            borderRadius: 14,
+            boxShadow: 'var(--shadow)',
+            overflow: 'hidden',
+            pointerEvents: 'auto',
+          }}
+        >
+          <div style={{ padding: '16px 18px', borderBottom: '1px solid var(--border)' }}>
+            <div style={{ fontSize: 16, fontWeight: 600, color: 'var(--fg)', marginBottom: 4 }}>Cargar archivo</div>
+            <div style={{ fontSize: 12.5, color: 'var(--fg-muted)' }}>
+              Adjunta el archivo principal y genera una version logica del documento.
+            </div>
+          </div>
+
+          <div style={{ padding: 18, display: 'grid', gap: 14 }}>
+            <label style={{ display: 'grid', gap: 6 }}>
+              <span style={{ fontSize: 12.5, color: 'var(--fg-muted)' }}>Documento</span>
+              <select value={documentId} onChange={(event) => setDocumentId(event.target.value)} style={fieldStyle} required>
+                {docs.map((doc) => (
+                  <option key={doc.id} value={doc.id}>
+                    {doc.name}
+                  </option>
+                ))}
+              </select>
+            </label>
+
+            <label
+              style={{
+                display: 'grid',
+                gap: 10,
+                border: '1px dashed var(--border-strong)',
+                borderRadius: 12,
+                background: 'var(--bg-elev-2)',
+                padding: 16,
+                cursor: submitting ? 'not-allowed' : 'pointer',
+              }}
+            >
+              <input
+                type="file"
+                accept="application/pdf,image/png,image/jpeg"
+                disabled={submitting}
+                onChange={(event) => setSelectedFile(event.target.files?.[0] ?? null)}
+                style={{ display: 'none' }}
+              />
+              <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                <div
+                  style={{
+                    width: 38,
+                    height: 38,
+                    borderRadius: 10,
+                    background: 'var(--accent-soft)',
+                    color: 'var(--accent)',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                  }}
+                >
+                  <Icon.Upload size={18} />
+                </div>
+                <div style={{ minWidth: 0 }}>
+                  <div style={{ color: 'var(--fg)', fontSize: 13.5, fontWeight: 600 }}>
+                    {selectedFile ? selectedFile.name : 'Seleccionar archivo'}
+                  </div>
+                  <div style={{ color: 'var(--fg-muted)', fontSize: 12 }}>
+                    PDF, PNG o JPG. Maximo 10 MB.
+                  </div>
+                </div>
+              </div>
+            </label>
+
+            <label style={{ display: 'grid', gap: 6 }}>
+              <span style={{ fontSize: 12.5, color: 'var(--fg-muted)' }}>Comentario de version</span>
+              <textarea
+                value={versionComment}
+                onChange={(event) => setVersionComment(event.target.value)}
+                placeholder="Ej: archivo principal inicial"
+                rows={3}
+                style={{ ...fieldStyle, resize: 'vertical' }}
+              />
+            </label>
+
+            <div
+              style={{
+                borderRadius: 8,
+                border: '1px solid var(--border)',
+                background: 'var(--bg-elev-2)',
+                color: 'var(--fg-muted)',
+                padding: '10px 12px',
+                fontSize: 12.5,
+                lineHeight: 1.5,
+              }}
+            >
+              El backend valida tipo y tamano, almacena el binario en MinIO y registra metadata en file-service.
+            </div>
+
+            {error && (
+              <div
+                style={{
+                  borderRadius: 8,
+                  border: '1px solid color-mix(in oklch, var(--danger) 55%, var(--border))',
+                  background: 'color-mix(in oklch, var(--danger) 12%, var(--bg-elev))',
+                  color: 'var(--danger)',
+                  padding: '10px 12px',
+                  fontSize: 12.5,
+                }}
+              >
+                {error}
+              </div>
+            )}
+          </div>
+
+          <div
+            style={{
+              padding: '14px 18px',
+              borderTop: '1px solid var(--border)',
+              display: 'flex',
+              justifyContent: 'flex-end',
+              gap: 10,
+            }}
+          >
+            <button
+              type="button"
+              onClick={onClose}
+              disabled={submitting}
+              style={{
+                borderRadius: 8,
+                border: '1px solid var(--border)',
+                background: 'var(--bg-elev-2)',
+                color: 'var(--fg-muted)',
+                padding: '9px 14px',
+                fontSize: 12.5,
+              }}
+            >
+              Cancelar
+            </button>
+            <button
+              type="submit"
+              disabled={submitting || !selectedFile || !documentId}
+              style={{
+                borderRadius: 8,
+                border: '1px solid color-mix(in oklch, var(--accent) 60%, transparent)',
+                background: 'var(--accent)',
+                color: 'var(--accent-fg)',
+                padding: '9px 14px',
+                fontSize: 12.5,
+                fontWeight: 600,
+                opacity: submitting || !selectedFile || !documentId ? 0.7 : 1,
+              }}
+            >
+              {submitting ? 'Subiendo...' : 'Subir archivo'}
+            </button>
+          </div>
+        </form>
+      </div>
+    </>
+  )
+}
+
 function TeamManagerModal({
   onClose,
   onCreated,
@@ -3239,6 +3489,9 @@ export default function DashboardPage() {
   const [ctxMenu, setCtxMenu] = useState<ContextMenuState | null>(null)
   const [notifOpen, setNotifOpen] = useState(false)
   const [teamModalOpen, setTeamModalOpen] = useState(false)
+  const [uploadModalOpen, setUploadModalOpen] = useState(false)
+  const [uploadInitialFile, setUploadInitialFile] = useState<File | null>(null)
+  const [uploadDocumentId, setUploadDocumentId] = useState<string | null>(null)
   const [dragging, setDragging] = useState(false)
   const [toast, setToast] = useState<string | null>(null)
   const dragCounter = useRef(0)
@@ -3332,6 +3585,10 @@ export default function DashboardPage() {
     setCtxMenu({ x: event.clientX, y: event.clientY, docId })
   }
 
+  function getDefaultUploadDocumentId(docId?: string) {
+    return docId ?? [...selected][0] ?? openDocId ?? visibleDocs[0]?.id ?? dashboardData.docs[0]?.id ?? null
+  }
+
   function handleAction(action: string, docId?: string) {
     if (action === 'team') {
       if (!user?.is_superuser) {
@@ -3342,8 +3599,14 @@ export default function DashboardPage() {
       return
     }
 
+    if (action === 'upload') {
+      setUploadInitialFile(null)
+      setUploadDocumentId(getDefaultUploadDocumentId(docId))
+      setUploadModalOpen(true)
+      return
+    }
+
     const messages: Record<string, string> = {
-      upload: 'Selecciona archivos para subir',
       new: 'Nuevo documento creado',
       download: 'Descarga iniciada',
       share: 'Enlace copiado al portapapeles',
@@ -3392,7 +3655,9 @@ export default function DashboardPage() {
       dragCounter.current = 0
       setDragging(false)
       if (event.dataTransfer?.files?.length) {
-        setToast(`${event.dataTransfer.files.length} archivos subidos`)
+        setUploadInitialFile(event.dataTransfer.files[0] ?? null)
+        setUploadDocumentId([...selected][0] ?? openDocId ?? visibleDocs[0]?.id ?? dashboardData.docs[0]?.id ?? null)
+        setUploadModalOpen(true)
       }
     }
 
@@ -3407,7 +3672,7 @@ export default function DashboardPage() {
       window.removeEventListener('dragleave', onLeave)
       window.removeEventListener('drop', onDrop)
     }
-  }, [])
+  }, [openDocId, selected, visibleDocs])
 
   useEffect(() => {
     function handleKey(event: KeyboardEvent) {
@@ -3636,6 +3901,18 @@ export default function DashboardPage() {
             setTeamModalOpen(false)
             setToast(`Usuario ${userName} creado`)
           }}
+        />
+      )}
+      {uploadModalOpen && (
+        <UploadFileModal
+          docs={dashboardData.docs}
+          defaultDocId={uploadDocumentId}
+          initialFile={uploadInitialFile}
+          onClose={() => {
+            setUploadModalOpen(false)
+            setUploadInitialFile(null)
+          }}
+          onUploaded={setToast}
         />
       )}
       <Toast toast={toast} onClose={() => setToast(null)} />
