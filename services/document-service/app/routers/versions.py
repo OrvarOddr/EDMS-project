@@ -1,10 +1,20 @@
+import re
+import uuid
+from datetime import datetime, timezone
+
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from app.database import get_db
-from app.models import DocumentVersion
-from app.schemas import DocumentVersionResponse, RegisterDocumentVersionRequest
+from app.models import Document, DocumentVersion
+from app.schemas import (
+    CreateDocumentFromFileRequest,
+    DocumentCreatedFromFileResponse,
+    DocumentResponse,
+    DocumentVersionResponse,
+    RegisterDocumentVersionRequest,
+)
 
 router = APIRouter(prefix="/documents", tags=["document-versions"])
 
@@ -20,6 +30,23 @@ def _to_response(version: DocumentVersion) -> DocumentVersionResponse:
         is_current=version.is_current,
         created_at=version.created_at.isoformat(),
     )
+
+
+def _to_document_response(document: Document) -> DocumentResponse:
+    return DocumentResponse(
+        id=document.id,
+        code=document.code,
+        title=document.title,
+        description=document.description,
+        created_by_user_id=document.created_by_user_id,
+        owner_user_id=document.owner_user_id,
+        created_at=document.created_at.isoformat(),
+    )
+
+
+def _document_code(title: str) -> str:
+    slug = re.sub(r"[^A-Za-z0-9]+", "-", title.strip()).strip("-").upper()[:18] or "DOCUMENTO"
+    return f"DOC-{datetime.now(timezone.utc):%Y%m%d}-{slug}-{uuid.uuid4().hex[:6].upper()}"
 
 
 @router.post("/{document_id}/versions", response_model=DocumentVersionResponse, status_code=status.HTTP_201_CREATED)
@@ -59,6 +86,46 @@ def register_document_version(
     db.refresh(version)
 
     return _to_response(version)
+
+
+@router.post("/from-file", response_model=DocumentCreatedFromFileResponse, status_code=status.HTTP_201_CREATED)
+def create_document_from_file(
+    body: CreateDocumentFromFileRequest,
+    db: Session = Depends(get_db),
+):
+    title = body.title.strip()
+    if not title:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Titulo requerido")
+
+    document = Document(
+        code=_document_code(title),
+        title=title,
+        description=body.description,
+        owner_user_id=body.created_by_user_id,
+        created_by_user_id=body.created_by_user_id,
+        metadata_json={"source_file_id": body.file_id},
+    )
+    db.add(document)
+    db.flush()
+
+    version = DocumentVersion(
+        document_id=document.id,
+        version_number=1,
+        file_id=body.file_id,
+        uploaded_by_user_id=body.created_by_user_id,
+        checksum=body.checksum,
+        version_comment="Documento creado desde archivo sin asignar",
+        is_current=True,
+    )
+    db.add(version)
+    db.commit()
+    db.refresh(document)
+    db.refresh(version)
+
+    return DocumentCreatedFromFileResponse(
+        document=_to_document_response(document),
+        version=_to_response(version),
+    )
 
 
 @router.get("/{document_id}/versions", response_model=list[DocumentVersionResponse])

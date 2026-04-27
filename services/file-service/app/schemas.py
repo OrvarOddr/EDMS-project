@@ -16,3 +16,22 @@ class FileUploadResponse(BaseModel):
     document_id: str | None = None
     document_version_id: str | None = None
     version_number: int | None = None
+
+
+class FileListItemResponse(FileMetadataResponse):
+    upload_id: str
+    upload_status: str
+    document_id: str | None = None
+    document_version_id: str | None = None
+
+
+class CreateDocumentFromFileRequest(BaseModel):
+    title: str | None = None
+    description: str | None = None
+
+
+class DocumentFromFileResponse(BaseModel):
+    document_id: str
+    document_title: str
+    document_version_id: str
+    file: FileMetadataResponse

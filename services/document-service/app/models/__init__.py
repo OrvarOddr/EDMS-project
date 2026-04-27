@@ -1,3 +1,3 @@
-from app.models.document_version import DocumentVersion
+from app.models.document_version import Document, DocumentVersion
 
-__all__ = ["DocumentVersion"]
+__all__ = ["Document", "DocumentVersion"]

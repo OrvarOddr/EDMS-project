@@ -15,6 +15,26 @@ export interface FileUploadResponse {
   version_number?: number | null
 }
 
+export interface StoredFileItem {
+  id: string
+  original_filename: string
+  mime_type: string
+  size_bytes: number
+  checksum?: string | null
+  uploaded_at: string
+  upload_id: string
+  upload_status: string
+  document_id?: string | null
+  document_version_id?: string | null
+}
+
+export interface DocumentFromFileResponse {
+  document_id: string
+  document_title: string
+  document_version_id: string
+  file: FileUploadResponse['file']
+}
+
 export interface UploadDocumentFilePayload {
   file: File
   document_id?: string | null
@@ -29,3 +49,15 @@ export const uploadDocumentFile = (payload: UploadDocumentFilePayload) => {
 
   return client.post<FileUploadResponse>('/files/upload', form)
 }
+
+export const listUnassignedFiles = () =>
+  client.get<StoredFileItem[]>('/files/unassigned')
+
+export const listTrashedFiles = () =>
+  client.get<StoredFileItem[]>('/files/trash')
+
+export const moveFileToTrash = (fileId: string) =>
+  client.patch<StoredFileItem>(`/files/${fileId}/trash`)
+
+export const createDocumentFromFile = (fileId: string) =>
+  client.post<DocumentFromFileResponse>(`/files/${fileId}/document`, {})
