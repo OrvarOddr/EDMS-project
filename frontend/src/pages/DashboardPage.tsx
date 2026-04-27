@@ -21,6 +21,7 @@ type ViewMode = 'list' | 'grid'
 type DocKind = 'pdf' | 'doc' | 'sheet' | 'slide' | 'image' | 'sig'
 type SelectedView =
   | 'inicio'
+  | 'archivos-sin-asignar'
   | 'recientes'
   | 'compartidos'
   | 'favoritos'
@@ -1453,6 +1454,7 @@ function Sidebar({
   onSelectFolder,
   selectedTag,
   onSelectTag,
+  unassignedCount,
   onToggleCollapsed,
 }: {
   collapsed: boolean
@@ -1462,6 +1464,7 @@ function Sidebar({
   onSelectFolder: (folderId: string) => void
   selectedTag: string | null
   onSelectTag: (tagId: string | null) => void
+  unassignedCount: number
   onToggleCollapsed: () => void
 }) {
   const [expanded, setExpanded] = useState(new Set(['root', 'legal', 'finanzas', 'producto']))
@@ -1507,6 +1510,7 @@ function Sidebar({
         </div>
         {[
           { id: 'inicio', icon: <Icon.Home size={16} /> },
+          { id: 'archivos-sin-asignar', icon: <Icon.File size={16} /> },
           { id: 'recientes', icon: <Icon.Clock size={16} /> },
           { id: 'compartidos', icon: <Icon.Users size={16} /> },
           { id: 'favoritos', icon: <Icon.Star size={16} /> },
@@ -1625,6 +1629,13 @@ function Sidebar({
       <div style={{ flex: 1, overflow: 'auto', paddingBottom: 12 }}>
         <div style={{ padding: '8px 0 4px' }}>
           <NavItem icon={<Icon.Home size={14} />} label="Inicio" active={selectedView === 'inicio'} onClick={() => onSelectView('inicio')} />
+          <NavItem
+            icon={<Icon.File size={14} />}
+            label="Archivos sin asignar"
+            badge={unassignedCount > 0 ? unassignedCount : undefined}
+            active={selectedView === 'archivos-sin-asignar'}
+            onClick={() => onSelectView('archivos-sin-asignar')}
+          />
           <NavItem icon={<Icon.Clock size={14} />} label="Recientes" active={selectedView === 'recientes'} onClick={() => onSelectView('recientes')} />
           <NavItem icon={<Icon.Users size={14} />} label="Compartidos conmigo" count={23} active={selectedView === 'compartidos'} onClick={() => onSelectView('compartidos')} />
           <NavItem icon={<Icon.Star size={14} />} label="Favoritos" count={4} active={selectedView === 'favoritos'} onClick={() => onSelectView('favoritos')} />
@@ -3171,84 +3182,49 @@ function FileRow({
   )
 }
 
-function UnassignedFilesSection({
-  open,
+function UnassignedFilesPanel({
   files,
   loading,
   busyFileId,
-  onToggle,
   onTrash,
   onCreateDocument,
 }: {
-  open: boolean
   files: StoredFileItem[]
   loading: boolean
   busyFileId: string | null
-  onToggle: () => void
   onTrash: (file: StoredFileItem) => void
   onCreateDocument: (file: StoredFileItem) => void
 }) {
   return (
-    <div style={{ padding: '0 18px 24px' }}>
-      <button
-        type="button"
-        className="edms-button"
-        onClick={onToggle}
-        style={{
-          width: '100%',
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'space-between',
-          gap: 12,
-          borderRadius: 10,
-          border: '1px solid var(--border)',
-          background: 'var(--bg-elev)',
-          color: 'var(--fg)',
-          padding: '12px 14px',
-          textAlign: 'left',
-        }}
-      >
-        <span style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-          <Icon.File size={15} />
-          <span>
-            <span style={{ display: 'block', fontSize: 14, fontWeight: 600 }}>Archivos sin asignar</span>
-            <span style={{ display: 'block', color: 'var(--fg-muted)', fontSize: 12 }}>
-              {loading ? 'Cargando archivos...' : `${files.length} pendiente${files.length === 1 ? '' : 's'} por convertir en documento`}
-            </span>
-          </span>
-        </span>
-        <Icon.Chev size={14} style={{ transform: open ? 'rotate(90deg)' : 'none', color: 'var(--fg-muted)' }} />
-      </button>
-
-      {open && (
-        <div
-          style={{
-            marginTop: 10,
-            border: '1px solid var(--border)',
-            borderRadius: 10,
-            background: 'var(--bg-elev)',
-            overflow: 'hidden',
-          }}
-        >
-          {loading ? (
-            <div style={{ padding: 14, color: 'var(--fg-muted)', fontSize: 12.5 }}>Cargando archivos...</div>
-          ) : files.length === 0 ? (
-            <div style={{ padding: 14, color: 'var(--fg-muted)', fontSize: 12.5 }}>
-              No hay archivos sueltos. Cuando subas archivos sin documento apareceran aqui.
-            </div>
-          ) : (
-            files.map((file) => (
-              <FileRow
-                key={file.id}
-                file={file}
-                busy={busyFileId === file.id}
-                onTrash={onTrash}
-                onCreateDocument={onCreateDocument}
-              />
-            ))
-          )}
+    <div style={{ flex: 1, overflow: 'auto', padding: '14px 18px 24px' }}>
+      <div style={{ background: 'var(--bg-elev)', border: '1px solid var(--border)', borderRadius: 10, overflow: 'hidden' }}>
+        <div style={{ padding: '12px 14px' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 14, fontWeight: 600, color: 'var(--fg)' }}>
+            <Icon.File size={15} />
+            Archivos sin asignar
+          </div>
+          <div style={{ marginTop: 3, fontSize: 12, color: 'var(--fg-muted)' }}>
+            Archivos cargados que aun no pertenecen a un documento.
+          </div>
         </div>
-      )}
+        {loading ? (
+          <div style={{ padding: 14, borderTop: '1px solid var(--border)', color: 'var(--fg-muted)', fontSize: 12.5 }}>Cargando archivos...</div>
+        ) : files.length === 0 ? (
+          <div style={{ padding: 14, borderTop: '1px solid var(--border)', color: 'var(--fg-muted)', fontSize: 12.5 }}>
+            No hay archivos sueltos. Cuando subas archivos sin documento apareceran aqui.
+          </div>
+        ) : (
+          files.map((file) => (
+            <FileRow
+              key={file.id}
+              file={file}
+              busy={busyFileId === file.id}
+              onTrash={onTrash}
+              onCreateDocument={onCreateDocument}
+            />
+          ))
+        )}
+      </div>
     </div>
   )
 }
@@ -3779,7 +3755,6 @@ export default function DashboardPage() {
   const [unassignedFiles, setUnassignedFiles] = useState<StoredFileItem[]>([])
   const [trashedFiles, setTrashedFiles] = useState<StoredFileItem[]>([])
   const [createdDocs, setCreatedDocs] = useState<DocumentItem[]>([])
-  const [filesPanelOpen, setFilesPanelOpen] = useState(false)
   const [loadingFileLists, setLoadingFileLists] = useState(true)
   const [busyFileId, setBusyFileId] = useState<string | null>(null)
   const [dragging, setDragging] = useState(false)
@@ -3831,6 +3806,7 @@ export default function DashboardPage() {
     if (selectedView === 'favoritos') list = list.filter((doc) => doc.starred)
     else if (selectedView === 'compartidos') list = list.filter((doc) => doc.shared.length > 0 && doc.owner !== 'u1')
     else if (selectedView === 'aprobaciones') list = list.filter((doc) => doc.status === 'pendiente-firma' || doc.status === 'revision')
+    else if (selectedView === 'archivos-sin-asignar') list = []
     else if (selectedView === 'papelera') list = []
     else if (selectedView === 'recientes') list = [...list].sort((a, b) => a.modified.localeCompare(b.modified))
     else if (selectedView === 'carpeta' && selectedFolder !== 'root') list = list.filter((doc) => doc.folder === selectedFolder)
@@ -3849,6 +3825,7 @@ export default function DashboardPage() {
 
   const breadcrumb = useMemo(() => {
     if (selectedView === 'inicio') return [{ id: 'inicio', label: 'Inicio' }]
+    if (selectedView === 'archivos-sin-asignar') return [{ id: 'archivos-sin-asignar', label: 'Archivos sin asignar' }]
     if (selectedView === 'recientes') return [{ id: 'recientes', label: 'Recientes' }]
     if (selectedView === 'compartidos') return [{ id: 'compartidos', label: 'Compartidos conmigo' }]
     if (selectedView === 'favoritos') return [{ id: 'favoritos', label: 'Favoritos' }]
@@ -4073,6 +4050,7 @@ export default function DashboardPage() {
         onSelectFolder={setSelectedFolder}
         selectedTag={selectedTag}
         onSelectTag={setSelectedTag}
+        unassignedCount={unassignedFiles.length}
         onToggleCollapsed={() => setTweaks((current) => ({ ...current, sidebarCollapsed: !current.sidebarCollapsed }))}
       />
 
@@ -4106,11 +4084,15 @@ export default function DashboardPage() {
               {showDashboard ? `Buenos días, ${firstName}` : breadcrumb[breadcrumb.length - 1]?.label}
             </h1>
             <div style={{ fontSize: 12.5, color: 'var(--fg-muted)' }}>
-              {showDashboard ? 'Tienes 3 documentos que requieren tu firma hoy.' : `${visibleDocs.length} documentos${selectedTag ? ` · etiqueta "${findTag(selectedTag)?.label}"` : ''}`}
+              {showDashboard
+                ? 'Tienes 3 documentos que requieren tu firma hoy.'
+                : selectedView === 'archivos-sin-asignar'
+                  ? `${unassignedFiles.length} archivo${unassignedFiles.length === 1 ? '' : 's'} pendiente${unassignedFiles.length === 1 ? '' : 's'} por convertir en documento`
+                  : `${visibleDocs.length} documentos${selectedTag ? ` · etiqueta "${findTag(selectedTag)?.label}"` : ''}`}
             </div>
           </div>
 
-          {!showDashboard && (
+          {!showDashboard && selectedView !== 'archivos-sin-asignar' && (
             <div style={{ display: 'flex', gap: 6 }}>
               <button
                 onClick={() => handleAction('new-folder')}
@@ -4217,20 +4199,21 @@ export default function DashboardPage() {
               </div>
             </div>
 
-            <UnassignedFilesSection
-              open={filesPanelOpen}
-              files={unassignedFiles}
-              loading={loadingFileLists}
-              busyFileId={busyFileId}
-              onToggle={() => setFilesPanelOpen((current) => !current)}
-              onTrash={handleTrashFile}
-              onCreateDocument={handleCreateDocumentFromFile}
-            />
           </div>
         ) : (
           <>
-            <FiltersRow filters={filters} onFilters={setFilters} onClear={() => setFilters(initialFilters)} />
-            {selectedView === 'papelera' ? (
+            {selectedView === 'archivos-sin-asignar' ? (
+              <UnassignedFilesPanel
+                files={unassignedFiles}
+                loading={loadingFileLists}
+                busyFileId={busyFileId}
+                onTrash={handleTrashFile}
+                onCreateDocument={handleCreateDocumentFromFile}
+              />
+            ) : (
+              <FiltersRow filters={filters} onFilters={setFilters} onClear={() => setFilters(initialFilters)} />
+            )}
+            {selectedView === 'archivos-sin-asignar' ? null : selectedView === 'papelera' ? (
               <TrashedFilesPanel files={trashedFiles} loading={loadingFileLists} />
             ) : viewMode === 'list' ? (
               <ListView
