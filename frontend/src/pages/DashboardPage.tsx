@@ -283,6 +283,12 @@ function getApiErrorMessage(error: unknown, fallback: string) {
   return typeof detail === 'string' && detail.trim() ? detail : fallback
 }
 
+function formatFileSize(bytes: number) {
+  if (bytes < 1024) return `${bytes} B`
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`
+}
+
 function flattenFolders(folders: FolderItem[], acc: FolderItem[] = []) {
   for (const folder of folders) {
     acc.push(folder)
@@ -2740,7 +2746,7 @@ function DropZoneOverlay({ active }: { active: boolean }) {
         <Icon.Upload size={28} style={{ color: 'var(--accent)' }} />
         <div>
           <div style={{ fontSize: 15, fontWeight: 600, color: 'var(--fg)' }}>Suelta para subir</div>
-          <div style={{ fontSize: 12.5, color: 'var(--fg-muted)' }}>Los archivos se añadirán a la carpeta actual</div>
+          <div style={{ fontSize: 12.5, color: 'var(--fg-muted)' }}>Podras revisarlos antes de confirmar la carga</div>
         </div>
       </div>
     </div>
@@ -2748,62 +2754,57 @@ function DropZoneOverlay({ active }: { active: boolean }) {
 }
 
 function UploadFileModal({
-  docs,
-  defaultDocId,
-  initialFile,
+  initialFiles,
   onClose,
   onUploaded,
 }: {
-  docs: DocumentItem[]
-  defaultDocId: string | null
-  initialFile: File | null
+  initialFiles: File[]
   onClose: () => void
   onUploaded: (message: string) => void
 }) {
-  const [documentId, setDocumentId] = useState(defaultDocId ?? docs[0]?.id ?? '')
-  const [selectedFile, setSelectedFile] = useState<File | null>(initialFile)
-  const [versionComment, setVersionComment] = useState('')
+  const [selectedFiles, setSelectedFiles] = useState<File[]>(initialFiles)
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const submitLabel = selectedFiles.length === 0
+    ? 'Subir archivos'
+    : `Subir ${selectedFiles.length} archivo${selectedFiles.length === 1 ? '' : 's'}`
+
+  function appendFiles(files: FileList | File[]) {
+    const incoming = Array.from(files)
+    setSelectedFiles((current) => {
+      const existing = new Set(current.map((file) => `${file.name}-${file.size}-${file.lastModified}`))
+      return [
+        ...current,
+        ...incoming.filter((file) => !existing.has(`${file.name}-${file.size}-${file.lastModified}`)),
+      ]
+    })
+    setError(null)
+  }
+
+  function removeFile(index: number) {
+    setSelectedFiles((current) => current.filter((_, itemIndex) => itemIndex !== index))
+  }
 
   async function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault()
-    if (!selectedFile) {
-      setError('Selecciona un archivo para subir')
-      return
-    }
-    if (!documentId) {
-      setError('Selecciona el documento al que se asociara el archivo')
+    if (selectedFiles.length === 0) {
+      setError('Selecciona uno o mas archivos para subir')
       return
     }
 
     setSubmitting(true)
     setError(null)
     try {
-      const { data } = await uploadDocumentFile({
-        file: selectedFile,
-        document_id: documentId,
-        version_comment: versionComment,
-      })
-      const doc = docs.find((item) => item.id === documentId)
-      onUploaded(`Archivo subido a ${doc?.name ?? 'documento'} · v${data.version_number ?? 1}`)
+      for (const file of selectedFiles) {
+        await uploadDocumentFile({ file })
+      }
+      onUploaded(`${selectedFiles.length} archivo${selectedFiles.length === 1 ? '' : 's'} subido${selectedFiles.length === 1 ? '' : 's'}`)
       onClose()
     } catch (err) {
-      setError(getApiErrorMessage(err, 'No se pudo subir el archivo'))
+      setError(getApiErrorMessage(err, 'No se pudieron subir los archivos'))
     } finally {
       setSubmitting(false)
     }
-  }
-
-  const fieldStyle: CSSProperties = {
-    width: '100%',
-    borderRadius: 8,
-    border: '1px solid var(--border)',
-    background: 'var(--bg-elev-2)',
-    color: 'var(--fg)',
-    padding: '10px 12px',
-    fontSize: 13,
-    outline: 'none',
   }
 
   return (
@@ -2848,22 +2849,11 @@ function UploadFileModal({
           <div style={{ padding: '16px 18px', borderBottom: '1px solid var(--border)' }}>
             <div style={{ fontSize: 16, fontWeight: 600, color: 'var(--fg)', marginBottom: 4 }}>Cargar archivo</div>
             <div style={{ fontSize: 12.5, color: 'var(--fg-muted)' }}>
-              Adjunta el archivo principal y genera una version logica del documento.
+              Selecciona uno o mas archivos. Puedes quitar cualquiera antes de subir.
             </div>
           </div>
 
           <div style={{ padding: 18, display: 'grid', gap: 14 }}>
-            <label style={{ display: 'grid', gap: 6 }}>
-              <span style={{ fontSize: 12.5, color: 'var(--fg-muted)' }}>Documento</span>
-              <select value={documentId} onChange={(event) => setDocumentId(event.target.value)} style={fieldStyle} required>
-                {docs.map((doc) => (
-                  <option key={doc.id} value={doc.id}>
-                    {doc.name}
-                  </option>
-                ))}
-              </select>
-            </label>
-
             <label
               style={{
                 display: 'grid',
@@ -2877,9 +2867,13 @@ function UploadFileModal({
             >
               <input
                 type="file"
+                multiple
                 accept="application/pdf,image/png,image/jpeg"
                 disabled={submitting}
-                onChange={(event) => setSelectedFile(event.target.files?.[0] ?? null)}
+                onChange={(event) => {
+                  if (event.target.files?.length) appendFiles(event.target.files)
+                  event.currentTarget.value = ''
+                }}
                 style={{ display: 'none' }}
               />
               <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
@@ -2899,38 +2893,85 @@ function UploadFileModal({
                 </div>
                 <div style={{ minWidth: 0 }}>
                   <div style={{ color: 'var(--fg)', fontSize: 13.5, fontWeight: 600 }}>
-                    {selectedFile ? selectedFile.name : 'Seleccionar archivo'}
+                    Seleccionar archivos
                   </div>
                   <div style={{ color: 'var(--fg-muted)', fontSize: 12 }}>
-                    PDF, PNG o JPG. Maximo 10 MB.
+                    PDF, PNG o JPG. Maximo 10 MB por archivo.
                   </div>
                 </div>
               </div>
             </label>
 
-            <label style={{ display: 'grid', gap: 6 }}>
-              <span style={{ fontSize: 12.5, color: 'var(--fg-muted)' }}>Comentario de version</span>
-              <textarea
-                value={versionComment}
-                onChange={(event) => setVersionComment(event.target.value)}
-                placeholder="Ej: archivo principal inicial"
-                rows={3}
-                style={{ ...fieldStyle, resize: 'vertical' }}
-              />
-            </label>
-
             <div
               style={{
-                borderRadius: 8,
                 border: '1px solid var(--border)',
+                borderRadius: 10,
                 background: 'var(--bg-elev-2)',
-                color: 'var(--fg-muted)',
-                padding: '10px 12px',
-                fontSize: 12.5,
-                lineHeight: 1.5,
+                overflow: 'hidden',
               }}
             >
-              El backend valida tipo y tamano, almacena el binario en MinIO y registra metadata en file-service.
+              {selectedFiles.length === 0 ? (
+                <div style={{ padding: 14, color: 'var(--fg-muted)', fontSize: 12.5 }}>
+                  Aun no hay archivos seleccionados.
+                </div>
+              ) : (
+                selectedFiles.map((file, index) => (
+                  <div
+                    key={`${file.name}-${file.size}-${file.lastModified}`}
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: 10,
+                      padding: '10px 12px',
+                      borderBottom: index === selectedFiles.length - 1 ? 'none' : '1px solid var(--border)',
+                    }}
+                  >
+                    <div
+                      style={{
+                        width: 30,
+                        height: 30,
+                        borderRadius: 8,
+                        background: 'var(--accent-soft)',
+                        color: 'var(--accent)',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        flexShrink: 0,
+                      }}
+                    >
+                      <Icon.File size={14} />
+                    </div>
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ color: 'var(--fg)', fontSize: 12.5, fontWeight: 600, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                        {file.name}
+                      </div>
+                      <div style={{ color: 'var(--fg-muted)', fontSize: 11.5 }}>
+                        {formatFileSize(file.size)}
+                      </div>
+                    </div>
+                    <button
+                      type="button"
+                      className="edms-button"
+                      disabled={submitting}
+                      onClick={() => removeFile(index)}
+                      title="Quitar archivo"
+                      style={{
+                        width: 30,
+                        height: 30,
+                        borderRadius: 8,
+                        border: '1px solid var(--border)',
+                        background: 'transparent',
+                        color: 'var(--danger)',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                      }}
+                    >
+                      <Icon.Trash size={14} />
+                    </button>
+                  </div>
+                ))
+              )}
             </div>
 
             {error && (
@@ -2961,6 +3002,7 @@ function UploadFileModal({
             <button
               type="button"
               onClick={onClose}
+              className="edms-button"
               disabled={submitting}
               style={{
                 borderRadius: 8,
@@ -2975,7 +3017,8 @@ function UploadFileModal({
             </button>
             <button
               type="submit"
-              disabled={submitting || !selectedFile || !documentId}
+              className="edms-button edms-button-primary"
+              disabled={submitting || selectedFiles.length === 0}
               style={{
                 borderRadius: 8,
                 border: '1px solid color-mix(in oklch, var(--accent) 60%, transparent)',
@@ -2984,10 +3027,10 @@ function UploadFileModal({
                 padding: '9px 14px',
                 fontSize: 12.5,
                 fontWeight: 600,
-                opacity: submitting || !selectedFile || !documentId ? 0.7 : 1,
+                opacity: submitting || selectedFiles.length === 0 ? 0.7 : 1,
               }}
             >
-              {submitting ? 'Subiendo...' : 'Subir archivo'}
+              {submitting ? 'Subiendo...' : submitLabel}
             </button>
           </div>
         </form>
@@ -3490,8 +3533,7 @@ export default function DashboardPage() {
   const [notifOpen, setNotifOpen] = useState(false)
   const [teamModalOpen, setTeamModalOpen] = useState(false)
   const [uploadModalOpen, setUploadModalOpen] = useState(false)
-  const [uploadInitialFile, setUploadInitialFile] = useState<File | null>(null)
-  const [uploadDocumentId, setUploadDocumentId] = useState<string | null>(null)
+  const [uploadInitialFiles, setUploadInitialFiles] = useState<File[]>([])
   const [dragging, setDragging] = useState(false)
   const [toast, setToast] = useState<string | null>(null)
   const dragCounter = useRef(0)
@@ -3585,10 +3627,6 @@ export default function DashboardPage() {
     setCtxMenu({ x: event.clientX, y: event.clientY, docId })
   }
 
-  function getDefaultUploadDocumentId(docId?: string) {
-    return docId ?? [...selected][0] ?? openDocId ?? visibleDocs[0]?.id ?? dashboardData.docs[0]?.id ?? null
-  }
-
   function handleAction(action: string, docId?: string) {
     if (action === 'team') {
       if (!user?.is_superuser) {
@@ -3600,8 +3638,8 @@ export default function DashboardPage() {
     }
 
     if (action === 'upload') {
-      setUploadInitialFile(null)
-      setUploadDocumentId(getDefaultUploadDocumentId(docId))
+      void docId
+      setUploadInitialFiles([])
       setUploadModalOpen(true)
       return
     }
@@ -3655,8 +3693,7 @@ export default function DashboardPage() {
       dragCounter.current = 0
       setDragging(false)
       if (event.dataTransfer?.files?.length) {
-        setUploadInitialFile(event.dataTransfer.files[0] ?? null)
-        setUploadDocumentId([...selected][0] ?? openDocId ?? visibleDocs[0]?.id ?? dashboardData.docs[0]?.id ?? null)
+        setUploadInitialFiles(Array.from(event.dataTransfer.files))
         setUploadModalOpen(true)
       }
     }
@@ -3672,7 +3709,7 @@ export default function DashboardPage() {
       window.removeEventListener('dragleave', onLeave)
       window.removeEventListener('drop', onDrop)
     }
-  }, [openDocId, selected, visibleDocs])
+  }, [])
 
   useEffect(() => {
     function handleKey(event: KeyboardEvent) {
@@ -3905,12 +3942,10 @@ export default function DashboardPage() {
       )}
       {uploadModalOpen && (
         <UploadFileModal
-          docs={dashboardData.docs}
-          defaultDocId={uploadDocumentId}
-          initialFile={uploadInitialFile}
+          initialFiles={uploadInitialFiles}
           onClose={() => {
             setUploadModalOpen(false)
-            setUploadInitialFile(null)
+            setUploadInitialFiles([])
           }}
           onUploaded={setToast}
         />
