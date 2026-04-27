@@ -28,6 +28,7 @@ def _resolve_service(path: str) -> str | None:
 @router.api_route("/{path:path}", methods=["GET", "POST", "PUT", "PATCH", "DELETE"])
 async def proxy(path: str, request: Request):
     full_path = f"/{path}"
+    payload = None
 
     # JWT validation for protected routes
     if not is_public(request.method, full_path):
@@ -49,8 +50,21 @@ async def proxy(path: str, request: Request):
     # Forward headers, remove hop-by-hop
     headers = {
         k: v for k, v in request.headers.items()
-        if k.lower() not in {"host", "content-length", "transfer-encoding", "connection"}
+        if k.lower() not in {
+            "host",
+            "content-length",
+            "transfer-encoding",
+            "connection",
+            "x-user-id",
+            "x-user-email",
+            "x-user-roles",
+        }
     }
+    if payload:
+        roles = payload.get("roles") or []
+        headers["X-User-Id"] = str(payload.get("sub", ""))
+        headers["X-User-Email"] = str(payload.get("email", ""))
+        headers["X-User-Roles"] = ",".join(str(role) for role in roles)
 
     async with httpx.AsyncClient(timeout=TIMEOUT) as client:
         resp = await client.request(
