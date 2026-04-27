@@ -17,3 +17,26 @@ class DocumentVersionResponse(BaseModel):
     checksum: str | None = None
     is_current: bool
     created_at: str
+
+
+class CreateDocumentFromFileRequest(BaseModel):
+    file_id: str
+    title: str
+    created_by_user_id: str
+    checksum: str | None = None
+    description: str | None = None
+
+
+class DocumentResponse(BaseModel):
+    id: str
+    code: str
+    title: str
+    description: str | None = None
+    created_by_user_id: str
+    owner_user_id: str
+    created_at: str
+
+
+class DocumentCreatedFromFileResponse(BaseModel):
+    document: DocumentResponse
+    version: DocumentVersionResponse

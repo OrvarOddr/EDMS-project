@@ -8,7 +8,14 @@ import {
 } from 'react'
 import { useAuth } from '../context/AuthContext'
 import { assignRole, createUser, listRoles, listUsers, type RoleItem, type UserMe } from '../api/auth'
-import { uploadDocumentFile } from '../api/files'
+import {
+  createDocumentFromFile,
+  listTrashedFiles,
+  listUnassignedFiles,
+  moveFileToTrash,
+  uploadDocumentFile,
+  type StoredFileItem,
+} from '../api/files'
 
 type ViewMode = 'list' | 'grid'
 type DocKind = 'pdf' | 'doc' | 'sheet' | 'slide' | 'image' | 'sig'
@@ -287,6 +294,34 @@ function formatFileSize(bytes: number) {
   if (bytes < 1024) return `${bytes} B`
   if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`
+}
+
+function formatUploadedAt(value: string) {
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) return 'fecha no disponible'
+  return date.toLocaleString('es-CL', {
+    day: '2-digit',
+    month: 'short',
+    hour: '2-digit',
+    minute: '2-digit',
+  })
+}
+
+function docKindFromMime(mimeType: string): DocKind {
+  if (mimeType === 'application/pdf') return 'pdf'
+  if (mimeType.startsWith('image/')) return 'image'
+  return 'doc'
+}
+
+async function fetchFileLists() {
+  const [unassignedResponse, trashedResponse] = await Promise.all([
+    listUnassignedFiles(),
+    listTrashedFiles(),
+  ])
+  return {
+    unassignedFiles: unassignedResponse.data,
+    trashedFiles: trashedResponse.data,
+  }
 }
 
 function flattenFolders(folders: FolderItem[], acc: FolderItem[] = []) {
@@ -3039,6 +3074,213 @@ function UploadFileModal({
   )
 }
 
+function FileRow({
+  file,
+  busy,
+  onTrash,
+  onCreateDocument,
+}: {
+  file: StoredFileItem
+  busy?: boolean
+  onTrash?: (file: StoredFileItem) => void
+  onCreateDocument?: (file: StoredFileItem) => void
+}) {
+  return (
+    <div
+      style={{
+        display: 'grid',
+        gridTemplateColumns: 'minmax(220px, 1fr) auto',
+        alignItems: 'center',
+        gap: 12,
+        padding: '11px 12px',
+        borderTop: '1px solid var(--border)',
+      }}
+    >
+      <div style={{ display: 'flex', alignItems: 'center', gap: 10, minWidth: 0 }}>
+        <div
+          style={{
+            width: 34,
+            height: 34,
+            borderRadius: 8,
+            background: 'var(--accent-soft)',
+            color: 'var(--accent)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            flexShrink: 0,
+          }}
+        >
+          <Icon.File size={15} />
+        </div>
+        <div style={{ minWidth: 0 }}>
+          <div style={{ color: 'var(--fg)', fontSize: 12.5, fontWeight: 600, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+            {file.original_filename}
+          </div>
+          <div style={{ color: 'var(--fg-muted)', fontSize: 11.5 }}>
+            {formatFileSize(file.size_bytes)} · {formatUploadedAt(file.uploaded_at)}
+          </div>
+        </div>
+      </div>
+
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+        {onCreateDocument && (
+          <button
+            type="button"
+            className="edms-button edms-button-primary"
+            disabled={busy}
+            onClick={() => onCreateDocument(file)}
+            style={{
+              borderRadius: 8,
+              border: '1px solid color-mix(in oklch, var(--accent) 60%, transparent)',
+              background: 'var(--accent)',
+              color: 'var(--accent-fg)',
+              padding: '7px 10px',
+              fontSize: 12,
+              fontWeight: 600,
+              opacity: busy ? 0.7 : 1,
+            }}
+          >
+            Crear documento
+          </button>
+        )}
+        {onTrash && (
+          <button
+            type="button"
+            className="edms-button"
+            disabled={busy}
+            onClick={() => onTrash(file)}
+            title="Enviar a papelera"
+            style={{
+              width: 32,
+              height: 32,
+              borderRadius: 8,
+              border: '1px solid var(--border)',
+              background: 'transparent',
+              color: 'var(--danger)',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              opacity: busy ? 0.7 : 1,
+            }}
+          >
+            <Icon.Trash size={14} />
+          </button>
+        )}
+      </div>
+    </div>
+  )
+}
+
+function UnassignedFilesSection({
+  open,
+  files,
+  loading,
+  busyFileId,
+  onToggle,
+  onTrash,
+  onCreateDocument,
+}: {
+  open: boolean
+  files: StoredFileItem[]
+  loading: boolean
+  busyFileId: string | null
+  onToggle: () => void
+  onTrash: (file: StoredFileItem) => void
+  onCreateDocument: (file: StoredFileItem) => void
+}) {
+  return (
+    <div style={{ padding: '0 18px 24px' }}>
+      <button
+        type="button"
+        className="edms-button"
+        onClick={onToggle}
+        style={{
+          width: '100%',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          gap: 12,
+          borderRadius: 10,
+          border: '1px solid var(--border)',
+          background: 'var(--bg-elev)',
+          color: 'var(--fg)',
+          padding: '12px 14px',
+          textAlign: 'left',
+        }}
+      >
+        <span style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+          <Icon.File size={15} />
+          <span>
+            <span style={{ display: 'block', fontSize: 14, fontWeight: 600 }}>Archivos sin asignar</span>
+            <span style={{ display: 'block', color: 'var(--fg-muted)', fontSize: 12 }}>
+              {loading ? 'Cargando archivos...' : `${files.length} pendiente${files.length === 1 ? '' : 's'} por convertir en documento`}
+            </span>
+          </span>
+        </span>
+        <Icon.Chev size={14} style={{ transform: open ? 'rotate(90deg)' : 'none', color: 'var(--fg-muted)' }} />
+      </button>
+
+      {open && (
+        <div
+          style={{
+            marginTop: 10,
+            border: '1px solid var(--border)',
+            borderRadius: 10,
+            background: 'var(--bg-elev)',
+            overflow: 'hidden',
+          }}
+        >
+          {loading ? (
+            <div style={{ padding: 14, color: 'var(--fg-muted)', fontSize: 12.5 }}>Cargando archivos...</div>
+          ) : files.length === 0 ? (
+            <div style={{ padding: 14, color: 'var(--fg-muted)', fontSize: 12.5 }}>
+              No hay archivos sueltos. Cuando subas archivos sin documento apareceran aqui.
+            </div>
+          ) : (
+            files.map((file) => (
+              <FileRow
+                key={file.id}
+                file={file}
+                busy={busyFileId === file.id}
+                onTrash={onTrash}
+                onCreateDocument={onCreateDocument}
+              />
+            ))
+          )}
+        </div>
+      )}
+    </div>
+  )
+}
+
+function TrashedFilesPanel({
+  files,
+  loading,
+}: {
+  files: StoredFileItem[]
+  loading: boolean
+}) {
+  return (
+    <div style={{ flex: 1, overflow: 'auto', padding: '14px 18px 24px' }}>
+      <div style={{ background: 'var(--bg-elev)', border: '1px solid var(--border)', borderRadius: 10, overflow: 'hidden' }}>
+        <div style={{ padding: '12px 14px' }}>
+          <div style={{ fontSize: 14, fontWeight: 600, color: 'var(--fg)' }}>Papelera</div>
+          <div style={{ fontSize: 12, color: 'var(--fg-muted)' }}>
+            Archivos sin asignar que fueron enviados a papelera.
+          </div>
+        </div>
+        {loading ? (
+          <div style={{ padding: 14, borderTop: '1px solid var(--border)', color: 'var(--fg-muted)', fontSize: 12.5 }}>Cargando papelera...</div>
+        ) : files.length === 0 ? (
+          <div style={{ padding: 14, borderTop: '1px solid var(--border)', color: 'var(--fg-muted)', fontSize: 12.5 }}>La papelera esta vacia.</div>
+        ) : (
+          files.map((file) => <FileRow key={file.id} file={file} />)
+        )}
+      </div>
+    </div>
+  )
+}
+
 function TeamManagerModal({
   onClose,
   onCreated,
@@ -3534,6 +3776,12 @@ export default function DashboardPage() {
   const [teamModalOpen, setTeamModalOpen] = useState(false)
   const [uploadModalOpen, setUploadModalOpen] = useState(false)
   const [uploadInitialFiles, setUploadInitialFiles] = useState<File[]>([])
+  const [unassignedFiles, setUnassignedFiles] = useState<StoredFileItem[]>([])
+  const [trashedFiles, setTrashedFiles] = useState<StoredFileItem[]>([])
+  const [createdDocs, setCreatedDocs] = useState<DocumentItem[]>([])
+  const [filesPanelOpen, setFilesPanelOpen] = useState(false)
+  const [loadingFileLists, setLoadingFileLists] = useState(true)
+  const [busyFileId, setBusyFileId] = useState<string | null>(null)
   const [dragging, setDragging] = useState(false)
   const [toast, setToast] = useState<string | null>(null)
   const dragCounter = useRef(0)
@@ -3544,6 +3792,7 @@ export default function DashboardPage() {
   const currentUserInitials = user ? initialsFromLabel(currentUserLabel) : 'LI'
   const currentUserEmail = user?.email ?? 'laura@nimbera.com'
   const firstName = currentUserLabel.split(' ')[0]
+  const allDocs = useMemo(() => [...createdDocs, ...dashboardData.docs], [createdDocs])
 
   useEffect(() => {
     document.documentElement.setAttribute('data-theme', tweaks.theme)
@@ -3556,8 +3805,28 @@ export default function DashboardPage() {
     }
   }, [tweaks])
 
+  useEffect(() => {
+    let mounted = true
+    fetchFileLists()
+      .then(({ unassignedFiles: pendingFiles, trashedFiles: deletedFiles }) => {
+        if (!mounted) return
+        setUnassignedFiles(pendingFiles)
+        setTrashedFiles(deletedFiles)
+      })
+      .catch(() => {
+        if (mounted) setToast('No se pudieron cargar los archivos sin asignar')
+      })
+      .finally(() => {
+        if (mounted) setLoadingFileLists(false)
+      })
+
+    return () => {
+      mounted = false
+    }
+  }, [])
+
   const visibleDocs = useMemo(() => {
-    let list = dashboardData.docs
+    let list = allDocs
 
     if (selectedView === 'favoritos') list = list.filter((doc) => doc.starred)
     else if (selectedView === 'compartidos') list = list.filter((doc) => doc.shared.length > 0 && doc.owner !== 'u1')
@@ -3576,7 +3845,7 @@ export default function DashboardPage() {
     }
 
     return list
-  }, [selectedView, selectedFolder, selectedTag, filters, search])
+  }, [allDocs, selectedView, selectedFolder, selectedTag, filters, search])
 
   const breadcrumb = useMemo(() => {
     if (selectedView === 'inicio') return [{ id: 'inicio', label: 'Inicio' }]
@@ -3589,7 +3858,7 @@ export default function DashboardPage() {
     return path ? path.map((node) => ({ id: node.id, label: node.name })) : [{ id: 'root', label: 'Archivo' }]
   }, [selectedView, selectedFolder])
 
-  const openDocObj = openDocId ? findDocById(openDocId) : null
+  const openDocObj = openDocId ? allDocs.find((doc) => doc.id === openDocId) ?? null : null
   const allSelected = visibleDocs.length > 0 && visibleDocs.every((doc) => selected.has(doc.id))
   const showDashboard =
     selectedView === 'inicio' &&
@@ -3625,6 +3894,62 @@ export default function DashboardPage() {
 
   function openContextMenu(event: React.MouseEvent, docId: string) {
     setCtxMenu({ x: event.clientX, y: event.clientY, docId })
+  }
+
+  async function refreshFileLists(showLoading = false) {
+    if (showLoading) setLoadingFileLists(true)
+    try {
+      const { unassignedFiles: pendingFiles, trashedFiles: deletedFiles } = await fetchFileLists()
+      setUnassignedFiles(pendingFiles)
+      setTrashedFiles(deletedFiles)
+    } catch {
+      setToast('No se pudieron cargar los archivos sin asignar')
+    } finally {
+      if (showLoading) setLoadingFileLists(false)
+    }
+  }
+
+  async function handleTrashFile(file: StoredFileItem) {
+    setBusyFileId(file.id)
+    try {
+      const { data } = await moveFileToTrash(file.id)
+      setUnassignedFiles((current) => current.filter((item) => item.id !== file.id))
+      setTrashedFiles((current) => [data, ...current.filter((item) => item.id !== data.id)])
+      setToast(`${file.original_filename} enviado a papelera`)
+    } catch (err) {
+      setToast(getApiErrorMessage(err, 'No se pudo enviar el archivo a papelera'))
+    } finally {
+      setBusyFileId(null)
+    }
+  }
+
+  async function handleCreateDocumentFromFile(file: StoredFileItem) {
+    setBusyFileId(file.id)
+    try {
+      const { data } = await createDocumentFromFile(file.id)
+      setUnassignedFiles((current) => current.filter((item) => item.id !== file.id))
+      setCreatedDocs((current) => [
+        {
+          id: data.document_id,
+          name: data.document_title,
+          kind: docKindFromMime(file.mime_type),
+          folder: 'root',
+          owner: user?.id ?? 'u1',
+          size: formatFileSize(file.size_bytes),
+          modified: 'ahora',
+          version: 1,
+          tags: [],
+          shared: [],
+          status: 'borrador',
+        },
+        ...current,
+      ])
+      setToast(`Documento "${data.document_title}" creado`)
+    } catch (err) {
+      setToast(getApiErrorMessage(err, 'No se pudo crear el documento desde el archivo'))
+    } finally {
+      setBusyFileId(null)
+    }
   }
 
   function handleAction(action: string, docId?: string) {
@@ -3840,7 +4165,7 @@ export default function DashboardPage() {
               </div>
               <div style={{ background: 'var(--bg-elev)', border: '1px solid var(--border)', borderRadius: 10, overflow: 'hidden' }}>
                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(200px, 1fr))', gap: 0 }}>
-                  {dashboardData.docs.slice(0, 6).map((doc, index) => {
+                  {allDocs.slice(0, 6).map((doc, index) => {
                     const kind = findKind(doc.kind)
                     return (
                       <button
@@ -3891,11 +4216,23 @@ export default function DashboardPage() {
                 </div>
               </div>
             </div>
+
+            <UnassignedFilesSection
+              open={filesPanelOpen}
+              files={unassignedFiles}
+              loading={loadingFileLists}
+              busyFileId={busyFileId}
+              onToggle={() => setFilesPanelOpen((current) => !current)}
+              onTrash={handleTrashFile}
+              onCreateDocument={handleCreateDocumentFromFile}
+            />
           </div>
         ) : (
           <>
             <FiltersRow filters={filters} onFilters={setFilters} onClear={() => setFilters(initialFilters)} />
-            {viewMode === 'list' ? (
+            {selectedView === 'papelera' ? (
+              <TrashedFilesPanel files={trashedFiles} loading={loadingFileLists} />
+            ) : viewMode === 'list' ? (
               <ListView
                 docs={visibleDocs}
                 selected={selected}
@@ -3947,7 +4284,10 @@ export default function DashboardPage() {
             setUploadModalOpen(false)
             setUploadInitialFiles([])
           }}
-          onUploaded={setToast}
+          onUploaded={(message) => {
+            setToast(message)
+            void refreshFileLists()
+          }}
         />
       )}
       <Toast toast={toast} onClose={() => setToast(null)} />

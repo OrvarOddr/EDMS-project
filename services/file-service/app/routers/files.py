@@ -14,7 +14,13 @@ from sqlalchemy.orm import Session
 from app.config import settings
 from app.database import get_db
 from app.models import FileUpload, StoredFile
-from app.schemas import FileMetadataResponse, FileUploadResponse
+from app.schemas import (
+    CreateDocumentFromFileRequest,
+    DocumentFromFileResponse,
+    FileListItemResponse,
+    FileMetadataResponse,
+    FileUploadResponse,
+)
 
 router = APIRouter(prefix="/files", tags=["files"])
 
@@ -50,6 +56,21 @@ def _to_file_response(stored_file: StoredFile) -> FileMetadataResponse:
     )
 
 
+def _to_file_list_response(stored_file: StoredFile, upload: FileUpload) -> FileListItemResponse:
+    base = _to_file_response(stored_file)
+    return FileListItemResponse(
+        **base.model_dump(),
+        upload_id=upload.id,
+        upload_status=upload.upload_status,
+        document_id=upload.document_id,
+        document_version_id=upload.document_version_id,
+    )
+
+
+def _title_from_filename(filename: str) -> str:
+    return Path(filename).stem.replace("-", " ").replace("_", " ").strip() or filename
+
+
 async def _register_document_version(
     *,
     document_id: str,
@@ -70,6 +91,86 @@ async def _register_document_version(
         )
     response.raise_for_status()
     return response.json()
+
+
+async def _create_document_from_file(
+    *,
+    file_id: str,
+    title: str,
+    description: str | None,
+    created_by_user_id: str,
+    checksum: str | None,
+) -> dict:
+    async with httpx.AsyncClient(timeout=10.0) as client:
+        response = await client.post(
+            f"{settings.DOCUMENT_SERVICE_URL}/documents/from-file",
+            json={
+                "file_id": file_id,
+                "title": title,
+                "description": description,
+                "created_by_user_id": created_by_user_id,
+                "checksum": checksum,
+            },
+        )
+    response.raise_for_status()
+    return response.json()
+
+
+def _find_upload(db: Session, file_id: str, *, status_filter: str | None = None) -> tuple[StoredFile, FileUpload]:
+    query = (
+        db.query(StoredFile, FileUpload)
+        .join(FileUpload, FileUpload.stored_file_id == StoredFile.id)
+        .filter(StoredFile.id == file_id)
+    )
+    if status_filter:
+        query = query.filter(FileUpload.upload_status == status_filter)
+    result = query.first()
+    if not result:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Archivo no encontrado")
+    return result
+
+
+@router.get("/unassigned", response_model=list[FileListItemResponse])
+def list_unassigned_files(
+    x_user_id: str | None = Header(default=None, alias="X-User-Id"),
+    db: Session = Depends(get_db),
+):
+    if not x_user_id:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Usuario autenticado requerido")
+
+    rows = (
+        db.query(StoredFile, FileUpload)
+        .join(FileUpload, FileUpload.stored_file_id == StoredFile.id)
+        .filter(
+            FileUpload.uploader_user_id == x_user_id,
+            FileUpload.document_id.is_(None),
+            FileUpload.upload_status == "completed",
+        )
+        .order_by(StoredFile.uploaded_at.desc())
+        .all()
+    )
+    return [_to_file_list_response(stored_file, upload) for stored_file, upload in rows]
+
+
+@router.get("/trash", response_model=list[FileListItemResponse])
+def list_trashed_files(
+    x_user_id: str | None = Header(default=None, alias="X-User-Id"),
+    db: Session = Depends(get_db),
+):
+    if not x_user_id:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Usuario autenticado requerido")
+
+    rows = (
+        db.query(StoredFile, FileUpload)
+        .join(FileUpload, FileUpload.stored_file_id == StoredFile.id)
+        .filter(
+            FileUpload.uploader_user_id == x_user_id,
+            FileUpload.upload_status == "trashed",
+        )
+        .order_by(StoredFile.uploaded_at.desc())
+        .all()
+    )
+    return [_to_file_list_response(stored_file, upload) for stored_file, upload in rows]
 
 
 @router.post("/upload", response_model=FileUploadResponse, status_code=status.HTTP_201_CREATED)
@@ -171,6 +272,70 @@ async def upload_file(
         document_version_id=upload.document_version_id,
         version_number=version_number,
     )
+
+
+@router.post("/{file_id}/document", response_model=DocumentFromFileResponse, status_code=status.HTTP_201_CREATED)
+async def create_document_from_file(
+    file_id: str,
+    body: CreateDocumentFromFileRequest,
+    x_user_id: str | None = Header(default=None, alias="X-User-Id"),
+    db: Session = Depends(get_db),
+):
+    if not x_user_id:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Usuario autenticado requerido")
+
+    stored_file, upload = _find_upload(db, file_id, status_filter="completed")
+    if upload.uploader_user_id != x_user_id:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="No puedes usar este archivo")
+    if upload.document_id:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Archivo ya asociado a un documento")
+
+    title = body.title.strip() if body.title else _title_from_filename(stored_file.original_filename)
+    try:
+        created = await _create_document_from_file(
+            file_id=stored_file.id,
+            title=title,
+            description=body.description,
+            created_by_user_id=x_user_id,
+            checksum=stored_file.checksum,
+        )
+    except httpx.HTTPError as exc:
+        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail="No se pudo crear documento desde archivo") from exc
+
+    upload.document_id = created["document"]["id"]
+    upload.document_version_id = created["version"]["id"]
+    upload.upload_status = "assigned"
+    db.commit()
+    db.refresh(upload)
+
+    return DocumentFromFileResponse(
+        document_id=created["document"]["id"],
+        document_title=created["document"]["title"],
+        document_version_id=created["version"]["id"],
+        file=_to_file_response(stored_file),
+    )
+
+
+@router.patch("/{file_id}/trash", response_model=FileListItemResponse)
+def move_file_to_trash(
+    file_id: str,
+    x_user_id: str | None = Header(default=None, alias="X-User-Id"),
+    db: Session = Depends(get_db),
+):
+    if not x_user_id:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Usuario autenticado requerido")
+
+    stored_file, upload = _find_upload(db, file_id)
+    if upload.uploader_user_id != x_user_id:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="No puedes modificar este archivo")
+    if upload.document_id:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="No se puede enviar a papelera un archivo ya asignado")
+    upload.upload_status = "trashed"
+    upload.completed_at = utcnow()
+    db.commit()
+    db.refresh(upload)
+
+    return _to_file_list_response(stored_file, upload)
 
 
 @router.get("/{file_id}", response_model=FileMetadataResponse)

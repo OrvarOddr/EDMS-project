@@ -1,6 +1,6 @@
 import uuid
 from datetime import datetime, timezone
-from sqlalchemy import Boolean, Column, DateTime, Integer, String, Text
+from sqlalchemy import Boolean, Column, DateTime, Integer, JSON, String, Text
 from app.database import Base
 
 
@@ -21,3 +21,23 @@ class DocumentVersion(Base):
     checksum = Column(String, nullable=True)
     is_current = Column(Boolean, nullable=False, default=True, index=True)
     created_at = Column(DateTime(timezone=True), nullable=False, default=utcnow)
+
+
+class Document(Base):
+    __tablename__ = "documents"
+    __table_args__ = {"schema": "documents"}
+
+    id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
+    code = Column(String, unique=True, nullable=False, index=True)
+    title = Column(String, nullable=False)
+    description = Column(Text, nullable=True)
+    document_type_id = Column(String, nullable=True, index=True)
+    expedient_id = Column(String, nullable=True, index=True)
+    confidentiality_level = Column(String, nullable=False, default="publico_interno")
+    metadata_json = Column(JSON, nullable=True)
+    owner_user_id = Column(String, nullable=False, index=True)
+    created_by_user_id = Column(String, nullable=False, index=True)
+    due_at = Column(DateTime(timezone=True), nullable=True)
+    created_at = Column(DateTime(timezone=True), nullable=False, default=utcnow)
+    updated_at = Column(DateTime(timezone=True), nullable=False, default=utcnow, onupdate=utcnow)
+    archived_at = Column(DateTime(timezone=True), nullable=True)
