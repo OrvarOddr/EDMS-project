@@ -27,7 +27,5 @@ export const uploadDocumentFile = (payload: UploadDocumentFilePayload) => {
   if (payload.document_id) form.append('document_id', payload.document_id)
   if (payload.version_comment?.trim()) form.append('version_comment', payload.version_comment.trim())
 
-  return client.post<FileUploadResponse>('/files/upload', form, {
-    headers: { 'Content-Type': 'multipart/form-data' },
-  })
+  return client.post<FileUploadResponse>('/files/upload', form)
 }
