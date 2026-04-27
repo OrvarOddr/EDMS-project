@@ -287,8 +287,22 @@ function initialsFromLabel(label: string) {
 }
 
 function getApiErrorMessage(error: unknown, fallback: string) {
-  const detail = (error as { response?: { data?: { detail?: unknown } } })?.response?.data?.detail
-  return typeof detail === 'string' && detail.trim() ? detail : fallback
+  const detail = (error as { response?: { data?: { detail?: unknown; message?: unknown } } })?.response?.data?.detail
+  const message = (error as { response?: { data?: { message?: unknown } } })?.response?.data?.message
+
+  if (typeof detail === 'string' && detail.trim()) return detail
+  if (Array.isArray(detail)) {
+    const messages = detail
+      .map((item) => {
+        if (typeof item === 'string') return item
+        if (item && typeof item === 'object' && 'msg' in item) return String(item.msg)
+        return null
+      })
+      .filter(Boolean)
+    if (messages.length > 0) return messages.join('. ')
+  }
+  if (message && typeof message === 'string' && message.trim()) return message
+  return fallback
 }
 
 function formatFileSize(bytes: number) {
