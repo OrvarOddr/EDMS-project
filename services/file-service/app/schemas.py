@@ -30,6 +30,14 @@ class CreateDocumentFromFileRequest(BaseModel):
     description: str | None = None
 
 
+class FileBulkActionRequest(BaseModel):
+    file_ids: list[str]
+
+
+class FileBulkDeleteResponse(BaseModel):
+    deleted_count: int
+
+
 class DocumentFromFileResponse(BaseModel):
     document_id: str
     document_title: str

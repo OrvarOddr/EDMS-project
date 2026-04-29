@@ -17,6 +17,8 @@ from app.models import FileUpload, StoredFile
 from app.schemas import (
     CreateDocumentFromFileRequest,
     DocumentFromFileResponse,
+    FileBulkActionRequest,
+    FileBulkDeleteResponse,
     FileListItemResponse,
     FileMetadataResponse,
     FileUploadResponse,
@@ -130,6 +132,51 @@ def _find_upload(db: Session, file_id: str, *, status_filter: str | None = None)
     return result
 
 
+def _trashed_rows_for_user(
+    db: Session,
+    user_id: str,
+    file_ids: list[str] | None = None,
+) -> list[tuple[StoredFile, FileUpload]]:
+    query = (
+        db.query(StoredFile, FileUpload)
+        .join(FileUpload, FileUpload.stored_file_id == StoredFile.id)
+        .filter(
+            FileUpload.uploader_user_id == user_id,
+            FileUpload.upload_status == "trashed",
+        )
+    )
+    if file_ids is not None:
+        query = query.filter(StoredFile.id.in_(file_ids))
+    return query.order_by(StoredFile.uploaded_at.desc()).all()
+
+
+def _restore_rows(rows: list[tuple[StoredFile, FileUpload]], db: Session) -> list[FileListItemResponse]:
+    now = utcnow()
+    restored: list[FileListItemResponse] = []
+    for stored_file, upload in rows:
+        upload.upload_status = "completed"
+        upload.completed_at = now
+        restored.append(_to_file_list_response(stored_file, upload))
+    db.commit()
+    return restored
+
+
+def _delete_rows_permanently(rows: list[tuple[StoredFile, FileUpload]], db: Session) -> int:
+    minio_client = _client()
+    deleted_count = 0
+    for stored_file, upload in rows:
+        try:
+            minio_client.remove_object(settings.MINIO_BUCKET, stored_file.storage_path)
+        except S3Error as exc:
+            if exc.code != "NoSuchKey":
+                raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=f"No se pudo eliminar desde MinIO: {exc.code}") from exc
+        db.delete(upload)
+        db.delete(stored_file)
+        deleted_count += 1
+    db.commit()
+    return deleted_count
+
+
 @router.get("/unassigned", response_model=list[FileListItemResponse])
 def list_unassigned_files(
     x_user_id: str | None = Header(default=None, alias="X-User-Id"),
@@ -171,6 +218,60 @@ def list_trashed_files(
         .all()
     )
     return [_to_file_list_response(stored_file, upload) for stored_file, upload in rows]
+
+
+@router.patch("/trash/restore", response_model=list[FileListItemResponse])
+def restore_selected_trashed_files(
+    body: FileBulkActionRequest,
+    x_user_id: str | None = Header(default=None, alias="X-User-Id"),
+    db: Session = Depends(get_db),
+):
+    if not x_user_id:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Usuario autenticado requerido")
+    if not body.file_ids:
+        return []
+
+    rows = _trashed_rows_for_user(db, x_user_id, body.file_ids)
+    return _restore_rows(rows, db)
+
+
+@router.patch("/trash/restore-all", response_model=list[FileListItemResponse])
+def restore_all_trashed_files(
+    x_user_id: str | None = Header(default=None, alias="X-User-Id"),
+    db: Session = Depends(get_db),
+):
+    if not x_user_id:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Usuario autenticado requerido")
+
+    rows = _trashed_rows_for_user(db, x_user_id)
+    return _restore_rows(rows, db)
+
+
+@router.post("/trash/delete", response_model=FileBulkDeleteResponse)
+def delete_selected_trashed_files(
+    body: FileBulkActionRequest,
+    x_user_id: str | None = Header(default=None, alias="X-User-Id"),
+    db: Session = Depends(get_db),
+):
+    if not x_user_id:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Usuario autenticado requerido")
+    if not body.file_ids:
+        return FileBulkDeleteResponse(deleted_count=0)
+
+    rows = _trashed_rows_for_user(db, x_user_id, body.file_ids)
+    return FileBulkDeleteResponse(deleted_count=_delete_rows_permanently(rows, db))
+
+
+@router.post("/trash/delete-all", response_model=FileBulkDeleteResponse)
+def delete_all_trashed_files(
+    x_user_id: str | None = Header(default=None, alias="X-User-Id"),
+    db: Session = Depends(get_db),
+):
+    if not x_user_id:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Usuario autenticado requerido")
+
+    rows = _trashed_rows_for_user(db, x_user_id)
+    return FileBulkDeleteResponse(deleted_count=_delete_rows_permanently(rows, db))
 
 
 @router.post("/upload", response_model=FileUploadResponse, status_code=status.HTTP_201_CREATED)
@@ -336,6 +437,42 @@ def move_file_to_trash(
     db.refresh(upload)
 
     return _to_file_list_response(stored_file, upload)
+
+
+@router.patch("/{file_id}/restore", response_model=FileListItemResponse)
+def restore_file_from_trash(
+    file_id: str,
+    x_user_id: str | None = Header(default=None, alias="X-User-Id"),
+    db: Session = Depends(get_db),
+):
+    if not x_user_id:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Usuario autenticado requerido")
+
+    stored_file, upload = _find_upload(db, file_id, status_filter="trashed")
+    if upload.uploader_user_id != x_user_id:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="No puedes restaurar este archivo")
+
+    upload.upload_status = "completed"
+    upload.completed_at = utcnow()
+    db.commit()
+    db.refresh(upload)
+    return _to_file_list_response(stored_file, upload)
+
+
+@router.delete("/{file_id}", response_model=FileBulkDeleteResponse)
+def delete_file_permanently(
+    file_id: str,
+    x_user_id: str | None = Header(default=None, alias="X-User-Id"),
+    db: Session = Depends(get_db),
+):
+    if not x_user_id:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Usuario autenticado requerido")
+
+    stored_file, upload = _find_upload(db, file_id, status_filter="trashed")
+    if upload.uploader_user_id != x_user_id:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="No puedes eliminar este archivo")
+
+    return FileBulkDeleteResponse(deleted_count=_delete_rows_permanently([(stored_file, upload)], db))
 
 
 @router.get("/{file_id}/content")

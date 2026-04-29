@@ -14,6 +14,12 @@ import {
   listTrashedFiles,
   listUnassignedFiles,
   moveFileToTrash,
+  permanentlyDeleteAllTrashedFiles,
+  permanentlyDeleteFile,
+  permanentlyDeleteFiles,
+  restoreAllTrashedFiles,
+  restoreFileFromTrash,
+  restoreFilesFromTrash,
   uploadDocumentFile,
   type StoredFileItem,
 } from '../api/files'
@@ -292,7 +298,7 @@ function getApiErrorMessage(error: unknown, fallback: string) {
   const detail = response?.data?.detail
   const message = response?.data?.message
 
-  if (response?.status === 413) return 'El archivo supera el tamaño permitido por el servidor'
+  if (response?.status === 413) return 'El archivo supera el tamaño permitido de 100 MB'
 
   if (typeof detail === 'string' && detail.trim()) return detail
   if (Array.isArray(detail)) {
@@ -3172,7 +3178,7 @@ function UploadFileModal({
                     Seleccionar archivos
                   </div>
                   <div style={{ color: 'var(--fg-muted)', fontSize: 12 }}>
-                    PDF, PNG o JPG. Maximo 10 MB por archivo.
+                    PDF, PNG o JPG. Maximo 100 MB por archivo.
                   </div>
                 </div>
               </div>
@@ -3522,28 +3528,276 @@ function UnassignedFilesPanel({
   )
 }
 
+function TrashFileRow({
+  file,
+  busy,
+  selecting,
+  selected,
+  onToggleSelected,
+  onRestore,
+  onDelete,
+}: {
+  file: StoredFileItem
+  busy: boolean
+  selecting: boolean
+  selected: boolean
+  onToggleSelected: (file: StoredFileItem) => void
+  onRestore: (file: StoredFileItem) => void
+  onDelete: (file: StoredFileItem) => void
+}) {
+  const tone = fileTone(file.mime_type)
+
+  return (
+    <div
+      role={selecting ? 'button' : undefined}
+      tabIndex={selecting ? 0 : undefined}
+      onClick={selecting ? () => onToggleSelected(file) : undefined}
+      onKeyDown={selecting ? (event) => {
+        if (event.key === 'Enter' || event.key === ' ') {
+          event.preventDefault()
+          onToggleSelected(file)
+        }
+      } : undefined}
+      className={selecting ? 'edms-nav-item' : undefined}
+      style={{
+        display: 'grid',
+        gridTemplateColumns: selecting
+          ? 'auto minmax(240px, 1.4fr) minmax(110px, 0.5fr) minmax(130px, 0.6fr) auto'
+          : 'minmax(240px, 1.4fr) minmax(110px, 0.5fr) minmax(130px, 0.6fr) auto',
+        alignItems: 'center',
+        gap: 12,
+        padding: '11px 14px',
+        borderTop: '1px solid var(--border)',
+        background: selected ? 'var(--bg-active)' : 'transparent',
+        cursor: selecting ? 'pointer' : 'default',
+      }}
+    >
+      {selecting && (
+        <input
+          type="checkbox"
+          checked={selected}
+          onChange={() => onToggleSelected(file)}
+          onClick={(event) => event.stopPropagation()}
+        />
+      )}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 10, minWidth: 0 }}>
+        <div
+          style={{
+            width: 34,
+            height: 34,
+            borderRadius: 8,
+            background: `color-mix(in oklch, ${tone} 16%, var(--bg-elev-2))`,
+            color: tone,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            flexShrink: 0,
+            fontFamily: "'JetBrains Mono', ui-monospace, monospace",
+            fontSize: 9,
+            fontWeight: 700,
+          }}
+        >
+          {fileKindLabel(file.mime_type)}
+        </div>
+        <div style={{ minWidth: 0 }}>
+          <div style={{ color: 'var(--fg)', fontSize: 12.5, fontWeight: 600, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+            {file.original_filename}
+          </div>
+          <div style={{ color: 'var(--fg-muted)', fontSize: 11.5 }}>
+            En papelera
+          </div>
+        </div>
+      </div>
+
+      <div style={{ color: 'var(--fg-muted)', fontSize: 12 }}>{formatFileSize(file.size_bytes)}</div>
+      <div style={{ color: 'var(--fg-muted)', fontSize: 12 }}>{formatUploadedAt(file.uploaded_at)}</div>
+
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+        <button
+          type="button"
+          className="edms-button"
+          disabled={busy}
+          onClick={(event) => {
+            event.stopPropagation()
+            onRestore(file)
+          }}
+          style={{
+            borderRadius: 8,
+            border: '1px solid var(--border)',
+            background: 'var(--bg-elev-2)',
+            color: 'var(--fg)',
+            padding: '7px 10px',
+            fontSize: 12,
+            fontWeight: 600,
+            opacity: busy ? 0.7 : 1,
+          }}
+        >
+          Restaurar
+        </button>
+        <button
+          type="button"
+          className="edms-button"
+          disabled={busy}
+          onClick={(event) => {
+            event.stopPropagation()
+            onDelete(file)
+          }}
+          style={{
+            borderRadius: 8,
+            border: '1px solid color-mix(in oklch, var(--danger) 35%, var(--border))',
+            background: 'transparent',
+            color: 'var(--danger)',
+            padding: '7px 10px',
+            fontSize: 12,
+            fontWeight: 600,
+            opacity: busy ? 0.7 : 1,
+          }}
+        >
+          Eliminar
+        </button>
+      </div>
+    </div>
+  )
+}
+
 function TrashedFilesPanel({
   files,
   loading,
+  busy,
+  busyFileId,
+  selecting,
+  selectedIds,
+  onToggleSelecting,
+  onToggleSelected,
+  onSelectAll,
+  onRestore,
+  onDelete,
+  onRestoreSelected,
+  onDeleteSelected,
+  onRestoreAll,
+  onDeleteAll,
 }: {
   files: StoredFileItem[]
   loading: boolean
+  busy: boolean
+  busyFileId: string | null
+  selecting: boolean
+  selectedIds: Set<string>
+  onToggleSelecting: () => void
+  onToggleSelected: (file: StoredFileItem) => void
+  onSelectAll: () => void
+  onRestore: (file: StoredFileItem) => void
+  onDelete: (file: StoredFileItem) => void
+  onRestoreSelected: () => void
+  onDeleteSelected: () => void
+  onRestoreAll: () => void
+  onDeleteAll: () => void
 }) {
+  const selectedCount = selectedIds.size
+  const hasFiles = files.length > 0
+
   return (
     <div style={{ flex: 1, overflow: 'auto', padding: '14px 18px 24px' }}>
       <div style={{ background: 'var(--bg-elev)', border: '1px solid var(--border)', borderRadius: 10, overflow: 'hidden' }}>
-        <div style={{ padding: '12px 14px' }}>
-          <div style={{ fontSize: 14, fontWeight: 600, color: 'var(--fg)' }}>Papelera</div>
-          <div style={{ fontSize: 12, color: 'var(--fg-muted)' }}>
-            Archivos sin asignar que fueron enviados a papelera.
+        <div style={{ padding: '14px 16px', display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 12 }}>
+          <div>
+            <div style={{ fontSize: 15, fontWeight: 600, color: 'var(--fg)' }}>Papelera</div>
+            <div style={{ marginTop: 3, fontSize: 12, color: 'var(--fg-muted)' }}>
+              Archivos sin asignar que fueron enviados a papelera.
+            </div>
+          </div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
+            <button
+              type="button"
+              className="edms-button"
+              disabled={loading || !hasFiles || busy}
+              onClick={onToggleSelecting}
+              style={{ ...btnStyleGhost, padding: '7px 10px', opacity: loading || !hasFiles || busy ? 0.7 : 1 }}
+            >
+              {selecting ? 'Cancelar seleccion' : 'Seleccionar'}
+            </button>
+            <button
+              type="button"
+              className="edms-button"
+              disabled={loading || !hasFiles || busy}
+              onClick={onRestoreAll}
+              style={{ ...btnStyleGhost, padding: '7px 10px', opacity: loading || !hasFiles || busy ? 0.7 : 1 }}
+            >
+              Restaurar todo
+            </button>
+            <button
+              type="button"
+              className="edms-button"
+              disabled={loading || !hasFiles || busy}
+              onClick={onDeleteAll}
+              style={{ ...btnStyleGhost, padding: '7px 10px', color: 'var(--danger)', opacity: loading || !hasFiles || busy ? 0.7 : 1 }}
+            >
+              Eliminar todo
+            </button>
           </div>
         </div>
+
+        {selecting && hasFiles && (
+          <div style={{ padding: '10px 14px', borderTop: '1px solid var(--border)', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, background: 'var(--bg-elev-2)' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+              <button type="button" className="edms-button" disabled={busy} onClick={onSelectAll} style={{ ...btnStyleGhost, padding: '6px 9px', opacity: busy ? 0.7 : 1 }}>
+                {selectedCount === files.length ? 'Quitar seleccion' : 'Seleccionar todo'}
+              </button>
+              <span style={{ color: 'var(--fg-muted)', fontSize: 12 }}>
+                {selectedCount} seleccionado{selectedCount === 1 ? '' : 's'}
+              </span>
+            </div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              <button type="button" className="edms-button" disabled={busy || selectedCount === 0} onClick={onRestoreSelected} style={{ ...btnStyleGhost, padding: '6px 9px', opacity: busy || selectedCount === 0 ? 0.7 : 1 }}>
+                Restaurar seleccionados
+              </button>
+              <button type="button" className="edms-button" disabled={busy || selectedCount === 0} onClick={onDeleteSelected} style={{ ...btnStyleGhost, padding: '6px 9px', color: 'var(--danger)', opacity: busy || selectedCount === 0 ? 0.7 : 1 }}>
+                Eliminar seleccionados
+              </button>
+            </div>
+          </div>
+        )}
+
         {loading ? (
           <div style={{ padding: 14, borderTop: '1px solid var(--border)', color: 'var(--fg-muted)', fontSize: 12.5 }}>Cargando papelera...</div>
-        ) : files.length === 0 ? (
+        ) : !hasFiles ? (
           <div style={{ padding: 14, borderTop: '1px solid var(--border)', color: 'var(--fg-muted)', fontSize: 12.5 }}>La papelera esta vacia.</div>
         ) : (
-          files.map((file) => <FileRow key={file.id} file={file} />)
+          <>
+            <div
+              style={{
+                display: 'grid',
+                gridTemplateColumns: selecting
+                  ? 'auto minmax(240px, 1.4fr) minmax(110px, 0.5fr) minmax(130px, 0.6fr) auto'
+                  : 'minmax(240px, 1.4fr) minmax(110px, 0.5fr) minmax(130px, 0.6fr) auto',
+                gap: 12,
+                padding: '8px 14px',
+                borderTop: '1px solid var(--border)',
+                color: 'var(--fg-dim)',
+                fontSize: 11,
+                letterSpacing: '0.04em',
+                textTransform: 'uppercase',
+              }}
+            >
+              {selecting && <span />}
+              <span>Archivo</span>
+              <span>Tamaño</span>
+              <span>Enviado</span>
+              <span style={{ width: 190 }}>Acciones</span>
+            </div>
+            {files.map((file) => (
+              <TrashFileRow
+                key={file.id}
+                file={file}
+                busy={busy || busyFileId === file.id}
+                selecting={selecting}
+                selected={selectedIds.has(file.id)}
+                onToggleSelected={onToggleSelected}
+                onRestore={onRestore}
+                onDelete={onDelete}
+              />
+            ))}
+          </>
         )}
       </div>
     </div>
@@ -4048,6 +4302,8 @@ export default function DashboardPage() {
   const [unassignedFiles, setUnassignedFiles] = useState<StoredFileItem[]>([])
   const [trashedFiles, setTrashedFiles] = useState<StoredFileItem[]>([])
   const [selectedUnassignedFileId, setSelectedUnassignedFileId] = useState<string | null>(null)
+  const [selectingTrashFiles, setSelectingTrashFiles] = useState(false)
+  const [selectedTrashFileIds, setSelectedTrashFileIds] = useState<Set<string>>(new Set())
   const [createdDocs, setCreatedDocs] = useState<DocumentItem[]>([])
   const [loadingFileLists, setLoadingFileLists] = useState(true)
   const [busyFileId, setBusyFileId] = useState<string | null>(null)
@@ -4163,6 +4419,11 @@ export default function DashboardPage() {
     setSelected(new Set())
   }
 
+  function clearTrashSelection() {
+    setSelectedTrashFileIds(new Set())
+    setSelectingTrashFiles(false)
+  }
+
   function openDoc(id: string) {
     setOpenDocId(id)
   }
@@ -4177,6 +4438,7 @@ export default function DashboardPage() {
       const { unassignedFiles: pendingFiles, trashedFiles: deletedFiles } = await fetchFileLists()
       setUnassignedFiles(pendingFiles)
       setTrashedFiles(deletedFiles)
+      setSelectedTrashFileIds((current) => new Set([...current].filter((id) => deletedFiles.some((file) => file.id === id))))
     } catch {
       setToast('No se pudieron cargar los archivos sin asignar')
     } finally {
@@ -4194,6 +4456,136 @@ export default function DashboardPage() {
       setToast(`${file.original_filename} enviado a papelera`)
     } catch (err) {
       setToast(getApiErrorMessage(err, 'No se pudo enviar el archivo a papelera'))
+    } finally {
+      setBusyFileId(null)
+    }
+  }
+
+  function removeTrashSelection(fileIds: string[]) {
+    const removed = new Set(fileIds)
+    setSelectedTrashFileIds((current) => new Set([...current].filter((id) => !removed.has(id))))
+  }
+
+  function toggleTrashSelectionMode() {
+    if (selectingTrashFiles) {
+      setSelectedTrashFileIds(new Set())
+      setSelectingTrashFiles(false)
+      return
+    }
+    setSelectingTrashFiles(true)
+  }
+
+  function toggleTrashFileSelection(file: StoredFileItem) {
+    setSelectedTrashFileIds((current) => {
+      const next = new Set(current)
+      if (next.has(file.id)) next.delete(file.id)
+      else next.add(file.id)
+      return next
+    })
+  }
+
+  function toggleAllTrashFilesSelection() {
+    setSelectedTrashFileIds((current) => {
+      if (current.size === trashedFiles.length) return new Set()
+      return new Set(trashedFiles.map((file) => file.id))
+    })
+  }
+
+  async function handleRestoreTrashedFile(file: StoredFileItem) {
+    setBusyFileId(file.id)
+    try {
+      const { data } = await restoreFileFromTrash(file.id)
+      setTrashedFiles((current) => current.filter((item) => item.id !== file.id))
+      setUnassignedFiles((current) => [data, ...current.filter((item) => item.id !== data.id)])
+      removeTrashSelection([file.id])
+      setToast(`${file.original_filename} restaurado`)
+    } catch (err) {
+      setToast(getApiErrorMessage(err, 'No se pudo restaurar el archivo'))
+    } finally {
+      setBusyFileId(null)
+    }
+  }
+
+  async function handleDeleteTrashedFile(file: StoredFileItem) {
+    setBusyFileId(file.id)
+    try {
+      await permanentlyDeleteFile(file.id)
+      setTrashedFiles((current) => current.filter((item) => item.id !== file.id))
+      removeTrashSelection([file.id])
+      setToast(`${file.original_filename} eliminado definitivamente`)
+    } catch (err) {
+      setToast(getApiErrorMessage(err, 'No se pudo eliminar definitivamente el archivo'))
+    } finally {
+      setBusyFileId(null)
+    }
+  }
+
+  async function handleRestoreSelectedTrashedFiles() {
+    const selectedIds = [...selectedTrashFileIds]
+    if (selectedIds.length === 0) return
+
+    setBusyFileId('__trash-bulk__')
+    try {
+      const { data } = await restoreFilesFromTrash(selectedIds)
+      const restoredIds = new Set(data.map((file) => file.id))
+      setTrashedFiles((current) => current.filter((file) => !restoredIds.has(file.id)))
+      setUnassignedFiles((current) => [...data, ...current.filter((file) => !restoredIds.has(file.id))])
+      clearTrashSelection()
+      setToast(`${data.length} archivo${data.length === 1 ? '' : 's'} restaurado${data.length === 1 ? '' : 's'}`)
+    } catch (err) {
+      setToast(getApiErrorMessage(err, 'No se pudieron restaurar los archivos seleccionados'))
+    } finally {
+      setBusyFileId(null)
+    }
+  }
+
+  async function handleDeleteSelectedTrashedFiles() {
+    const selectedIds = [...selectedTrashFileIds]
+    if (selectedIds.length === 0) return
+
+    setBusyFileId('__trash-bulk__')
+    try {
+      const { data } = await permanentlyDeleteFiles(selectedIds)
+      const deletedIds = new Set(selectedIds)
+      setTrashedFiles((current) => current.filter((file) => !deletedIds.has(file.id)))
+      clearTrashSelection()
+      setToast(`${data.deleted_count} archivo${data.deleted_count === 1 ? '' : 's'} eliminado${data.deleted_count === 1 ? '' : 's'} definitivamente`)
+    } catch (err) {
+      setToast(getApiErrorMessage(err, 'No se pudieron eliminar los archivos seleccionados'))
+    } finally {
+      setBusyFileId(null)
+    }
+  }
+
+  async function handleRestoreAllTrashedFiles() {
+    if (trashedFiles.length === 0) return
+
+    setBusyFileId('__trash-bulk__')
+    try {
+      const { data } = await restoreAllTrashedFiles()
+      const restoredIds = new Set(data.map((file) => file.id))
+      setTrashedFiles((current) => current.filter((file) => !restoredIds.has(file.id)))
+      setUnassignedFiles((current) => [...data, ...current.filter((file) => !restoredIds.has(file.id))])
+      clearTrashSelection()
+      setToast(`${data.length} archivo${data.length === 1 ? '' : 's'} restaurado${data.length === 1 ? '' : 's'}`)
+    } catch (err) {
+      setToast(getApiErrorMessage(err, 'No se pudo restaurar toda la papelera'))
+    } finally {
+      setBusyFileId(null)
+    }
+  }
+
+  async function handleDeleteAllTrashedFiles() {
+    if (trashedFiles.length === 0) return
+
+    setBusyFileId('__trash-bulk__')
+    try {
+      const { data } = await permanentlyDeleteAllTrashedFiles()
+      setTrashedFiles([])
+      clearTrashSelection()
+      setToast(`${data.deleted_count} archivo${data.deleted_count === 1 ? '' : 's'} eliminado${data.deleted_count === 1 ? '' : 's'} definitivamente`)
+    } catch (err) {
+      setToast(getApiErrorMessage(err, 'No se pudo eliminar toda la papelera'))
     } finally {
       setBusyFileId(null)
     }
@@ -4346,6 +4738,7 @@ export default function DashboardPage() {
           setSelected(new Set())
           setSearch('')
           if (view !== 'archivos-sin-asignar') setSelectedUnassignedFileId(null)
+          if (view !== 'papelera') clearTrashSelection()
         }}
         selectedFolder={selectedFolder}
         onSelectFolder={setSelectedFolder}
@@ -4389,6 +4782,8 @@ export default function DashboardPage() {
                 ? 'Tienes 3 documentos que requieren tu firma hoy.'
                 : selectedView === 'archivos-sin-asignar'
                   ? `${unassignedFiles.length} archivo${unassignedFiles.length === 1 ? '' : 's'} pendiente${unassignedFiles.length === 1 ? '' : 's'} por convertir en documento`
+                  : selectedView === 'papelera'
+                    ? `${trashedFiles.length} archivo${trashedFiles.length === 1 ? '' : 's'} en papelera`
                   : `${visibleDocs.length} documentos${selectedTag ? ` · etiqueta "${findTag(selectedTag)?.label}"` : ''}`}
             </div>
           </div>
@@ -4517,7 +4912,23 @@ export default function DashboardPage() {
               <FiltersRow filters={filters} onFilters={setFilters} onClear={() => setFilters(initialFilters)} />
             )}
             {selectedView === 'archivos-sin-asignar' ? null : selectedView === 'papelera' ? (
-              <TrashedFilesPanel files={trashedFiles} loading={loadingFileLists} />
+              <TrashedFilesPanel
+                files={trashedFiles}
+                loading={loadingFileLists}
+                busy={busyFileId === '__trash-bulk__'}
+                busyFileId={busyFileId}
+                selecting={selectingTrashFiles}
+                selectedIds={selectedTrashFileIds}
+                onToggleSelecting={toggleTrashSelectionMode}
+                onToggleSelected={toggleTrashFileSelection}
+                onSelectAll={toggleAllTrashFilesSelection}
+                onRestore={handleRestoreTrashedFile}
+                onDelete={handleDeleteTrashedFile}
+                onRestoreSelected={handleRestoreSelectedTrashedFiles}
+                onDeleteSelected={handleDeleteSelectedTrashedFiles}
+                onRestoreAll={handleRestoreAllTrashedFiles}
+                onDeleteAll={handleDeleteAllTrashedFiles}
+              />
             ) : viewMode === 'list' ? (
               <ListView
                 docs={visibleDocs}
