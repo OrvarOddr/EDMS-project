@@ -1529,23 +1529,17 @@ function Sidebar({
           gap: 4,
         }}
       >
-        <div
+        <img
+          src={logo}
+          alt="Muninn"
           style={{
             width: 30,
             height: 30,
-            borderRadius: 8,
-            background: 'var(--accent)',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            color: 'var(--accent-fg)',
-            fontWeight: 700,
-            fontSize: 14,
+            borderRadius: 7,
+            objectFit: 'contain',
             marginBottom: 10,
           }}
-        >
-          A
-        </div>
+        />
         {[
           { id: 'inicio', icon: <Icon.Home size={16} /> },
           { id: 'archivos-sin-asignar', icon: <Icon.File size={16} /> },
@@ -1619,8 +1613,8 @@ function Sidebar({
           src={logo}
           alt="Muninn"
           style={{
-            width: 60,
-            height: 60,
+            width: 50,
+            height: 50,
             borderRadius: 7,
             objectFit: 'contain',
           }}
