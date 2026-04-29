@@ -1619,8 +1619,8 @@ function Sidebar({
           src={logo}
           alt="Muninn"
           style={{
-            width: 40,
-            height: 40,
+            width: 60,
+            height: 60,
             borderRadius: 7,
             objectFit: 'contain',
           }}
