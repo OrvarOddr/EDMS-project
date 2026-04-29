@@ -1,0 +1,37 @@
+name: CD
+
+on:
+  push:
+    branches:
+      - develop
+
+jobs:
+  deploy:
+    name: Deploy a producción
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Deploy al servidor via SSH
+        uses: appleboy/ssh-action@v1.0.3
+        env:
+          GH_TOKEN: ${{ secrets.GH_TOKEN }}
+        with:
+          host: pacheco.chillan.ubiobio.cl
+          username: alejandroortiz2101
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          envs: GH_TOKEN
+          script: |
+            set -e
+            cd /home/alejandroortiz2101/EDMS-project
+
+            # Pull sin credenciales manuales
+            git pull https://$GH_TOKEN@github.com/OrvarOddr/EDMS-project.git develop
+
+            # Rebuild y levantar todos los servicios
+            docker compose up -d --build
+
+            # Recargar nginx para aplicar cualquier cambio de config
+            docker compose restart nginx
+
+            # Confirmar estado final
+            docker compose ps
