@@ -6,7 +6,7 @@ from io import BytesIO
 from pathlib import Path
 
 import httpx
-from fastapi import APIRouter, Depends, File, Form, Header, HTTPException, UploadFile, status
+from fastapi import APIRouter, Depends, File, Form, Header, HTTPException, Response, UploadFile, status
 from minio import Minio
 from minio.error import S3Error
 from sqlalchemy.orm import Session
@@ -336,6 +336,41 @@ def move_file_to_trash(
     db.refresh(upload)
 
     return _to_file_list_response(stored_file, upload)
+
+
+@router.get("/{file_id}/content")
+def get_file_content(
+    file_id: str,
+    x_user_id: str | None = Header(default=None, alias="X-User-Id"),
+    db: Session = Depends(get_db),
+):
+    if not x_user_id:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Usuario autenticado requerido")
+
+    stored_file, upload = _find_upload(db, file_id)
+    if upload.uploader_user_id != x_user_id:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="No puedes ver este archivo")
+
+    minio_client = _client()
+    obj = None
+    try:
+        obj = minio_client.get_object(settings.MINIO_BUCKET, stored_file.storage_path)
+        content = obj.read()
+    except S3Error as exc:
+        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=f"No se pudo leer desde MinIO: {exc.code}") from exc
+    finally:
+        if obj:
+            obj.close()
+            obj.release_conn()
+
+    return Response(
+        content=content,
+        media_type=stored_file.mime_type,
+        headers={
+            "Cache-Control": "private, max-age=60",
+            "Content-Disposition": f'inline; filename="{stored_file.original_filename}"',
+        },
+    )
 
 
 @router.get("/{file_id}", response_model=FileMetadataResponse)

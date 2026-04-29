@@ -10,6 +10,7 @@ import { useAuth } from '../context/AuthContext'
 import { assignRole, createUser, listRoles, listUsers, type RoleItem, type UserMe } from '../api/auth'
 import {
   createDocumentFromFile,
+  getFileContent,
   listTrashedFiles,
   listUnassignedFiles,
   moveFileToTrash,
@@ -339,11 +340,6 @@ function fileTone(mimeType: string) {
   if (mimeType === 'application/pdf') return '#ff6b6b'
   if (mimeType.startsWith('image/')) return '#34d399'
   return '#6aa8ff'
-}
-
-function shortChecksum(value?: string | null) {
-  if (!value) return 'pendiente'
-  return value.length > 18 ? `${value.slice(0, 12)}...${value.slice(-6)}` : value
 }
 
 async function fetchFileLists() {
@@ -2650,6 +2646,12 @@ function FileDetailDrawer({
   onTrash: (file: StoredFileItem) => void
   onCreateDocument: (file: StoredFileItem) => void
 }) {
+  const [preview, setPreview] = useState<{
+    fileId: string
+    url?: string
+    error?: string
+  } | null>(null)
+
   useEffect(() => {
     if (!file) return
     function handleEscape(event: KeyboardEvent) {
@@ -2659,11 +2661,34 @@ function FileDetailDrawer({
     return () => document.removeEventListener('keydown', handleEscape)
   }, [file, onClose])
 
+  useEffect(() => {
+    if (!file) return
+    const controller = new AbortController()
+    let objectUrl: string | null = null
+
+    getFileContent(file.id, controller.signal)
+      .then((response) => {
+        objectUrl = URL.createObjectURL(response.data)
+        setPreview({ fileId: file.id, url: objectUrl })
+      })
+      .catch(() => {
+        if (!controller.signal.aborted) {
+          setPreview({ fileId: file.id, error: 'No se pudo cargar la vista previa' })
+        }
+      })
+
+    return () => {
+      controller.abort()
+      if (objectUrl) URL.revokeObjectURL(objectUrl)
+    }
+  }, [file])
+
   if (!file) return null
 
   const label = fileKindLabel(file.mime_type)
   const tone = fileTone(file.mime_type)
   const uploadedAt = formatUploadedAt(file.uploaded_at)
+  const activePreview = preview?.fileId === file.id ? preview : null
 
   return (
     <aside
@@ -2708,60 +2733,33 @@ function FileDetailDrawer({
               aspectRatio: file.mime_type.startsWith('image/') ? '16 / 10' : '8.5 / 11',
               borderRadius: 9,
               overflow: 'hidden',
-              background: `linear-gradient(135deg, color-mix(in oklch, ${tone} 18%, var(--bg-elev-2)), var(--bg-elev-2))`,
+              background: 'var(--bg-elev-2)',
               border: '1px solid var(--border)',
               position: 'relative',
-              padding: 18,
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
             }}
           >
-            <svg width="100%" height="100%" style={{ position: 'absolute', inset: 0, opacity: 0.38 }}>
-              <defs>
-                <pattern id={`stripes-file-${file.id}`} patternUnits="userSpaceOnUse" width="8" height="8" patternTransform="rotate(45)">
-                  <line x1="0" y1="0" x2="0" y2="8" stroke={tone} strokeWidth="1" opacity="0.3" />
-                </pattern>
-              </defs>
-              <rect width="100%" height="100%" fill={`url(#stripes-file-${file.id})`} />
-            </svg>
-            <div style={{ position: 'relative', display: 'flex', flexDirection: 'column', gap: 7 }}>
-              <div style={{ height: 9, width: '76%', background: 'color-mix(in oklch, currentColor 35%, transparent)', borderRadius: 2, color: tone }} />
-              <div style={{ height: 4, width: '48%', background: 'color-mix(in oklch, currentColor 24%, transparent)', borderRadius: 1, color: tone, marginBottom: 12 }} />
-              {file.mime_type.startsWith('image/')
-                ? (
-                  <div
-                    style={{
-                      minHeight: 150,
-                      borderRadius: 8,
-                      border: `1px solid color-mix(in oklch, ${tone} 34%, transparent)`,
-                      background: `radial-gradient(circle at 25% 25%, color-mix(in oklch, ${tone} 28%, transparent), transparent 30%), radial-gradient(circle at 70% 60%, color-mix(in oklch, ${tone} 18%, transparent), transparent 34%)`,
-                    }}
-                  />
-                )
-                : Array.from({ length: 9 }).map((_, index) => (
-                  <div
-                    key={index}
-                    style={{
-                      height: 4,
-                      width: `${88 - (index % 4) * 9}%`,
-                      background: 'color-mix(in oklch, currentColor 16%, transparent)',
-                      borderRadius: 1,
-                      color: tone,
-                    }}
-                  />
-                ))}
-            </div>
-            <div
-              style={{
-                position: 'absolute',
-                bottom: 10,
-                right: 12,
-                fontFamily: "'JetBrains Mono', ui-monospace, monospace",
-                fontSize: 10,
-                color: tone,
-                opacity: 0.72,
-              }}
-            >
-              Vista previa · archivo suelto
-            </div>
+            {activePreview?.url ? (
+              file.mime_type.startsWith('image/') ? (
+                <img
+                  src={activePreview.url}
+                  alt={`Vista previa de ${file.original_filename}`}
+                  style={{ width: '100%', height: '100%', objectFit: 'contain', background: '#05070a' }}
+                />
+              ) : (
+                <iframe
+                  src={activePreview.url}
+                  title={`Vista previa de ${file.original_filename}`}
+                  style={{ width: '100%', height: '100%', border: 0, background: '#05070a' }}
+                />
+              )
+            ) : (
+              <div style={{ padding: 18, textAlign: 'center', color: activePreview?.error ? 'var(--danger)' : 'var(--fg-muted)', fontSize: 12.5 }}>
+                {activePreview?.error ?? 'Cargando vista previa...'}
+              </div>
+            )}
           </div>
         </div>
 
@@ -2797,14 +2795,9 @@ function FileDetailDrawer({
           <div style={{ display: 'flex', flexDirection: 'column', gap: 0 }}>
             {[
               ['Subido por', uploaderLabel],
-              ['Tipo MIME', file.mime_type],
-              ['Tipo visible', label],
+              ['Formato', label],
               ['Tamaño', formatFileSize(file.size_bytes)],
               ['Fecha de carga', uploadedAt],
-              ['Estado', file.upload_status],
-              ['Checksum', <span style={{ fontFamily: "'JetBrains Mono', ui-monospace, monospace" }}>{shortChecksum(file.checksum)}</span>],
-              ['ID archivo', <span style={{ fontFamily: "'JetBrains Mono', ui-monospace, monospace" }}>{file.id.slice(0, 8)}</span>],
-              ['ID carga', <span style={{ fontFamily: "'JetBrains Mono', ui-monospace, monospace" }}>{file.upload_id.slice(0, 8)}</span>],
             ].map(([labelText, value], index) => (
               <div
                 key={String(labelText)}
