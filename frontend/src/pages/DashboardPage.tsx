@@ -288,8 +288,11 @@ function initialsFromLabel(label: string) {
 }
 
 function getApiErrorMessage(error: unknown, fallback: string) {
-  const detail = (error as { response?: { data?: { detail?: unknown; message?: unknown } } })?.response?.data?.detail
-  const message = (error as { response?: { data?: { message?: unknown } } })?.response?.data?.message
+  const response = (error as { response?: { status?: number; data?: { detail?: unknown; message?: unknown } } })?.response
+  const detail = response?.data?.detail
+  const message = response?.data?.message
+
+  if (response?.status === 413) return 'El archivo supera el tamaño permitido por el servidor'
 
   if (typeof detail === 'string' && detail.trim()) return detail
   if (Array.isArray(detail)) {
