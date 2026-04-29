@@ -61,3 +61,9 @@ export const moveFileToTrash = (fileId: string) =>
 
 export const createDocumentFromFile = (fileId: string) =>
   client.post<DocumentFromFileResponse>(`/files/${fileId}/document`, {})
+
+export const getFileContent = (fileId: string, signal?: AbortSignal) =>
+  client.get<Blob>(`/files/${fileId}/content`, {
+    responseType: 'blob',
+    signal,
+  })
