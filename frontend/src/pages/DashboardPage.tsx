@@ -6,6 +6,7 @@ import {
   type CSSProperties,
   type ReactNode,
 } from 'react'
+import logo from '../assets/logo.png'
 import { useAuth } from '../context/AuthContext'
 import { assignRole, createUser, listRoles, listUsers, type RoleItem, type UserMe } from '../api/auth'
 import {
@@ -1614,22 +1615,16 @@ function Sidebar({
           borderBottom: '1px solid var(--border)',
         }}
       >
-        <div
+        <img
+          src={logo}
+          alt="Muninn"
           style={{
             width: 28,
             height: 28,
             borderRadius: 7,
-            background: 'var(--accent)',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            color: 'var(--accent-fg)',
-            fontWeight: 700,
-            fontSize: 13,
+            objectFit: 'contain',
           }}
-        >
-          A
-        </div>
+        />
         <div style={{ flex: 1, minWidth: 0 }}>
           <div
             style={{
