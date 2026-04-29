@@ -1533,8 +1533,8 @@ function Sidebar({
           src={logo}
           alt="Muninn"
           style={{
-            width: 30,
-            height: 30,
+            width: 50,
+            height: 50,
             borderRadius: 7,
             objectFit: 'contain',
             marginBottom: 10,
