@@ -27,8 +27,9 @@ jobs:
             # Pull sin credenciales manuales
             git pull https://$GH_TOKEN@github.com/OrvarOddr/EDMS-project.git develop
 
-            # Rebuild y levantar todos los servicios
-            docker-compose up -d --build
+            # Rebuild forzado sin caché y levantar todos los servicios
+            docker-compose build --no-cache
+            docker-compose up -d
 
             # Recargar nginx para aplicar cualquier cambio de config
             docker-compose restart nginx
