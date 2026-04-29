@@ -1,6 +1,6 @@
 import hashlib
-import json
 import re
+import shutil
 import uuid
 from datetime import datetime, timezone
 from io import BytesIO
@@ -8,8 +8,7 @@ from pathlib import Path
 
 import httpx
 from fastapi import APIRouter, Depends, File, Form, Header, HTTPException, Response, UploadFile, status
-from minio import Minio, MinioAdmin
-from minio.credentials import StaticProvider
+from minio import Minio
 from minio.error import S3Error
 from sqlalchemy import func
 from sqlalchemy.orm import Session
@@ -541,20 +540,7 @@ def get_storage_summary(
         or 0
     )
 
-    try:
-        admin = MinioAdmin(
-            settings.MINIO_ENDPOINT,
-            credentials=StaticProvider(settings.MINIO_ACCESS_KEY, settings.MINIO_SECRET_KEY),
-            secure=settings.MINIO_SECURE,
-        )
-        info = json.loads(admin.info())
-        servers = info.get("servers") or []
-        total_bytes = sum(
-            d.get("totalSpace", 0)
-            for server in servers
-            for d in (server.get("drives") or [])
-        )
-    except Exception:
-        total_bytes = 0
+    disk = shutil.disk_usage("/")
+    total_bytes = disk.total
 
     return StorageSummaryResponse(used_bytes=used_bytes, total_bytes=total_bytes)
