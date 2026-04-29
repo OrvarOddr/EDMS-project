@@ -540,7 +540,9 @@ def get_storage_summary(
         or 0
     )
 
-    disk = shutil.disk_usage("/")
-    total_bytes = disk.total
+    # Opción A (activa): cuota fija configurada en STORAGE_QUOTA_GB
+    total_bytes = settings.STORAGE_QUOTA_GB * 1024 ** 3
+    # Opción B: disco físico real del servidor (descomentar para activar)
+    # total_bytes = shutil.disk_usage("/").total
 
     return StorageSummaryResponse(used_bytes=used_bytes, total_bytes=total_bytes)

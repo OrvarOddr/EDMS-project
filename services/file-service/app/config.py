@@ -11,6 +11,7 @@ class Settings(BaseSettings):
     MINIO_SECRET_KEY: str
     MINIO_BUCKET: str = "documents"
     MAX_FILE_SIZE_MB: int = 100
+    STORAGE_QUOTA_GB: int = 10
     DOCUMENT_SERVICE_URL: str = "http://document-service:8002"
 
     class Config:
