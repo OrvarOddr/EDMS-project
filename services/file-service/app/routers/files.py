@@ -1,4 +1,5 @@
 import hashlib
+import json
 import re
 import uuid
 from datetime import datetime, timezone
@@ -7,8 +8,10 @@ from pathlib import Path
 
 import httpx
 from fastapi import APIRouter, Depends, File, Form, Header, HTTPException, Response, UploadFile, status
-from minio import Minio
+from minio import Minio, MinioAdmin
+from minio.credentials import StaticProvider
 from minio.error import S3Error
+from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from app.config import settings
@@ -22,6 +25,7 @@ from app.schemas import (
     FileListItemResponse,
     FileMetadataResponse,
     FileUploadResponse,
+    StorageSummaryResponse,
 )
 
 router = APIRouter(prefix="/files", tags=["files"])
@@ -516,3 +520,37 @@ def get_file_metadata(file_id: str, db: Session = Depends(get_db)):
     if not stored_file:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Archivo no encontrado")
     return _to_file_response(stored_file)
+
+
+@router.get("/storage/summary", response_model=StorageSummaryResponse)
+def get_storage_summary(
+    x_user_id: str | None = Header(default=None, alias="X-User-Id"),
+    db: Session = Depends(get_db),
+):
+    if not x_user_id:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED)
+
+    used_bytes: int = (
+        db.query(func.sum(StoredFile.size_bytes))
+        .join(FileUpload, FileUpload.stored_file_id == StoredFile.id)
+        .filter(
+            FileUpload.uploader_user_id == x_user_id,
+            FileUpload.upload_status != "deleted",
+        )
+        .scalar()
+        or 0
+    )
+
+    try:
+        admin = MinioAdmin(
+            settings.MINIO_ENDPOINT,
+            credentials=StaticProvider(settings.MINIO_ACCESS_KEY, settings.MINIO_SECRET_KEY),
+            secure=settings.MINIO_SECURE,
+        )
+        info = json.loads(admin.info())
+        disks = info.get("disks") or []
+        total_bytes = sum(d.get("totalSpace", 0) for d in disks)
+    except Exception:
+        total_bytes = 0
+
+    return StorageSummaryResponse(used_bytes=used_bytes, total_bytes=total_bytes)

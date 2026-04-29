@@ -89,3 +89,11 @@ export const getFileContent = (fileId: string, signal?: AbortSignal) =>
     responseType: 'blob',
     signal,
   })
+
+export interface StorageSummary {
+  used_bytes: number
+  total_bytes: number
+}
+
+export const getStorageSummary = () =>
+  client.get<StorageSummary>('/files/storage/summary')

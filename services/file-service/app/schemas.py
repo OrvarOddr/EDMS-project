@@ -43,3 +43,8 @@ class DocumentFromFileResponse(BaseModel):
     document_title: str
     document_version_id: str
     file: FileMetadataResponse
+
+
+class StorageSummaryResponse(BaseModel):
+    used_bytes: int
+    total_bytes: int

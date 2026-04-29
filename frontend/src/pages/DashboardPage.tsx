@@ -12,6 +12,7 @@ import { assignRole, createUser, listRoles, listUsers, type RoleItem, type UserM
 import {
   createDocumentFromFile,
   getFileContent,
+  getStorageSummary,
   listTrashedFiles,
   listUnassignedFiles,
   moveFileToTrash,
@@ -1494,6 +1495,7 @@ function Sidebar({
   onSelectTag,
   unassignedCount,
   onToggleCollapsed,
+  storage,
 }: {
   collapsed: boolean
   selectedView: SelectedView
@@ -1504,6 +1506,7 @@ function Sidebar({
   onSelectTag: (tagId: string | null) => void
   unassignedCount: number
   onToggleCollapsed: () => void
+  storage: { used: number; total: number }
 }) {
   const [expanded, setExpanded] = useState(new Set(['root', 'legal', 'finanzas', 'producto']))
 
@@ -1744,13 +1747,13 @@ function Sidebar({
         >
           <span>Almacenamiento</span>
           <span style={{ fontVariantNumeric: 'tabular-nums' }}>
-            {dashboardData.stats.storage.used} / {dashboardData.stats.storage.total} GB
+            {storage.used} / {storage.total} GB
           </span>
         </div>
         <div style={{ height: 4, background: 'var(--bg-active)', borderRadius: 3, overflow: 'hidden' }}>
           <div
             style={{
-              width: `${(dashboardData.stats.storage.used / dashboardData.stats.storage.total) * 100}%`,
+              width: `${storage.total > 0 ? (storage.used / storage.total) * 100 : 0}%`,
               height: '100%',
               background: 'var(--accent)',
               borderRadius: 3,
@@ -2192,12 +2195,12 @@ function GridView({
   )
 }
 
-function OverviewCards() {
+function OverviewCards({ storage }: { storage: { used: number; total: number } }) {
   const cards = [
     { label: 'Documentos totales', value: dashboardData.stats.total.toLocaleString('es-ES'), delta: `+${dashboardData.stats.deltaWeek} esta semana`, deltaTone: 'var(--ok)' },
     { label: 'Pendientes de firma', value: dashboardData.stats.pendientes, delta: '3 vencen hoy', deltaTone: 'var(--warn)' },
     { label: 'Compartidos externos', value: dashboardData.stats.compartidos, delta: '12 con acceso expirado', deltaTone: 'var(--fg-dim)' },
-    { label: 'Almacenamiento', value: `${dashboardData.stats.storage.used} GB`, delta: `${Math.round((dashboardData.stats.storage.used / dashboardData.stats.storage.total) * 100)}% usado`, deltaTone: 'var(--fg-dim)' },
+    { label: 'Almacenamiento', value: `${storage.used} GB`, delta: `${storage.total > 0 ? Math.round((storage.used / storage.total) * 100) : 0}% usado`, deltaTone: 'var(--fg-dim)' },
   ]
 
   return (
@@ -4298,6 +4301,7 @@ export default function DashboardPage() {
   const [busyFileId, setBusyFileId] = useState<string | null>(null)
   const [dragging, setDragging] = useState(false)
   const [toast, setToast] = useState<string | null>(null)
+  const [storage, setStorage] = useState({ used: 0, total: 0 })
   const dragCounter = useRef(0)
 
   const currentUserLabel = user
@@ -4337,6 +4341,17 @@ export default function DashboardPage() {
       .finally(() => {
         if (mounted) setLoadingFileLists(false)
       })
+
+    getStorageSummary()
+      .then((res) => {
+        if (!mounted) return
+        const GB = 1024 ** 3
+        setStorage({
+          used: Math.round((res.data.used_bytes / GB) * 10) / 10,
+          total: Math.round((res.data.total_bytes / GB) * 10) / 10,
+        })
+      })
+      .catch(() => {})
 
     return () => {
       mounted = false
@@ -4735,6 +4750,7 @@ export default function DashboardPage() {
         onSelectTag={setSelectedTag}
         unassignedCount={unassignedFiles.length}
         onToggleCollapsed={() => setTweaks((current) => ({ ...current, sidebarCollapsed: !current.sidebarCollapsed }))}
+        storage={storage}
       />
 
       <main style={{ flex: 1, display: 'flex', flexDirection: 'column', minWidth: 0, position: 'relative' }}>
@@ -4817,7 +4833,7 @@ export default function DashboardPage() {
 
         {showDashboard ? (
           <div style={{ flex: 1, overflow: 'auto' }}>
-            <OverviewCards />
+            <OverviewCards storage={storage} />
             <div style={{ display: 'grid', gridTemplateColumns: '1.5fr 1fr', gap: 12, padding: '14px 18px' }}>
               <ApprovalsPanel onOpenDoc={openDoc} />
               <ActivityPanel />
