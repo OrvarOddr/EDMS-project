@@ -548,8 +548,12 @@ def get_storage_summary(
             secure=settings.MINIO_SECURE,
         )
         info = json.loads(admin.info())
-        disks = info.get("disks") or []
-        total_bytes = sum(d.get("totalSpace", 0) for d in disks)
+        servers = info.get("servers") or []
+        total_bytes = sum(
+            d.get("totalSpace", 0)
+            for server in servers
+            for d in (server.get("drives") or [])
+        )
     except Exception:
         total_bytes = 0
 
