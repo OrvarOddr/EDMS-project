@@ -1,0 +1,105 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter+Tight:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap');
+@import "tailwindcss";
+
+:root {
+  --bg:           #0e0f12;
+  --bg-elev:      #14161b;
+  --bg-elev-2:    #1a1d23;
+  --bg-hover:     #1f232a;
+  --bg-active:    #262a33;
+  --border:       #23262d;
+  --border-strong:#2d3139;
+  --fg:           #e7e8ea;
+  --fg-muted:     #9aa0a8;
+  --fg-dim:       #686d75;
+  --accent:       oklch(0.72 0.13 255);
+  --accent-fg:    oklch(0.98 0.01 255);
+  --accent-soft:  oklch(0.35 0.08 255 / 0.22);
+  --ok:           oklch(0.75 0.14 155);
+  --danger:       oklch(0.7 0.17 25);
+}
+
+* { box-sizing: border-box; margin: 0; padding: 0; }
+
+html, body, #root {
+  height: 100%;
+  font-family: 'Inter Tight', ui-sans-serif, system-ui, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  background: var(--bg);
+  color: var(--fg);
+}
+
+body {
+  overflow: hidden;
+  font-size: 13.5px;
+}
+
+input,
+textarea,
+button {
+  font-family: inherit;
+}
+
+mark {
+  background: var(--accent-soft);
+  color: var(--fg);
+}
+
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--border-strong);
+  border-radius: 10px;
+  border: 2px solid var(--bg);
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--fg-dim);
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+@keyframes edms-slide-in {
+  from {
+    opacity: 0;
+    transform: translateX(12px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+.edms-dashboard .edms-nav-item {
+  transition: background 0.1s, color 0.1s, border-color 0.1s;
+}
+
+.edms-dashboard .edms-nav-item:hover {
+  background: var(--bg-hover) !important;
+}
+
+.edms-dashboard .edms-nav-item[data-active]:hover {
+  background: var(--bg-active) !important;
+}
+
+.edms-dashboard .edms-button {
+  transition: background 0.12s, border-color 0.12s, filter 0.12s, opacity 0.12s;
+}
+
+.edms-dashboard .edms-button:not(.edms-button-primary):not(:disabled):hover {
+  background: var(--bg-hover) !important;
+  border-color: var(--border-strong) !important;
+}
+
+.edms-dashboard .edms-button-primary:not(:disabled):hover {
+  filter: brightness(0.82);
+}
+
+.edms-dashboard input::placeholder {
+  color: var(--fg-dim);
+}
