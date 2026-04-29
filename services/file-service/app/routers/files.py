@@ -1,6 +1,5 @@
 import hashlib
 import re
-import shutil
 import uuid
 from datetime import datetime, timezone
 from io import BytesIO
@@ -542,7 +541,7 @@ def get_storage_summary(
 
     # Opción A (activa): cuota fija configurada en STORAGE_QUOTA_GB
     total_bytes = settings.STORAGE_QUOTA_GB * 1024 ** 3
-    # Opción B: disco físico real del servidor (descomentar para activar)
-    # total_bytes = shutil.disk_usage("/").total
+    # Opción B: disco físico real — requiere "import shutil" y descomentar:
+    # total_bytes = __import__("shutil").disk_usage("/").total
 
     return StorageSummaryResponse(used_bytes=used_bytes, total_bytes=total_bytes)
