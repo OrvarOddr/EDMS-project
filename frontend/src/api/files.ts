@@ -35,6 +35,10 @@ export interface DocumentFromFileResponse {
   file: FileUploadResponse['file']
 }
 
+export interface FileBulkDeleteResponse {
+  deleted_count: number
+}
+
 export interface UploadDocumentFilePayload {
   file: File
   document_id?: string | null
@@ -58,6 +62,24 @@ export const listTrashedFiles = () =>
 
 export const moveFileToTrash = (fileId: string) =>
   client.patch<StoredFileItem>(`/files/${fileId}/trash`)
+
+export const restoreFileFromTrash = (fileId: string) =>
+  client.patch<StoredFileItem>(`/files/${fileId}/restore`)
+
+export const restoreFilesFromTrash = (fileIds: string[]) =>
+  client.patch<StoredFileItem[]>('/files/trash/restore', { file_ids: fileIds })
+
+export const restoreAllTrashedFiles = () =>
+  client.patch<StoredFileItem[]>('/files/trash/restore-all')
+
+export const permanentlyDeleteFile = (fileId: string) =>
+  client.delete<FileBulkDeleteResponse>(`/files/${fileId}`)
+
+export const permanentlyDeleteFiles = (fileIds: string[]) =>
+  client.post<FileBulkDeleteResponse>('/files/trash/delete', { file_ids: fileIds })
+
+export const permanentlyDeleteAllTrashedFiles = () =>
+  client.post<FileBulkDeleteResponse>('/files/trash/delete-all')
 
 export const createDocumentFromFile = (fileId: string) =>
   client.post<DocumentFromFileResponse>(`/files/${fileId}/document`, {})

@@ -112,6 +112,7 @@ services:
       MINIO_ACCESS_KEY: minioadmin
       MINIO_SECRET_KEY: ${MINIO_ROOT_PASSWORD}
       MINIO_BUCKET: documents
+      MAX_FILE_SIZE_MB: 100
       DOCUMENT_SERVICE_URL: http://document-service:8002
     depends_on:
       postgres:
