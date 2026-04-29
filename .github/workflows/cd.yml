@@ -28,10 +28,10 @@ jobs:
             git pull https://$GH_TOKEN@github.com/OrvarOddr/EDMS-project.git develop
 
             # Rebuild y levantar todos los servicios
-            docker compose up -d --build
+            docker-compose up -d --build
 
             # Recargar nginx para aplicar cualquier cambio de config
-            docker compose restart nginx
+            docker-compose restart nginx
 
             # Confirmar estado final
-            docker compose ps
+            docker-compose ps
