@@ -11,7 +11,7 @@ import { useAuth } from '../context/AuthContext'
 import { assignRole, createUser, listRoles, listUsers, type RoleItem, type UserMe } from '../api/auth'
 import { createDocument, listDocuments, type DocumentItemResponse } from '../api/documents'
 import {
-  createDocumentFromFile,
+  assignFileToDocument,
   getFileContent,
   getStorageSummary,
   listTrashedFiles,
@@ -352,6 +352,13 @@ function docKindFromMime(mimeType: string): DocKind {
   if (mimeType === 'application/pdf') return 'pdf'
   if (mimeType.startsWith('image/')) return 'image'
   return 'doc'
+}
+
+function titleFromFilename(filename: string) {
+  return filename
+    .replace(/\.[^/.]+$/, '')
+    .replace(/[-_]+/g, ' ')
+    .trim() || filename
 }
 
 function docKindFromType(documentTypeId?: string | null): DocKind {
@@ -2702,6 +2709,7 @@ function FileDetailDrawer({
   onClose,
   onTrash,
   onCreateDocument,
+  onAssignDocument,
 }: {
   file: StoredFileItem | null
   busy: boolean
@@ -2709,6 +2717,7 @@ function FileDetailDrawer({
   onClose: () => void
   onTrash: (file: StoredFileItem) => void
   onCreateDocument: (file: StoredFileItem) => void
+  onAssignDocument: (file: StoredFileItem) => void
 }) {
   const [preview, setPreview] = useState<{
     fileId: string
@@ -2849,6 +2858,14 @@ function FileDetailDrawer({
             <button
               className="edms-button"
               disabled={busy}
+              onClick={() => onAssignDocument(file)}
+              style={{ ...btnStyleGhost, opacity: busy ? 0.7 : 1 }}
+            >
+              <Icon.Move size={13} /> Asignar
+            </button>
+            <button
+              className="edms-button"
+              disabled={busy}
               onClick={() => onTrash(file)}
               style={{ ...btnStyleGhost, color: 'var(--danger)', opacity: busy ? 0.7 : 1 }}
             >
@@ -2886,7 +2903,7 @@ function FileDetailDrawer({
             <Icon.Branch size={11} /> Siguiente paso
           </div>
           <div style={{ border: '1px solid var(--border)', borderRadius: 8, background: 'var(--bg-elev-2)', padding: 11, color: 'var(--fg-muted)', fontSize: 12.5, lineHeight: 1.5 }}>
-            Este archivo esta guardado en MinIO, pero todavia no forma parte del expediente documental. Puedes crear un documento desde este archivo o enviarlo a papelera si fue una carga equivocada.
+            Este archivo esta guardado en MinIO, pero todavia no forma parte del expediente documental. Puedes crear un documento desde este archivo, asignarlo a un documento existente o enviarlo a papelera si fue una carga equivocada.
           </div>
         </div>
       </div>
@@ -3377,16 +3394,23 @@ function UploadFileModal({
 }
 
 function CreateDocumentModal({
+  initialUnassignedFile,
+  unassignedFiles,
   onClose,
   onCreated,
 }: {
+  initialUnassignedFile?: StoredFileItem | null
+  unassignedFiles: StoredFileItem[]
   onClose: () => void
-  onCreated: (document: DocumentItemResponse) => void
+  onCreated: (document: DocumentItemResponse, attachment?: { attachedUnassignedFileId?: string; uploadedFile?: File }) => void
 }) {
-  const [title, setTitle] = useState('')
+  const [title, setTitle] = useState(() => initialUnassignedFile ? titleFromFilename(initialUnassignedFile.original_filename) : '')
   const [documentTypeId, setDocumentTypeId] = useState('contrato')
   const [description, setDescription] = useState('')
   const [expedientId, setExpedientId] = useState('')
+  const [attachmentMode, setAttachmentMode] = useState<'none' | 'existing' | 'upload'>(() => initialUnassignedFile ? 'existing' : 'none')
+  const [selectedUnassignedFileId, setSelectedUnassignedFileId] = useState(initialUnassignedFile?.id ?? '')
+  const [newFile, setNewFile] = useState<File | null>(null)
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
@@ -3404,6 +3428,14 @@ function CreateDocumentModal({
       setError('Ingresa una descripcion breve')
       return
     }
+    if (attachmentMode === 'existing' && !selectedUnassignedFileId) {
+      setError('Selecciona un archivo sin asignar')
+      return
+    }
+    if (attachmentMode === 'upload' && !newFile) {
+      setError('Selecciona el archivo que quieres subir')
+      return
+    }
 
     setSubmitting(true)
     setError(null)
@@ -3414,7 +3446,20 @@ function CreateDocumentModal({
         description: description.trim(),
         expedient_id: expedientId.trim() || null,
       })
-      onCreated(data)
+      const attachment: { attachedUnassignedFileId?: string; uploadedFile?: File } = {}
+      if (attachmentMode === 'existing') {
+        await assignFileToDocument(selectedUnassignedFileId, data.id, 'Archivo principal inicial')
+        attachment.attachedUnassignedFileId = selectedUnassignedFileId
+      }
+      if (attachmentMode === 'upload' && newFile) {
+        await uploadDocumentFile({
+          file: newFile,
+          document_id: data.id,
+          version_comment: 'Archivo principal inicial',
+        })
+        attachment.uploadedFile = newFile
+      }
+      onCreated(data, attachment)
       onClose()
     } catch (err) {
       setError(getApiErrorMessage(err, 'No se pudo crear el documento'))
@@ -3465,7 +3510,7 @@ function CreateDocumentModal({
           <div style={{ padding: '16px 18px', borderBottom: '1px solid var(--border)' }}>
             <div style={{ fontSize: 16, fontWeight: 600, color: 'var(--fg)', marginBottom: 4 }}>Crear documento</div>
             <div style={{ fontSize: 12.5, color: 'var(--fg-muted)' }}>
-              Crea la ficha documental inicial. El archivo principal se puede cargar despues.
+              Crea la ficha documental inicial y, si quieres, deja asociado su archivo principal.
             </div>
           </div>
 
@@ -3557,6 +3602,112 @@ function CreateDocumentModal({
               />
             </label>
 
+            <div style={{ display: 'grid', gap: 8 }}>
+              <span style={{ color: 'var(--fg-muted)', fontSize: 12 }}>Archivo principal</span>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 8 }}>
+                {[
+                  ['none', 'Sin archivo'],
+                  ['existing', 'Usar sin asignar'],
+                  ['upload', 'Subir nuevo'],
+                ].map(([mode, label]) => (
+                  <button
+                    key={mode}
+                    type="button"
+                    className="edms-button"
+                    disabled={submitting}
+                    onClick={() => {
+                      setAttachmentMode(mode as 'none' | 'existing' | 'upload')
+                      setError(null)
+                    }}
+                    style={{
+                      borderRadius: 8,
+                      border: '1px solid var(--border)',
+                      background: attachmentMode === mode ? 'var(--bg-active)' : 'var(--bg-elev-2)',
+                      color: attachmentMode === mode ? 'var(--fg)' : 'var(--fg-muted)',
+                      padding: '9px 10px',
+                      fontSize: 12.5,
+                      fontWeight: attachmentMode === mode ? 600 : 500,
+                    }}
+                  >
+                    {label}
+                  </button>
+                ))}
+              </div>
+
+              {attachmentMode === 'existing' && (
+                <select
+                  value={selectedUnassignedFileId}
+                  disabled={submitting || unassignedFiles.length === 0}
+                  onChange={(event) => setSelectedUnassignedFileId(event.target.value)}
+                  style={{
+                    border: '1px solid var(--border)',
+                    borderRadius: 8,
+                    background: 'var(--bg-elev-2)',
+                    color: 'var(--fg)',
+                    padding: '10px 11px',
+                    fontSize: 13,
+                    outline: 'none',
+                  }}
+                >
+                  <option value="">Selecciona un archivo</option>
+                  {unassignedFiles.map((file) => (
+                    <option key={file.id} value={file.id}>
+                      {file.original_filename} · {formatFileSize(file.size_bytes)}
+                    </option>
+                  ))}
+                </select>
+              )}
+
+              {attachmentMode === 'upload' && (
+                <label
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 10,
+                    border: '1px dashed var(--border-strong)',
+                    borderRadius: 10,
+                    background: 'var(--bg-elev-2)',
+                    padding: 12,
+                    cursor: submitting ? 'not-allowed' : 'pointer',
+                  }}
+                >
+                  <input
+                    type="file"
+                    accept="application/pdf,image/png,image/jpeg"
+                    disabled={submitting}
+                    onChange={(event) => {
+                      setNewFile(event.target.files?.[0] ?? null)
+                      event.currentTarget.value = ''
+                    }}
+                    style={{ display: 'none' }}
+                  />
+                  <div
+                    style={{
+                      width: 32,
+                      height: 32,
+                      borderRadius: 8,
+                      background: 'var(--accent-soft)',
+                      color: 'var(--accent)',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      flexShrink: 0,
+                    }}
+                  >
+                    <Icon.Upload size={15} />
+                  </div>
+                  <div style={{ minWidth: 0 }}>
+                    <div style={{ color: 'var(--fg)', fontSize: 12.5, fontWeight: 600 }}>
+                      {newFile ? newFile.name : 'Seleccionar archivo'}
+                    </div>
+                    <div style={{ color: 'var(--fg-muted)', fontSize: 11.5 }}>
+                      {newFile ? formatFileSize(newFile.size) : 'PDF, PNG o JPG. Maximo 100 MB.'}
+                    </div>
+                  </div>
+                </label>
+              )}
+            </div>
+
             <div
               style={{
                 border: '1px solid var(--border)',
@@ -3636,6 +3787,215 @@ function CreateDocumentModal({
   )
 }
 
+function AssignFileToDocumentModal({
+  file,
+  documents,
+  onClose,
+  onAssigned,
+}: {
+  file: StoredFileItem
+  documents: DocumentItem[]
+  onClose: () => void
+  onAssigned: (file: StoredFileItem, documentId: string) => void
+}) {
+  const [selectedDocumentId, setSelectedDocumentId] = useState(documents[0]?.id ?? '')
+  const [submitting, setSubmitting] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+
+  async function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    if (!selectedDocumentId) {
+      setError('Selecciona un documento real')
+      return
+    }
+
+    setSubmitting(true)
+    setError(null)
+    try {
+      await assignFileToDocument(file.id, selectedDocumentId, 'Archivo principal inicial')
+      onAssigned(file, selectedDocumentId)
+      onClose()
+    } catch (err) {
+      setError(getApiErrorMessage(err, 'No se pudo asignar el archivo al documento'))
+    } finally {
+      setSubmitting(false)
+    }
+  }
+
+  return (
+    <>
+      <div
+        onClick={() => !submitting && onClose()}
+        style={{
+          position: 'fixed',
+          inset: 0,
+          zIndex: 120,
+          background: 'oklch(0 0 0 / 0.56)',
+          backdropFilter: 'blur(10px)',
+          pointerEvents: 'auto',
+        }}
+      />
+      <div
+        role="dialog"
+        aria-modal="true"
+        style={{
+          position: 'fixed',
+          inset: 0,
+          zIndex: 121,
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          padding: 24,
+          pointerEvents: 'none',
+        }}
+      >
+        <form
+          onSubmit={handleSubmit}
+          style={{
+            width: 'min(520px, 100%)',
+            background: 'var(--bg-elev)',
+            border: '1px solid var(--border-strong)',
+            borderRadius: 14,
+            boxShadow: 'var(--shadow)',
+            overflow: 'hidden',
+            pointerEvents: 'auto',
+          }}
+        >
+          <div style={{ padding: '16px 18px', borderBottom: '1px solid var(--border)' }}>
+            <div style={{ fontSize: 16, fontWeight: 600, color: 'var(--fg)', marginBottom: 4 }}>Asignar a documento</div>
+            <div style={{ fontSize: 12.5, color: 'var(--fg-muted)' }}>
+              El archivo quedara como version del documento seleccionado.
+            </div>
+          </div>
+
+          <div style={{ padding: 18, display: 'grid', gap: 13 }}>
+            <div
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: 10,
+                border: '1px solid var(--border)',
+                borderRadius: 10,
+                background: 'var(--bg-elev-2)',
+                padding: '10px 12px',
+              }}
+            >
+              <div
+                style={{
+                  width: 32,
+                  height: 32,
+                  borderRadius: 8,
+                  background: 'var(--accent-soft)',
+                  color: 'var(--accent)',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  flexShrink: 0,
+                }}
+              >
+                <Icon.File size={14} />
+              </div>
+              <div style={{ minWidth: 0 }}>
+                <div style={{ color: 'var(--fg)', fontSize: 12.5, fontWeight: 600, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                  {file.original_filename}
+                </div>
+                <div style={{ color: 'var(--fg-muted)', fontSize: 11.5 }}>{formatFileSize(file.size_bytes)}</div>
+              </div>
+            </div>
+
+            <label style={{ display: 'grid', gap: 6 }}>
+              <span style={{ color: 'var(--fg-muted)', fontSize: 12 }}>Documento destino</span>
+              <select
+                value={selectedDocumentId}
+                disabled={submitting || documents.length === 0}
+                onChange={(event) => setSelectedDocumentId(event.target.value)}
+                style={{
+                  border: '1px solid var(--border)',
+                  borderRadius: 8,
+                  background: 'var(--bg-elev-2)',
+                  color: 'var(--fg)',
+                  padding: '10px 11px',
+                  fontSize: 13,
+                  outline: 'none',
+                }}
+              >
+                {documents.length === 0 ? (
+                  <option value="">No hay documentos creados en el sistema</option>
+                ) : (
+                  documents.map((document) => (
+                    <option key={document.id} value={document.id}>
+                      {document.name}
+                    </option>
+                  ))
+                )}
+              </select>
+            </label>
+
+            {error && (
+              <div
+                style={{
+                  borderRadius: 8,
+                  border: '1px solid color-mix(in oklch, var(--danger) 55%, var(--border))',
+                  background: 'color-mix(in oklch, var(--danger) 12%, var(--bg-elev))',
+                  color: 'var(--danger)',
+                  padding: '10px 12px',
+                  fontSize: 12.5,
+                }}
+              >
+                {error}
+              </div>
+            )}
+          </div>
+
+          <div
+            style={{
+              padding: '14px 18px',
+              borderTop: '1px solid var(--border)',
+              display: 'flex',
+              justifyContent: 'flex-end',
+              gap: 10,
+            }}
+          >
+            <button
+              type="button"
+              onClick={onClose}
+              className="edms-button"
+              disabled={submitting}
+              style={{
+                borderRadius: 8,
+                border: '1px solid var(--border)',
+                background: 'var(--bg-elev-2)',
+                color: 'var(--fg-muted)',
+                padding: '9px 14px',
+                fontSize: 12.5,
+              }}
+            >
+              Cancelar
+            </button>
+            <button
+              type="submit"
+              className="edms-button edms-button-primary"
+              disabled={submitting || documents.length === 0}
+              style={{
+                borderRadius: 8,
+                border: '1px solid color-mix(in oklch, var(--accent) 60%, transparent)',
+                background: 'var(--accent)',
+                color: 'var(--accent-fg)',
+                padding: '9px 14px',
+                fontSize: 12.5,
+                fontWeight: 600,
+                opacity: submitting || documents.length === 0 ? 0.7 : 1,
+              }}
+            >
+              {submitting ? 'Asignando...' : 'Asignar archivo'}
+            </button>
+          </div>
+        </form>
+      </div>
+    </>
+  )
+}
+
 function FileRow({
   file,
   busy,
@@ -3643,6 +4003,7 @@ function FileRow({
   onSelect,
   onTrash,
   onCreateDocument,
+  onAssignDocument,
 }: {
   file: StoredFileItem
   busy?: boolean
@@ -3650,6 +4011,7 @@ function FileRow({
   onSelect?: (file: StoredFileItem) => void
   onTrash?: (file: StoredFileItem) => void
   onCreateDocument?: (file: StoredFileItem) => void
+  onAssignDocument?: (file: StoredFileItem) => void
 }) {
   const tone = fileTone(file.mime_type)
 
@@ -3732,6 +4094,29 @@ function FileRow({
             Crear documento
           </button>
         )}
+        {onAssignDocument && (
+          <button
+            type="button"
+            className="edms-button"
+            disabled={busy}
+            onClick={(event) => {
+              event.stopPropagation()
+              onAssignDocument(file)
+            }}
+            style={{
+              borderRadius: 8,
+              border: '1px solid var(--border)',
+              background: 'var(--bg-elev-2)',
+              color: 'var(--fg)',
+              padding: '7px 10px',
+              fontSize: 12,
+              fontWeight: 600,
+              opacity: busy ? 0.7 : 1,
+            }}
+          >
+            Asignar
+          </button>
+        )}
         {onTrash && (
           <button
             type="button"
@@ -3771,6 +4156,7 @@ function UnassignedFilesPanel({
   onSelect,
   onTrash,
   onCreateDocument,
+  onAssignDocument,
 }: {
   files: StoredFileItem[]
   loading: boolean
@@ -3779,6 +4165,7 @@ function UnassignedFilesPanel({
   onSelect: (file: StoredFileItem) => void
   onTrash: (file: StoredFileItem) => void
   onCreateDocument: (file: StoredFileItem) => void
+  onAssignDocument: (file: StoredFileItem) => void
 }) {
   return (
     <div style={{ flex: 1, overflow: 'auto', padding: '14px 18px 24px' }}>
@@ -3834,6 +4221,7 @@ function UnassignedFilesPanel({
                 onSelect={onSelect}
                 onTrash={onTrash}
                 onCreateDocument={onCreateDocument}
+                onAssignDocument={onAssignDocument}
               />
             ))}
           </>
@@ -4613,6 +5001,8 @@ export default function DashboardPage() {
   const [notifOpen, setNotifOpen] = useState(false)
   const [teamModalOpen, setTeamModalOpen] = useState(false)
   const [createDocumentModalOpen, setCreateDocumentModalOpen] = useState(false)
+  const [createDocumentInitialFile, setCreateDocumentInitialFile] = useState<StoredFileItem | null>(null)
+  const [assignFileModalFile, setAssignFileModalFile] = useState<StoredFileItem | null>(null)
   const [uploadModalOpen, setUploadModalOpen] = useState(false)
   const [uploadInitialFiles, setUploadInitialFiles] = useState<File[]>([])
   const [unassignedFiles, setUnassignedFiles] = useState<StoredFileItem[]>([])
@@ -4933,34 +5323,32 @@ export default function DashboardPage() {
     }
   }
 
-  async function handleCreateDocumentFromFile(file: StoredFileItem) {
-    setBusyFileId(file.id)
-    try {
-      const { data } = await createDocumentFromFile(file.id)
-      setUnassignedFiles((current) => current.filter((item) => item.id !== file.id))
-      if (selectedUnassignedFileId === file.id) setSelectedUnassignedFileId(null)
-      setCreatedDocs((current) => [
-        {
-          id: data.document_id,
-          name: data.document_title,
-          kind: docKindFromMime(file.mime_type),
-          folder: 'root',
-          owner: user?.id ?? 'u1',
-          size: formatFileSize(file.size_bytes),
-          modified: 'ahora',
-          version: 1,
-          tags: [],
-          shared: [],
-          status: 'borrador',
-        },
-        ...current,
-      ])
-      setToast(`Documento "${data.document_title}" creado`)
-    } catch (err) {
-      setToast(getApiErrorMessage(err, 'No se pudo crear el documento desde el archivo'))
-    } finally {
-      setBusyFileId(null)
-    }
+  function markUnassignedFileAsUsed(fileId: string) {
+    setUnassignedFiles((current) => current.filter((item) => item.id !== fileId))
+    if (selectedUnassignedFileId === fileId) setSelectedUnassignedFileId(null)
+  }
+
+  function markDocumentHasFile(documentId: string, file: StoredFileItem) {
+    setCreatedDocs((current) => current.map((doc) => (
+      doc.id === documentId
+        ? {
+            ...doc,
+            kind: docKindFromMime(file.mime_type),
+            size: formatFileSize(file.size_bytes),
+            modified: 'ahora',
+            version: Math.max(1, doc.version + 1),
+          }
+        : doc
+    )))
+  }
+
+  function handleCreateDocumentFromFile(file: StoredFileItem) {
+    setCreateDocumentInitialFile(file)
+    setCreateDocumentModalOpen(true)
+  }
+
+  function handleAssignFileToDocument(file: StoredFileItem) {
+    setAssignFileModalFile(file)
   }
 
   function handleAction(action: string, docId?: string) {
@@ -4982,6 +5370,7 @@ export default function DashboardPage() {
 
     if (action === 'new') {
       void docId
+      setCreateDocumentInitialFile(null)
       setCreateDocumentModalOpen(true)
       return
     }
@@ -5255,6 +5644,7 @@ export default function DashboardPage() {
                 onSelect={(file) => setSelectedUnassignedFileId(file.id)}
                 onTrash={handleTrashFile}
                 onCreateDocument={handleCreateDocumentFromFile}
+                onAssignDocument={handleAssignFileToDocument}
               />
             ) : (
               <FiltersRow filters={filters} onFilters={setFilters} onClear={() => setFilters(initialFilters)} />
@@ -5317,6 +5707,7 @@ export default function DashboardPage() {
         onClose={() => setSelectedUnassignedFileId(null)}
         onTrash={handleTrashFile}
         onCreateDocument={handleCreateDocumentFromFile}
+        onAssignDocument={handleAssignFileToDocument}
       />
       <ContextMenu ctx={ctxMenu} onClose={() => setCtxMenu(null)} onAction={handleAction} />
       <NotifPopover open={notifOpen} onClose={() => setNotifOpen(false)} />
@@ -5332,12 +5723,49 @@ export default function DashboardPage() {
       )}
       {createDocumentModalOpen && (
         <CreateDocumentModal
-          onClose={() => setCreateDocumentModalOpen(false)}
-          onCreated={(document) => {
+          initialUnassignedFile={createDocumentInitialFile}
+          unassignedFiles={unassignedFiles}
+          onClose={() => {
+            setCreateDocumentModalOpen(false)
+            setCreateDocumentInitialFile(null)
+          }}
+          onCreated={(document, attachment) => {
             const created = documentResponseToItem(document)
-            setCreatedDocs((current) => [created, ...current.filter((item) => item.id !== created.id)])
+            const attachedFile = attachment?.attachedUnassignedFileId
+              ? unassignedFiles.find((file) => file.id === attachment.attachedUnassignedFileId)
+              : null
+            const createdWithFile = attachedFile
+              ? {
+                  ...created,
+                  kind: docKindFromMime(attachedFile.mime_type),
+                  size: formatFileSize(attachedFile.size_bytes),
+                  version: 1,
+                }
+              : attachment?.uploadedFile
+                ? {
+                    ...created,
+                    kind: docKindFromMime(attachment.uploadedFile.type),
+                    size: formatFileSize(attachment.uploadedFile.size),
+                    version: 1,
+                  }
+                : created
+            setCreatedDocs((current) => [createdWithFile, ...current.filter((item) => item.id !== created.id)])
+            if (attachment?.attachedUnassignedFileId) markUnassignedFileAsUsed(attachment.attachedUnassignedFileId)
+            if (attachment?.uploadedFile) void refreshStorageSummary()
             setOpenDocId(created.id)
             setToast(`Documento "${document.title}" creado`)
+          }}
+        />
+      )}
+      {assignFileModalFile && (
+        <AssignFileToDocumentModal
+          file={assignFileModalFile}
+          documents={createdDocs}
+          onClose={() => setAssignFileModalFile(null)}
+          onAssigned={(file, documentId) => {
+            markUnassignedFileAsUsed(file.id)
+            markDocumentHasFile(documentId, file)
+            setToast(`${file.original_filename} asignado al documento`)
           }}
         />
       )}
