@@ -86,6 +86,7 @@ async def _register_document_version(
     async with httpx.AsyncClient(timeout=10.0) as client:
         response = await client.post(
             f"{settings.DOCUMENT_SERVICE_URL}/documents/{document_id}/versions",
+            headers={"X-User-Id": uploaded_by_user_id},
             json={
                 "file_id": file_id,
                 "uploaded_by_user_id": uploaded_by_user_id,
@@ -513,10 +514,17 @@ def get_file_content(
 
 
 @router.get("/{file_id}", response_model=FileMetadataResponse)
-def get_file_metadata(file_id: str, db: Session = Depends(get_db)):
-    stored_file = db.query(StoredFile).filter(StoredFile.id == file_id).first()
-    if not stored_file:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Archivo no encontrado")
+def get_file_metadata(
+    file_id: str,
+    x_user_id: str | None = Header(default=None, alias="X-User-Id"),
+    db: Session = Depends(get_db),
+):
+    if not x_user_id:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Usuario autenticado requerido")
+
+    stored_file, upload = _find_upload(db, file_id)
+    if upload.uploader_user_id != x_user_id:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="No puedes ver este archivo")
     return _to_file_response(stored_file)
 
 

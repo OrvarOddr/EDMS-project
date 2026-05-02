@@ -2,7 +2,7 @@ import re
 import uuid
 from datetime import datetime, timezone
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, Header, HTTPException, status
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 
@@ -49,14 +49,36 @@ def _document_code(title: str) -> str:
     return f"DOC-{datetime.now(timezone.utc):%Y%m%d}-{slug}-{uuid.uuid4().hex[:6].upper()}"
 
 
+def _require_user(x_user_id: str | None) -> str:
+    if not x_user_id:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Usuario autenticado requerido")
+    return x_user_id
+
+
+def _can_upload_version(document: Document, user_id: str) -> bool:
+    # Permisos documentales finos vendran en US-005/US-006; por ahora solo dueno/creador.
+    return user_id in {document.owner_user_id, document.created_by_user_id}
+
+
 @router.post("/{document_id}/versions", response_model=DocumentVersionResponse, status_code=status.HTTP_201_CREATED)
 def register_document_version(
     document_id: str,
     body: RegisterDocumentVersionRequest,
+    x_user_id: str | None = Header(default=None, alias="X-User-Id"),
     db: Session = Depends(get_db),
 ):
-    if not document_id.strip():
+    actor_user_id = _require_user(x_user_id)
+    document_id = document_id.strip()
+    if not document_id:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Documento requerido")
+    if body.uploaded_by_user_id != actor_user_id:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="No puedes registrar una version a nombre de otro usuario")
+
+    document = db.query(Document).filter(Document.id == document_id).first()
+    if not document:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Documento no encontrado")
+    if not _can_upload_version(document, actor_user_id):
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="No puedes subir versiones de este documento")
 
     current_versions = db.query(DocumentVersion).filter(
         DocumentVersion.document_id == document_id,

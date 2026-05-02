@@ -281,6 +281,8 @@ const initialTweaks = {
   accentHue: 255,
 }
 
+const BYTES_IN_GB = 1024 ** 3
+
 function userLabelFromAuth(firstName: string, lastName: string, email: string) {
   const full = `${firstName} ${lastName}`.trim()
   if (full) return full
@@ -361,6 +363,14 @@ async function fetchFileLists() {
   return {
     unassignedFiles: unassignedResponse.data,
     trashedFiles: trashedResponse.data,
+  }
+}
+
+async function fetchStorageSummaryGb() {
+  const res = await getStorageSummary()
+  return {
+    used: Math.round((res.data.used_bytes / BYTES_IN_GB) * 10) / 10,
+    total: Math.round((res.data.total_bytes / BYTES_IN_GB) * 10) / 10,
   }
 }
 
@@ -4342,14 +4352,10 @@ export default function DashboardPage() {
         if (mounted) setLoadingFileLists(false)
       })
 
-    getStorageSummary()
-      .then((res) => {
+    fetchStorageSummaryGb()
+      .then((summary) => {
         if (!mounted) return
-        const GB = 1024 ** 3
-        setStorage({
-          used: Math.round((res.data.used_bytes / GB) * 10) / 10,
-          total: Math.round((res.data.total_bytes / GB) * 10) / 10,
-        })
+        setStorage(summary)
       })
       .catch(() => {})
 
@@ -4436,6 +4442,14 @@ export default function DashboardPage() {
     setCtxMenu({ x: event.clientX, y: event.clientY, docId })
   }
 
+  async function refreshStorageSummary() {
+    try {
+      setStorage(await fetchStorageSummaryGb())
+    } catch {
+      // La cuota es informacion de apoyo; si falla, no bloquea la accion principal.
+    }
+  }
+
   async function refreshFileLists(showLoading = false) {
     if (showLoading) setLoadingFileLists(true)
     try {
@@ -4516,6 +4530,7 @@ export default function DashboardPage() {
       await permanentlyDeleteFile(file.id)
       setTrashedFiles((current) => current.filter((item) => item.id !== file.id))
       removeTrashSelection([file.id])
+      void refreshStorageSummary()
       setToast(`${file.original_filename} eliminado definitivamente`)
     } catch (err) {
       setToast(getApiErrorMessage(err, 'No se pudo eliminar definitivamente el archivo'))
@@ -4553,6 +4568,7 @@ export default function DashboardPage() {
       const deletedIds = new Set(selectedIds)
       setTrashedFiles((current) => current.filter((file) => !deletedIds.has(file.id)))
       clearTrashSelection()
+      void refreshStorageSummary()
       setToast(`${data.deleted_count} archivo${data.deleted_count === 1 ? '' : 's'} eliminado${data.deleted_count === 1 ? '' : 's'} definitivamente`)
     } catch (err) {
       setToast(getApiErrorMessage(err, 'No se pudieron eliminar los archivos seleccionados'))
@@ -4587,6 +4603,7 @@ export default function DashboardPage() {
       const { data } = await permanentlyDeleteAllTrashedFiles()
       setTrashedFiles([])
       clearTrashSelection()
+      void refreshStorageSummary()
       setToast(`${data.deleted_count} archivo${data.deleted_count === 1 ? '' : 's'} eliminado${data.deleted_count === 1 ? '' : 's'} definitivamente`)
     } catch (err) {
       setToast(getApiErrorMessage(err, 'No se pudo eliminar toda la papelera'))
@@ -4997,6 +5014,7 @@ export default function DashboardPage() {
           onUploaded={(message) => {
             setToast(message)
             void refreshFileLists()
+            void refreshStorageSummary()
           }}
         />
       )}
