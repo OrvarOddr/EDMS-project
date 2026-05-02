@@ -9,6 +9,7 @@ import {
 import logo from '../assets/logo.png'
 import { useAuth } from '../context/AuthContext'
 import { assignRole, createUser, listRoles, listUsers, type RoleItem, type UserMe } from '../api/auth'
+import { createDocument, listDocuments, type DocumentItemResponse } from '../api/documents'
 import {
   createDocumentFromFile,
   getFileContent,
@@ -336,10 +337,56 @@ function formatUploadedAt(value: string) {
   })
 }
 
+function formatDocumentDate(value: string) {
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) return 'fecha no disponible'
+  return date.toLocaleString('es-CL', {
+    day: '2-digit',
+    month: 'short',
+    hour: '2-digit',
+    minute: '2-digit',
+  })
+}
+
 function docKindFromMime(mimeType: string): DocKind {
   if (mimeType === 'application/pdf') return 'pdf'
   if (mimeType.startsWith('image/')) return 'image'
   return 'doc'
+}
+
+function docKindFromType(documentTypeId?: string | null): DocKind {
+  const normalized = String(documentTypeId ?? '').toLowerCase()
+  if (normalized.includes('planilla') || normalized.includes('hoja') || normalized.includes('sheet')) return 'sheet'
+  if (normalized.includes('presentacion') || normalized.includes('slide')) return 'slide'
+  if (normalized.includes('imagen')) return 'image'
+  if (normalized.includes('pdf')) return 'pdf'
+  return 'doc'
+}
+
+function statusFromWorkflow(stateCode?: string | null): DocumentItem['status'] {
+  if (stateCode === 'borrador') return 'borrador'
+  if (stateCode === 'en_revision') return 'revision'
+  if (stateCode === 'pendiente_firma') return 'pendiente-firma'
+  if (stateCode === 'aprobado') return 'publicado'
+  if (stateCode === 'firmado') return 'firmado'
+  if (stateCode === 'archivado') return 'archivado'
+  return 'borrador'
+}
+
+function documentResponseToItem(document: DocumentItemResponse): DocumentItem {
+  return {
+    id: document.id,
+    name: document.title,
+    kind: docKindFromType(document.document_type_id),
+    folder: document.expedient_id || 'root',
+    owner: document.owner_user_id,
+    size: 'Sin archivo',
+    modified: formatDocumentDate(document.created_at),
+    version: 0,
+    tags: [],
+    shared: [],
+    status: statusFromWorkflow(document.workflow_state_code),
+  }
 }
 
 function fileKindLabel(mimeType: string) {
@@ -2443,6 +2490,7 @@ function DetailDrawer({
 
   const owner = findUserById(doc.owner)
   const kind = findKind(doc.kind)
+  const versionLabel = doc.version > 0 ? `v${doc.version}` : 'Sin archivo'
 
   return (
     <aside
@@ -2526,7 +2574,7 @@ function DetailDrawer({
           <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12 }}>
             <StatusPill status={doc.status} />
             <span style={{ color: 'var(--fg-dim)', fontSize: 11 }}>·</span>
-            <span style={{ color: 'var(--fg-muted)', fontSize: 12, fontFamily: "'JetBrains Mono', ui-monospace, monospace" }}>v{doc.version}</span>
+            <span style={{ color: 'var(--fg-muted)', fontSize: 12, fontFamily: "'JetBrains Mono', ui-monospace, monospace" }}>{versionLabel}</span>
             <span style={{ color: 'var(--fg-dim)', fontSize: 11 }}>·</span>
             <span style={{ color: 'var(--fg-muted)', fontSize: 12 }}>{doc.modified}</span>
           </div>
@@ -2548,7 +2596,7 @@ function DetailDrawer({
 
           <div style={{ display: 'flex', flexDirection: 'column', gap: 0 }}>
             {[
-              ['Autor', <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}><OwnerAvatar userId={doc.owner} size={18} /><span>{owner?.name}</span></div>],
+              ['Autor', <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}><OwnerAvatar userId={doc.owner} size={18} /><span>{owner?.name ?? 'Usuario autenticado'}</span></div>],
               ['Carpeta', <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5 }}><Icon.Folder size={12} style={{ color: 'var(--fg-dim)' }} />{doc.folder}</span>],
               ['Tamaño', doc.size],
               ['Tipo', kind.label],
@@ -2578,6 +2626,11 @@ function DetailDrawer({
           <div style={{ fontSize: 11, color: 'var(--fg-dim)', letterSpacing: '0.06em', textTransform: 'uppercase', fontWeight: 600, marginBottom: 8, display: 'flex', alignItems: 'center', gap: 6 }}>
             <Icon.Branch size={11} /> Historial de versiones
           </div>
+          {doc.version === 0 && (
+            <div style={{ color: 'var(--fg-muted)', fontSize: 12, padding: '7px 0' }}>
+              Aun no hay archivo principal ni versiones registradas.
+            </div>
+          )}
           {Array.from({ length: Math.min(doc.version, 4) }).map((_, index) => {
             const version = doc.version - index
             const labels = ['actual', 'hace 1 día', 'hace 3 días', 'hace 1 semana']
@@ -3315,6 +3368,266 @@ function UploadFileModal({
               }}
             >
               {submitting ? 'Subiendo...' : submitLabel}
+            </button>
+          </div>
+        </form>
+      </div>
+    </>
+  )
+}
+
+function CreateDocumentModal({
+  onClose,
+  onCreated,
+}: {
+  onClose: () => void
+  onCreated: (document: DocumentItemResponse) => void
+}) {
+  const [title, setTitle] = useState('')
+  const [documentTypeId, setDocumentTypeId] = useState('contrato')
+  const [description, setDescription] = useState('')
+  const [expedientId, setExpedientId] = useState('')
+  const [submitting, setSubmitting] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+
+  async function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    if (!title.trim()) {
+      setError('Ingresa el titulo del documento')
+      return
+    }
+    if (!documentTypeId.trim()) {
+      setError('Selecciona el tipo documental')
+      return
+    }
+    if (!description.trim()) {
+      setError('Ingresa una descripcion breve')
+      return
+    }
+
+    setSubmitting(true)
+    setError(null)
+    try {
+      const { data } = await createDocument({
+        title: title.trim(),
+        document_type_id: documentTypeId,
+        description: description.trim(),
+        expedient_id: expedientId.trim() || null,
+      })
+      onCreated(data)
+      onClose()
+    } catch (err) {
+      setError(getApiErrorMessage(err, 'No se pudo crear el documento'))
+    } finally {
+      setSubmitting(false)
+    }
+  }
+
+  return (
+    <>
+      <div
+        onClick={() => !submitting && onClose()}
+        style={{
+          position: 'fixed',
+          inset: 0,
+          zIndex: 120,
+          background: 'oklch(0 0 0 / 0.56)',
+          backdropFilter: 'blur(10px)',
+          pointerEvents: 'auto',
+        }}
+      />
+      <div
+        role="dialog"
+        aria-modal="true"
+        style={{
+          position: 'fixed',
+          inset: 0,
+          zIndex: 121,
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          padding: 24,
+          pointerEvents: 'none',
+        }}
+      >
+        <form
+          onSubmit={handleSubmit}
+          style={{
+            width: 'min(560px, 100%)',
+            background: 'var(--bg-elev)',
+            border: '1px solid var(--border-strong)',
+            borderRadius: 14,
+            boxShadow: 'var(--shadow)',
+            overflow: 'hidden',
+            pointerEvents: 'auto',
+          }}
+        >
+          <div style={{ padding: '16px 18px', borderBottom: '1px solid var(--border)' }}>
+            <div style={{ fontSize: 16, fontWeight: 600, color: 'var(--fg)', marginBottom: 4 }}>Crear documento</div>
+            <div style={{ fontSize: 12.5, color: 'var(--fg-muted)' }}>
+              Crea la ficha documental inicial. El archivo principal se puede cargar despues.
+            </div>
+          </div>
+
+          <div style={{ padding: 18, display: 'grid', gap: 13 }}>
+            <label style={{ display: 'grid', gap: 6 }}>
+              <span style={{ color: 'var(--fg-muted)', fontSize: 12 }}>Titulo</span>
+              <input
+                value={title}
+                disabled={submitting}
+                onChange={(event) => setTitle(event.target.value)}
+                placeholder="Ej: Contrato de servicios 2026"
+                style={{
+                  border: '1px solid var(--border)',
+                  borderRadius: 8,
+                  background: 'var(--bg-elev-2)',
+                  color: 'var(--fg)',
+                  padding: '10px 11px',
+                  fontSize: 13,
+                  outline: 'none',
+                }}
+              />
+            </label>
+
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+              <label style={{ display: 'grid', gap: 6 }}>
+                <span style={{ color: 'var(--fg-muted)', fontSize: 12 }}>Tipo documental</span>
+                <select
+                  value={documentTypeId}
+                  disabled={submitting}
+                  onChange={(event) => setDocumentTypeId(event.target.value)}
+                  style={{
+                    border: '1px solid var(--border)',
+                    borderRadius: 8,
+                    background: 'var(--bg-elev-2)',
+                    color: 'var(--fg)',
+                    padding: '10px 11px',
+                    fontSize: 13,
+                    outline: 'none',
+                  }}
+                >
+                  <option value="contrato">Contrato</option>
+                  <option value="informe">Informe</option>
+                  <option value="acta">Acta</option>
+                  <option value="politica">Politica</option>
+                  <option value="memorando">Memorando</option>
+                  <option value="planilla">Planilla</option>
+                </select>
+              </label>
+
+              <label style={{ display: 'grid', gap: 6 }}>
+                <span style={{ color: 'var(--fg-muted)', fontSize: 12 }}>Expediente opcional</span>
+                <input
+                  value={expedientId}
+                  disabled={submitting}
+                  onChange={(event) => setExpedientId(event.target.value)}
+                  placeholder="Ej: legal"
+                  style={{
+                    border: '1px solid var(--border)',
+                    borderRadius: 8,
+                    background: 'var(--bg-elev-2)',
+                    color: 'var(--fg)',
+                    padding: '10px 11px',
+                    fontSize: 13,
+                    outline: 'none',
+                  }}
+                />
+              </label>
+            </div>
+
+            <label style={{ display: 'grid', gap: 6 }}>
+              <span style={{ color: 'var(--fg-muted)', fontSize: 12 }}>Descripcion</span>
+              <textarea
+                value={description}
+                disabled={submitting}
+                onChange={(event) => setDescription(event.target.value)}
+                placeholder="Describe para que se usara este documento"
+                rows={4}
+                style={{
+                  border: '1px solid var(--border)',
+                  borderRadius: 8,
+                  background: 'var(--bg-elev-2)',
+                  color: 'var(--fg)',
+                  padding: '10px 11px',
+                  fontSize: 13,
+                  outline: 'none',
+                  resize: 'vertical',
+                  minHeight: 96,
+                }}
+              />
+            </label>
+
+            <div
+              style={{
+                border: '1px solid var(--border)',
+                borderRadius: 10,
+                background: 'var(--bg-elev-2)',
+                padding: '10px 12px',
+                color: 'var(--fg-muted)',
+                fontSize: 12,
+                lineHeight: 1.45,
+              }}
+            >
+              Al crear, el sistema registra tu usuario como creador y deja el documento en estado Borrador con encargado inicial igual al creador.
+            </div>
+
+            {error && (
+              <div
+                style={{
+                  borderRadius: 8,
+                  border: '1px solid color-mix(in oklch, var(--danger) 55%, var(--border))',
+                  background: 'color-mix(in oklch, var(--danger) 12%, var(--bg-elev))',
+                  color: 'var(--danger)',
+                  padding: '10px 12px',
+                  fontSize: 12.5,
+                }}
+              >
+                {error}
+              </div>
+            )}
+          </div>
+
+          <div
+            style={{
+              padding: '14px 18px',
+              borderTop: '1px solid var(--border)',
+              display: 'flex',
+              justifyContent: 'flex-end',
+              gap: 10,
+            }}
+          >
+            <button
+              type="button"
+              onClick={onClose}
+              className="edms-button"
+              disabled={submitting}
+              style={{
+                borderRadius: 8,
+                border: '1px solid var(--border)',
+                background: 'var(--bg-elev-2)',
+                color: 'var(--fg-muted)',
+                padding: '9px 14px',
+                fontSize: 12.5,
+              }}
+            >
+              Cancelar
+            </button>
+            <button
+              type="submit"
+              className="edms-button edms-button-primary"
+              disabled={submitting}
+              style={{
+                borderRadius: 8,
+                border: '1px solid color-mix(in oklch, var(--accent) 60%, transparent)',
+                background: 'var(--accent)',
+                color: 'var(--accent-fg)',
+                padding: '9px 14px',
+                fontSize: 12.5,
+                fontWeight: 600,
+                opacity: submitting ? 0.7 : 1,
+              }}
+            >
+              {submitting ? 'Creando...' : 'Crear documento'}
             </button>
           </div>
         </form>
@@ -4299,6 +4612,7 @@ export default function DashboardPage() {
   const [ctxMenu, setCtxMenu] = useState<ContextMenuState | null>(null)
   const [notifOpen, setNotifOpen] = useState(false)
   const [teamModalOpen, setTeamModalOpen] = useState(false)
+  const [createDocumentModalOpen, setCreateDocumentModalOpen] = useState(false)
   const [uploadModalOpen, setUploadModalOpen] = useState(false)
   const [uploadInitialFiles, setUploadInitialFiles] = useState<File[]>([])
   const [unassignedFiles, setUnassignedFiles] = useState<StoredFileItem[]>([])
@@ -4351,6 +4665,13 @@ export default function DashboardPage() {
       .finally(() => {
         if (mounted) setLoadingFileLists(false)
       })
+
+    listDocuments()
+      .then((res) => {
+        if (!mounted) return
+        setCreatedDocs(res.data.map(documentResponseToItem))
+      })
+      .catch(() => {})
 
     fetchStorageSummaryGb()
       .then((summary) => {
@@ -4659,8 +4980,13 @@ export default function DashboardPage() {
       return
     }
 
+    if (action === 'new') {
+      void docId
+      setCreateDocumentModalOpen(true)
+      return
+    }
+
     const messages: Record<string, string> = {
-      new: 'Nuevo documento creado',
       download: 'Descarga iniciada',
       share: 'Enlace copiado al portapapeles',
       sign: 'Solicitud de firma enviada',
@@ -5001,6 +5327,17 @@ export default function DashboardPage() {
           onCreated={(userName) => {
             setTeamModalOpen(false)
             setToast(`Usuario ${userName} creado`)
+          }}
+        />
+      )}
+      {createDocumentModalOpen && (
+        <CreateDocumentModal
+          onClose={() => setCreateDocumentModalOpen(false)}
+          onCreated={(document) => {
+            const created = documentResponseToItem(document)
+            setCreatedDocs((current) => [created, ...current.filter((item) => item.id !== created.id)])
+            setOpenDocId(created.id)
+            setToast(`Documento "${document.title}" creado`)
           }}
         />
       )}

@@ -109,6 +109,7 @@ async def _create_document_from_file(
     async with httpx.AsyncClient(timeout=10.0) as client:
         response = await client.post(
             f"{settings.DOCUMENT_SERVICE_URL}/documents/from-file",
+            headers={"X-User-Id": created_by_user_id},
             json={
                 "file_id": file_id,
                 "title": title,

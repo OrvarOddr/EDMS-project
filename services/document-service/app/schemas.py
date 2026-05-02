@@ -1,6 +1,14 @@
 from pydantic import BaseModel
 
 
+class CreateDocumentRequest(BaseModel):
+    title: str
+    document_type_id: str
+    description: str
+    expedient_id: str | None = None
+    confidentiality_level: str = "publico_interno"
+
+
 class RegisterDocumentVersionRequest(BaseModel):
     file_id: str
     uploaded_by_user_id: str
@@ -32,9 +40,15 @@ class DocumentResponse(BaseModel):
     code: str
     title: str
     description: str | None = None
+    document_type_id: str | None = None
+    expedient_id: str | None = None
+    confidentiality_level: str
     created_by_user_id: str
     owner_user_id: str
     created_at: str
+    updated_at: str
+    workflow_state_code: str | None = None
+    assignee_user_id: str | None = None
 
 
 class DocumentCreatedFromFileResponse(BaseModel):
