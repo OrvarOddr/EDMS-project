@@ -84,6 +84,12 @@ export const permanentlyDeleteAllTrashedFiles = () =>
 export const createDocumentFromFile = (fileId: string) =>
   client.post<DocumentFromFileResponse>(`/files/${fileId}/document`, {})
 
+export const assignFileToDocument = (fileId: string, documentId: string, versionComment?: string) =>
+  client.patch<StoredFileItem>(`/files/${fileId}/document`, {
+    document_id: documentId,
+    version_comment: versionComment?.trim() || null,
+  })
+
 export const getFileContent = (fileId: string, signal?: AbortSignal) =>
   client.get<Blob>(`/files/${fileId}/content`, {
     responseType: 'blob',
