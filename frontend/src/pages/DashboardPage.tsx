@@ -2598,7 +2598,6 @@ function DetailDrawer({
 
   useEffect(() => {
     if (!currentFile) {
-      setPreview(null)
       return
     }
 
@@ -5799,14 +5798,16 @@ export default function DashboardPage() {
   useEffect(() => {
     const backendDoc = openDocId ? createdDocs.some((doc) => doc.id === openDocId) : false
     if (!openDocId || !backendDoc) {
-      setDetailError(null)
       return
     }
     if (documentDetails[openDocId]) return
 
     let mounted = true
-    setDetailLoadingDocId(openDocId)
-    setDetailError(null)
+    queueMicrotask(() => {
+      if (!mounted) return
+      setDetailLoadingDocId(openDocId)
+      setDetailError(null)
+    })
     getDocumentDetail(openDocId)
       .then((response) => {
         if (!mounted) return
