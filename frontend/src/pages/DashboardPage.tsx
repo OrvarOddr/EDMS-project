@@ -9,7 +9,15 @@ import {
 import logo from '../assets/logo.png'
 import { useAuth } from '../context/AuthContext'
 import { assignRole, createUser, listRoles, listUsers, type RoleItem, type UserMe } from '../api/auth'
-import { createDocument, listDocuments, type DocumentItemResponse } from '../api/documents'
+import {
+  createDocument,
+  listDocuments,
+  listTrashedDocuments,
+  moveDocumentToTrash,
+  permanentlyDeleteDocument,
+  restoreDocumentFromTrash,
+  type DocumentItemResponse,
+} from '../api/documents'
 import {
   assignFileToDocument,
   getFileContent,
@@ -388,7 +396,7 @@ function documentResponseToItem(document: DocumentItemResponse): DocumentItem {
     folder: document.expedient_id || 'root',
     owner: document.owner_user_id,
     size: 'Sin archivo',
-    modified: formatDocumentDate(document.created_at),
+    modified: formatDocumentDate(document.archived_at ?? document.created_at),
     version: 0,
     tags: [],
     shared: [],
@@ -2918,7 +2926,7 @@ function ContextMenu({
 }: {
   ctx: ContextMenuState | null
   onClose: () => void
-  onAction: (action: string, docId?: string) => void
+  onAction: (action: string, docId?: string) => void | Promise<void>
 }) {
   useEffect(() => {
     if (!ctx) return
@@ -4363,8 +4371,88 @@ function TrashFileRow({
   )
 }
 
+function TrashDocumentRow({
+  document,
+  busy,
+  onRestore,
+  onDelete,
+}: {
+  document: DocumentItem
+  busy: boolean
+  onRestore: (document: DocumentItem) => void
+  onDelete: (document: DocumentItem) => void
+}) {
+  return (
+    <div
+      style={{
+        display: 'grid',
+        gridTemplateColumns: 'minmax(240px, 1.4fr) minmax(110px, 0.5fr) minmax(130px, 0.6fr) auto',
+        alignItems: 'center',
+        gap: 12,
+        padding: '11px 14px',
+        borderTop: '1px solid var(--border)',
+      }}
+    >
+      <div style={{ display: 'flex', alignItems: 'center', gap: 10, minWidth: 0 }}>
+        <KindBadge kind={document.kind} />
+        <div style={{ minWidth: 0 }}>
+          <div style={{ color: 'var(--fg)', fontSize: 12.5, fontWeight: 600, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+            {document.name}
+          </div>
+          <div style={{ color: 'var(--fg-muted)', fontSize: 11.5 }}>
+            Documento en papelera
+          </div>
+        </div>
+      </div>
+
+      <div style={{ color: 'var(--fg-muted)', fontSize: 12 }}>{document.size}</div>
+      <div style={{ color: 'var(--fg-muted)', fontSize: 12 }}>{document.modified}</div>
+
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+        <button
+          type="button"
+          className="edms-button"
+          disabled={busy}
+          onClick={() => onRestore(document)}
+          style={{
+            borderRadius: 8,
+            border: '1px solid var(--border)',
+            background: 'var(--bg-elev-2)',
+            color: 'var(--fg)',
+            padding: '7px 10px',
+            fontSize: 12,
+            fontWeight: 600,
+            opacity: busy ? 0.7 : 1,
+          }}
+        >
+          Restaurar
+        </button>
+        <button
+          type="button"
+          className="edms-button"
+          disabled={busy}
+          onClick={() => onDelete(document)}
+          style={{
+            borderRadius: 8,
+            border: '1px solid color-mix(in oklch, var(--danger) 35%, var(--border))',
+            background: 'transparent',
+            color: 'var(--danger)',
+            padding: '7px 10px',
+            fontSize: 12,
+            fontWeight: 600,
+            opacity: busy ? 0.7 : 1,
+          }}
+        >
+          Eliminar
+        </button>
+      </div>
+    </div>
+  )
+}
+
 function TrashedFilesPanel({
   files,
+  documents,
   loading,
   busy,
   busyFileId,
@@ -4379,8 +4467,11 @@ function TrashedFilesPanel({
   onDeleteSelected,
   onRestoreAll,
   onDeleteAll,
+  onRestoreDocument,
+  onDeleteDocument,
 }: {
   files: StoredFileItem[]
+  documents: DocumentItem[]
   loading: boolean
   busy: boolean
   busyFileId: string | null
@@ -4395,9 +4486,13 @@ function TrashedFilesPanel({
   onDeleteSelected: () => void
   onRestoreAll: () => void
   onDeleteAll: () => void
+  onRestoreDocument: (document: DocumentItem) => void
+  onDeleteDocument: (document: DocumentItem) => void
 }) {
   const selectedCount = selectedIds.size
   const hasFiles = files.length > 0
+  const hasDocuments = documents.length > 0
+  const hasItems = hasFiles || hasDocuments
 
   return (
     <div style={{ flex: 1, overflow: 'auto', padding: '14px 18px 24px' }}>
@@ -4406,7 +4501,7 @@ function TrashedFilesPanel({
           <div>
             <div style={{ fontSize: 15, fontWeight: 600, color: 'var(--fg)' }}>Papelera</div>
             <div style={{ marginTop: 3, fontSize: 12, color: 'var(--fg-muted)' }}>
-              Archivos sin asignar que fueron enviados a papelera.
+              Documentos y archivos enviados a papelera.
             </div>
           </div>
           <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
@@ -4422,18 +4517,18 @@ function TrashedFilesPanel({
             <button
               type="button"
               className="edms-button"
-              disabled={loading || !hasFiles || busy}
+              disabled={loading || !hasItems || busy}
               onClick={onRestoreAll}
-              style={{ ...btnStyleGhost, padding: '7px 10px', opacity: loading || !hasFiles || busy ? 0.7 : 1 }}
+              style={{ ...btnStyleGhost, padding: '7px 10px', opacity: loading || !hasItems || busy ? 0.7 : 1 }}
             >
               Restaurar todo
             </button>
             <button
               type="button"
               className="edms-button"
-              disabled={loading || !hasFiles || busy}
+              disabled={loading || !hasItems || busy}
               onClick={onDeleteAll}
-              style={{ ...btnStyleGhost, padding: '7px 10px', color: 'var(--danger)', opacity: loading || !hasFiles || busy ? 0.7 : 1 }}
+              style={{ ...btnStyleGhost, padding: '7px 10px', color: 'var(--danger)', opacity: loading || !hasItems || busy ? 0.7 : 1 }}
             >
               Eliminar todo
             </button>
@@ -4463,43 +4558,84 @@ function TrashedFilesPanel({
 
         {loading ? (
           <div style={{ padding: 14, borderTop: '1px solid var(--border)', color: 'var(--fg-muted)', fontSize: 12.5 }}>Cargando papelera...</div>
-        ) : !hasFiles ? (
+        ) : !hasItems ? (
           <div style={{ padding: 14, borderTop: '1px solid var(--border)', color: 'var(--fg-muted)', fontSize: 12.5 }}>La papelera esta vacia.</div>
         ) : (
           <>
-            <div
-              style={{
-                display: 'grid',
-                gridTemplateColumns: selecting
-                  ? 'auto minmax(240px, 1.4fr) minmax(110px, 0.5fr) minmax(130px, 0.6fr) auto'
-                  : 'minmax(240px, 1.4fr) minmax(110px, 0.5fr) minmax(130px, 0.6fr) auto',
-                gap: 12,
-                padding: '8px 14px',
-                borderTop: '1px solid var(--border)',
-                color: 'var(--fg-dim)',
-                fontSize: 11,
-                letterSpacing: '0.04em',
-                textTransform: 'uppercase',
-              }}
-            >
-              {selecting && <span />}
-              <span>Archivo</span>
-              <span>Tamaño</span>
-              <span>Enviado</span>
-              <span style={{ width: 190 }}>Acciones</span>
-            </div>
-            {files.map((file) => (
-              <TrashFileRow
-                key={file.id}
-                file={file}
-                busy={busy || busyFileId === file.id}
-                selecting={selecting}
-                selected={selectedIds.has(file.id)}
-                onToggleSelected={onToggleSelected}
-                onRestore={onRestore}
-                onDelete={onDelete}
-              />
-            ))}
+            {hasDocuments && (
+              <>
+                <div style={{ padding: '11px 14px', borderTop: '1px solid var(--border)', color: 'var(--fg-muted)', fontSize: 12, fontWeight: 600 }}>
+                  Documentos
+                </div>
+                <div
+                  style={{
+                    display: 'grid',
+                    gridTemplateColumns: 'minmax(240px, 1.4fr) minmax(110px, 0.5fr) minmax(130px, 0.6fr) auto',
+                    gap: 12,
+                    padding: '8px 14px',
+                    borderTop: '1px solid var(--border)',
+                    color: 'var(--fg-dim)',
+                    fontSize: 11,
+                    letterSpacing: '0.04em',
+                    textTransform: 'uppercase',
+                  }}
+                >
+                  <span>Documento</span>
+                  <span>Tamaño</span>
+                  <span>Enviado</span>
+                  <span style={{ width: 190 }}>Acciones</span>
+                </div>
+                {documents.map((document) => (
+                  <TrashDocumentRow
+                    key={document.id}
+                    document={document}
+                    busy={busy || busyFileId === `doc:${document.id}`}
+                    onRestore={onRestoreDocument}
+                    onDelete={onDeleteDocument}
+                  />
+                ))}
+              </>
+            )}
+            {hasFiles && (
+              <>
+                <div style={{ padding: '11px 14px', borderTop: '1px solid var(--border)', color: 'var(--fg-muted)', fontSize: 12, fontWeight: 600 }}>
+                  Archivos
+                </div>
+                <div
+                  style={{
+                    display: 'grid',
+                    gridTemplateColumns: selecting
+                      ? 'auto minmax(240px, 1.4fr) minmax(110px, 0.5fr) minmax(130px, 0.6fr) auto'
+                      : 'minmax(240px, 1.4fr) minmax(110px, 0.5fr) minmax(130px, 0.6fr) auto',
+                    gap: 12,
+                    padding: '8px 14px',
+                    borderTop: '1px solid var(--border)',
+                    color: 'var(--fg-dim)',
+                    fontSize: 11,
+                    letterSpacing: '0.04em',
+                    textTransform: 'uppercase',
+                  }}
+                >
+                  {selecting && <span />}
+                  <span>Archivo</span>
+                  <span>Tamaño</span>
+                  <span>Enviado</span>
+                  <span style={{ width: 190 }}>Acciones</span>
+                </div>
+                {files.map((file) => (
+                  <TrashFileRow
+                    key={file.id}
+                    file={file}
+                    busy={busy || busyFileId === file.id}
+                    selecting={selecting}
+                    selected={selectedIds.has(file.id)}
+                    onToggleSelected={onToggleSelected}
+                    onRestore={onRestore}
+                    onDelete={onDelete}
+                  />
+                ))}
+              </>
+            )}
           </>
         )}
       </div>
@@ -5007,6 +5143,7 @@ export default function DashboardPage() {
   const [uploadInitialFiles, setUploadInitialFiles] = useState<File[]>([])
   const [unassignedFiles, setUnassignedFiles] = useState<StoredFileItem[]>([])
   const [trashedFiles, setTrashedFiles] = useState<StoredFileItem[]>([])
+  const [trashedDocs, setTrashedDocs] = useState<DocumentItem[]>([])
   const [selectedUnassignedFileId, setSelectedUnassignedFileId] = useState<string | null>(null)
   const [selectingTrashFiles, setSelectingTrashFiles] = useState(false)
   const [selectedTrashFileIds, setSelectedTrashFileIds] = useState<Set<string>>(new Set())
@@ -5056,10 +5193,11 @@ export default function DashboardPage() {
         if (mounted) setLoadingFileLists(false)
       })
 
-    listDocuments()
-      .then((res) => {
+    Promise.all([listDocuments(), listTrashedDocuments()])
+      .then(([activeResponse, trashResponse]) => {
         if (!mounted) return
-        setCreatedDocs(res.data.map(documentResponseToItem))
+        setCreatedDocs(activeResponse.data.map(documentResponseToItem))
+        setTrashedDocs(trashResponse.data.map(documentResponseToItem))
       })
       .catch(() => {})
 
@@ -5190,6 +5328,33 @@ export default function DashboardPage() {
     }
   }
 
+  async function handleTrashDocument(documentId: string) {
+    const document = createdDocs.find((item) => item.id === documentId)
+    if (!document) {
+      setToast('Solo los documentos creados en el sistema se pueden enviar a papelera')
+      return
+    }
+
+    setBusyFileId(`doc:${documentId}`)
+    try {
+      const { data } = await moveDocumentToTrash(documentId)
+      const trashedDocument = documentResponseToItem(data)
+      setCreatedDocs((current) => current.filter((item) => item.id !== documentId))
+      setTrashedDocs((current) => [trashedDocument, ...current.filter((item) => item.id !== documentId)])
+      setSelected((current) => {
+        const next = new Set(current)
+        next.delete(documentId)
+        return next
+      })
+      if (openDocId === documentId) setOpenDocId(null)
+      setToast(`"${data.title}" enviado a papelera`)
+    } catch (err) {
+      setToast(getApiErrorMessage(err, 'No se pudo enviar el documento a papelera'))
+    } finally {
+      setBusyFileId(null)
+    }
+  }
+
   function removeTrashSelection(fileIds: string[]) {
     const removed = new Set(fileIds)
     setSelectedTrashFileIds((current) => new Set([...current].filter((id) => !removed.has(id))))
@@ -5250,6 +5415,34 @@ export default function DashboardPage() {
     }
   }
 
+  async function handleRestoreTrashedDocument(document: DocumentItem) {
+    setBusyFileId(`doc:${document.id}`)
+    try {
+      const { data } = await restoreDocumentFromTrash(document.id)
+      const restoredDocument = documentResponseToItem(data)
+      setTrashedDocs((current) => current.filter((item) => item.id !== document.id))
+      setCreatedDocs((current) => [restoredDocument, ...current.filter((item) => item.id !== document.id)])
+      setToast(`"${data.title}" restaurado`)
+    } catch (err) {
+      setToast(getApiErrorMessage(err, 'No se pudo restaurar el documento'))
+    } finally {
+      setBusyFileId(null)
+    }
+  }
+
+  async function handleDeleteTrashedDocument(document: DocumentItem) {
+    setBusyFileId(`doc:${document.id}`)
+    try {
+      await permanentlyDeleteDocument(document.id)
+      setTrashedDocs((current) => current.filter((item) => item.id !== document.id))
+      setToast(`"${document.name}" eliminado definitivamente`)
+    } catch (err) {
+      setToast(getApiErrorMessage(err, 'No se pudo eliminar definitivamente el documento'))
+    } finally {
+      setBusyFileId(null)
+    }
+  }
+
   async function handleRestoreSelectedTrashedFiles() {
     const selectedIds = [...selectedTrashFileIds]
     if (selectedIds.length === 0) return
@@ -5289,16 +5482,24 @@ export default function DashboardPage() {
   }
 
   async function handleRestoreAllTrashedFiles() {
-    if (trashedFiles.length === 0) return
+    if (trashedFiles.length === 0 && trashedDocs.length === 0) return
 
     setBusyFileId('__trash-bulk__')
     try {
-      const { data } = await restoreAllTrashedFiles()
-      const restoredIds = new Set(data.map((file) => file.id))
+      const restoredFiles = trashedFiles.length > 0
+        ? (await restoreAllTrashedFiles()).data
+        : []
+      const restoredDocuments = await Promise.all(
+        trashedDocs.map((document) => restoreDocumentFromTrash(document.id).then((response) => documentResponseToItem(response.data))),
+      )
+      const restoredIds = new Set(restoredFiles.map((file) => file.id))
       setTrashedFiles((current) => current.filter((file) => !restoredIds.has(file.id)))
-      setUnassignedFiles((current) => [...data, ...current.filter((file) => !restoredIds.has(file.id))])
+      setUnassignedFiles((current) => [...restoredFiles, ...current.filter((file) => !restoredIds.has(file.id))])
+      setTrashedDocs([])
+      setCreatedDocs((current) => [...restoredDocuments, ...current.filter((document) => !restoredDocuments.some((restored) => restored.id === document.id))])
       clearTrashSelection()
-      setToast(`${data.length} archivo${data.length === 1 ? '' : 's'} restaurado${data.length === 1 ? '' : 's'}`)
+      const total = restoredFiles.length + restoredDocuments.length
+      setToast(`${total} elemento${total === 1 ? '' : 's'} restaurado${total === 1 ? '' : 's'}`)
     } catch (err) {
       setToast(getApiErrorMessage(err, 'No se pudo restaurar toda la papelera'))
     } finally {
@@ -5307,15 +5508,20 @@ export default function DashboardPage() {
   }
 
   async function handleDeleteAllTrashedFiles() {
-    if (trashedFiles.length === 0) return
+    if (trashedFiles.length === 0 && trashedDocs.length === 0) return
 
     setBusyFileId('__trash-bulk__')
     try {
-      const { data } = await permanentlyDeleteAllTrashedFiles()
+      const deletedFiles = trashedFiles.length > 0
+        ? (await permanentlyDeleteAllTrashedFiles()).data.deleted_count
+        : 0
+      await Promise.all(trashedDocs.map((document) => permanentlyDeleteDocument(document.id)))
       setTrashedFiles([])
+      setTrashedDocs([])
       clearTrashSelection()
       void refreshStorageSummary()
-      setToast(`${data.deleted_count} archivo${data.deleted_count === 1 ? '' : 's'} eliminado${data.deleted_count === 1 ? '' : 's'} definitivamente`)
+      const total = deletedFiles + trashedDocs.length
+      setToast(`${total} elemento${total === 1 ? '' : 's'} eliminado${total === 1 ? '' : 's'} definitivamente`)
     } catch (err) {
       setToast(getApiErrorMessage(err, 'No se pudo eliminar toda la papelera'))
     } finally {
@@ -5351,7 +5557,7 @@ export default function DashboardPage() {
     setAssignFileModalFile(file)
   }
 
-  function handleAction(action: string, docId?: string) {
+  async function handleAction(action: string, docId?: string) {
     if (action === 'team') {
       if (!user?.is_superuser) {
         setToast('Solo administradores pueden gestionar usuarios')
@@ -5372,6 +5578,11 @@ export default function DashboardPage() {
       void docId
       setCreateDocumentInitialFile(null)
       setCreateDocumentModalOpen(true)
+      return
+    }
+
+    if (action === 'trash' && docId) {
+      await handleTrashDocument(docId)
       return
     }
 
@@ -5520,7 +5731,7 @@ export default function DashboardPage() {
                 : selectedView === 'archivos-sin-asignar'
                   ? `${unassignedFiles.length} archivo${unassignedFiles.length === 1 ? '' : 's'} pendiente${unassignedFiles.length === 1 ? '' : 's'} por convertir en documento`
                   : selectedView === 'papelera'
-                    ? `${trashedFiles.length} archivo${trashedFiles.length === 1 ? '' : 's'} en papelera`
+                    ? `${trashedFiles.length + trashedDocs.length} elemento${trashedFiles.length + trashedDocs.length === 1 ? '' : 's'} en papelera`
                   : `${visibleDocs.length} documentos${selectedTag ? ` · etiqueta "${findTag(selectedTag)?.label}"` : ''}`}
             </div>
           </div>
@@ -5652,6 +5863,7 @@ export default function DashboardPage() {
             {selectedView === 'archivos-sin-asignar' ? null : selectedView === 'papelera' ? (
               <TrashedFilesPanel
                 files={trashedFiles}
+                documents={trashedDocs}
                 loading={loadingFileLists}
                 busy={busyFileId === '__trash-bulk__'}
                 busyFileId={busyFileId}
@@ -5666,6 +5878,8 @@ export default function DashboardPage() {
                 onDeleteSelected={handleDeleteSelectedTrashedFiles}
                 onRestoreAll={handleRestoreAllTrashedFiles}
                 onDeleteAll={handleDeleteAllTrashedFiles}
+                onRestoreDocument={handleRestoreTrashedDocument}
+                onDeleteDocument={handleDeleteTrashedDocument}
               />
             ) : viewMode === 'list' ? (
               <ListView

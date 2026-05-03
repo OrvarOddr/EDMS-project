@@ -47,6 +47,7 @@ class DocumentResponse(BaseModel):
     owner_user_id: str
     created_at: str
     updated_at: str
+    archived_at: str | None = None
     workflow_state_code: str | None = None
     assignee_user_id: str | None = None
 
@@ -54,3 +55,7 @@ class DocumentResponse(BaseModel):
 class DocumentCreatedFromFileResponse(BaseModel):
     document: DocumentResponse
     version: DocumentVersionResponse
+
+
+class DocumentDeleteResponse(BaseModel):
+    deleted_count: int
