@@ -458,7 +458,28 @@ Criterios de aceptacion:
 Prioridad: P1
 Sprint sugerido: 4
 
-## Epic 13 - Etiquetas
+## Epic 13 - Papelera de archivos
+
+### US-036 Gestionar papelera de archivos
+
+Como usuario quiero enviar archivos a la papelera, restaurarlos y eliminarlos permanentemente para gestionar el ciclo de vida de los archivos subidos.
+
+Criterios de aceptacion:
+
+- el usuario puede enviar un archivo a la papelera sin eliminarlo fisicamente
+- los archivos en papelera no aparecen en la vista de archivos sin asignar
+- el usuario puede restaurar un archivo individual desde la papelera
+- el usuario puede restaurar archivos seleccionados o todos a la vez
+- el usuario puede eliminar permanentemente un archivo individual; el objeto se borra de MinIO y los registros de DB
+- el usuario puede eliminar permanentemente archivos seleccionados o vaciar toda la papelera
+- la vista de papelera muestra solo los archivos del usuario autenticado
+- se puede seleccionar multiples archivos para acciones masivas
+
+Prioridad: P1
+Sprint sugerido: 2
+Estado: Done
+
+## Epic 15 - Etiquetas
 
 ### US-035 Gestionar etiquetas de documentos
 

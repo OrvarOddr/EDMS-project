@@ -366,11 +366,23 @@ Entrada minima:
 - `UploadFile(binary, filename, content_type, uploaded_by_user_id?)`
 - `DownloadFile(file_id)`
 - `GetFileMetadata(file_id)`
+- `ListUnassignedFiles(user_id)`
+- `ListTrashedFiles(user_id)`
+- `MoveFileToTrash(file_id, user_id)`
+- `RestoreFile(file_id, user_id)`
+- `RestoreSelectedFiles(file_ids, user_id)`
+- `RestoreAllTrashedFiles(user_id)`
+- `PermanentlyDeleteFile(file_id, user_id)`
+- `PermanentlyDeleteSelectedFiles(file_ids, user_id)`
+- `PermanentlyDeleteAllTrashedFiles(user_id)`
+- `GetStorageSummary(user_id)`
 
 Salida minima:
 
 - `FileStored(file_id, original_filename, mime_type, size_bytes, checksum)`
 - `FileMetadata(file_id, original_filename, mime_type, size_bytes, checksum)`
+- `FileListItem(file_id, original_filename, mime_type, size_bytes, upload_status, document_id?)`
+- `StorageSummary(used_bytes, total_bytes)`
 - stream binario para descarga
 
 IDs que emite:

@@ -6,6 +6,7 @@ Diseñar el modelo entidad-relacion del servicio de archivos para soportar:
 
 - registro de archivos fisicos almacenados
 - historial de uploads por documento y version
+- ciclo de vida del archivo: activo, en papelera, eliminado permanentemente
 
 ## Scope del servicio
 
@@ -92,9 +93,11 @@ Restricciones:
 
 Valores sugeridos para `upload_status`:
 
-- `pending`
-- `completed`
-- `failed`
+- `pending` — upload en curso
+- `completed` — archivo disponible y activo
+- `failed` — upload fallido
+- `trashed` — archivo enviado a la papelera, pendiente de eliminacion permanente o restauracion
+- `deleted` — eliminado permanentemente (registro logico opcional antes de purgar)
 
 Notas:
 
@@ -102,6 +105,8 @@ Notas:
 - `uploader_user_id` referencia logica a `auth-service`
 - esta tabla permite detectar uploads incompletos o fallidos
 - una vez completado el upload, `document-service` recibe el `file_id` logico, que corresponde al `id` de `stored_files`
+- el estado `trashed` oculta el archivo de las vistas normales sin eliminarlo fisicamente
+- la eliminacion permanente borra el objeto de MinIO y elimina los registros de `stored_files` y `file_uploads`
 
 ## Relaciones
 
@@ -156,6 +161,22 @@ Reglas de integridad:
 - el `mime_type` debe validarse contra el catalogo permitido antes de persistir
 - no se eliminan registros de `stored_files` sin una politica de retencion definida
 - un archivo fisico en el backend de almacenamiento siempre debe tener su fila correspondiente en `stored_files`
+- la transicion a `trashed` no elimina el objeto de MinIO
+- la eliminacion permanente debe borrar primero el objeto de MinIO y luego los registros de DB
+- un archivo con `upload_status = trashed` no aparece en listados normales ni en archivos sin asignar
+
+## Endpoints de papelera implementados
+
+| Método | Ruta | Descripcion |
+|--------|------|-------------|
+| `PATCH` | `/files/{id}/trash` | Mover archivo a papelera (`trashed`) |
+| `PATCH` | `/files/{id}/restore` | Restaurar archivo individual a `completed` |
+| `PATCH` | `/files/trash/restore` | Restaurar archivos seleccionados (body: `file_ids`) |
+| `PATCH` | `/files/trash/restore-all` | Restaurar todos los archivos en papelera del usuario |
+| `DELETE` | `/files/{id}` | Eliminar permanentemente: borra MinIO + DB |
+| `POST` | `/files/trash/delete` | Eliminar permanentemente seleccionados (body: `file_ids`) |
+| `POST` | `/files/trash/delete-all` | Vaciar papelera del usuario |
+| `GET` | `/files/trash` | Listar archivos en papelera del usuario |
 
 ## Limite con document-service
 
@@ -175,7 +196,7 @@ Reglas de integridad:
 - usar `uuid` como PK en todas las tablas
 - `file-service` migra solo el schema `files`
 - el backend de almacenamiento para el MVP es `local` o `minio` segun la variable de entorno `STORAGE_BACKEND`
-- el tamaño maximo de archivo para el MVP es 10 MB
+- el tamaño maximo de archivo es 100 MB (configurable via `MAX_FILE_SIZE_MB`)
 - los tipos MIME validos para el MVP son `application/pdf`, `image/png` e `image/jpeg`
 - no exponer rutas internas de almacenamiento al cliente
 
