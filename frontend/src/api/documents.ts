@@ -87,6 +87,7 @@ export interface CreateDocumentPayload {
   document_type_id: string
   description: string
   expedient_id?: string | null
+  confidentiality_level: string
 }
 
 export interface UpdateDocumentMetadataPayload {

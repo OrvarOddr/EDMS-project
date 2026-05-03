@@ -108,6 +108,12 @@ interface DocumentItem {
   locked?: boolean
 }
 
+interface DocumentAttachmentResult {
+  attachedUnassignedFileId?: string
+  attachedUnassignedFile?: StoredFileItem
+  uploadedFile?: File
+}
+
 interface ApprovalItem {
   id: string
   docId: string
@@ -3713,10 +3719,11 @@ function CreateDocumentModal({
   initialUnassignedFile?: StoredFileItem | null
   unassignedFiles: StoredFileItem[]
   onClose: () => void
-  onCreated: (document: DocumentItemResponse, attachment?: { attachedUnassignedFileId?: string; uploadedFile?: File }) => void
+  onCreated: (document: DocumentItemResponse, attachment?: DocumentAttachmentResult) => void
 }) {
   const [title, setTitle] = useState(() => initialUnassignedFile ? titleFromFilename(initialUnassignedFile.original_filename) : '')
   const [documentTypeId, setDocumentTypeId] = useState('contrato')
+  const [confidentialityLevel, setConfidentialityLevel] = useState('publico_interno')
   const [description, setDescription] = useState('')
   const [expedientId, setExpedientId] = useState('')
   const [attachmentMode, setAttachmentMode] = useState<'none' | 'existing' | 'upload'>(() => initialUnassignedFile ? 'existing' : 'none')
@@ -3756,8 +3763,9 @@ function CreateDocumentModal({
         document_type_id: documentTypeId,
         description: description.trim(),
         expedient_id: expedientId.trim() || null,
+        confidentiality_level: confidentialityLevel,
       })
-      const attachment: { attachedUnassignedFileId?: string; uploadedFile?: File } = {}
+      const attachment: DocumentAttachmentResult = {}
       if (attachmentMode === 'existing') {
         await assignFileToDocument(selectedUnassignedFileId, data.id, 'Archivo principal inicial')
         attachment.attachedUnassignedFileId = selectedUnassignedFileId
@@ -3872,7 +3880,30 @@ function CreateDocumentModal({
               </label>
 
               <label style={{ display: 'grid', gap: 6 }}>
-                <span style={{ color: 'var(--fg-muted)', fontSize: 12 }}>Expediente opcional</span>
+                <span style={{ color: 'var(--fg-muted)', fontSize: 12 }}>Confidencialidad</span>
+                <select
+                  value={confidentialityLevel}
+                  disabled={submitting}
+                  onChange={(event) => setConfidentialityLevel(event.target.value)}
+                  style={{
+                    border: '1px solid var(--border)',
+                    borderRadius: 8,
+                    background: 'var(--bg-elev-2)',
+                    color: 'var(--fg)',
+                    padding: '10px 11px',
+                    fontSize: 13,
+                    outline: 'none',
+                  }}
+                >
+                  <option value="publico_interno">Publico interno</option>
+                  <option value="confidencial">Confidencial</option>
+                  <option value="reservado">Reservado</option>
+                </select>
+              </label>
+            </div>
+
+            <label style={{ display: 'grid', gap: 6 }}>
+              <span style={{ color: 'var(--fg-muted)', fontSize: 12 }}>Expediente opcional</span>
                 <input
                   value={expedientId}
                   disabled={submitting}
@@ -3888,8 +3919,7 @@ function CreateDocumentModal({
                     outline: 'none',
                   }}
                 />
-              </label>
-            </div>
+            </label>
 
             <label style={{ display: 'grid', gap: 6 }}>
               <span style={{ color: 'var(--fg-muted)', fontSize: 12 }}>Descripcion</span>
@@ -4100,18 +4130,23 @@ function CreateDocumentModal({
 
 function EditMetadataModal({
   document,
+  unassignedFiles,
   onClose,
   onUpdated,
 }: {
   document: DocumentItem
+  unassignedFiles: StoredFileItem[]
   onClose: () => void
-  onUpdated: (document: DocumentItemResponse) => void
+  onUpdated: (document: DocumentItemResponse, attachment?: DocumentAttachmentResult) => void
 }) {
   const [title, setTitle] = useState(document.name)
   const [documentTypeId, setDocumentTypeId] = useState(document.documentTypeId ?? 'contrato')
   const [description, setDescription] = useState(document.description ?? '')
   const [expedientId, setExpedientId] = useState(document.folder === 'root' ? '' : document.folder)
   const [confidentialityLevel, setConfidentialityLevel] = useState(document.confidentialityLevel ?? 'publico_interno')
+  const [attachmentMode, setAttachmentMode] = useState<'none' | 'existing' | 'upload'>('none')
+  const [selectedUnassignedFileId, setSelectedUnassignedFileId] = useState('')
+  const [newFile, setNewFile] = useState<File | null>(null)
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
@@ -4129,6 +4164,14 @@ function EditMetadataModal({
       setError('Ingresa una descripcion breve')
       return
     }
+    if (attachmentMode === 'existing' && !selectedUnassignedFileId) {
+      setError('Selecciona un archivo sin asignar')
+      return
+    }
+    if (attachmentMode === 'upload' && !newFile) {
+      setError('Selecciona el archivo que quieres subir')
+      return
+    }
 
     setSubmitting(true)
     setError(null)
@@ -4140,7 +4183,22 @@ function EditMetadataModal({
         expedient_id: expedientId.trim() || null,
         confidentiality_level: confidentialityLevel,
       })
-      onUpdated(data)
+      const attachment: DocumentAttachmentResult = {}
+      if (attachmentMode === 'existing') {
+        const selectedFile = unassignedFiles.find((file) => file.id === selectedUnassignedFileId)
+        await assignFileToDocument(selectedUnassignedFileId, document.id, 'Archivo asociado desde edicion')
+        attachment.attachedUnassignedFileId = selectedUnassignedFileId
+        if (selectedFile) attachment.attachedUnassignedFile = selectedFile
+      }
+      if (attachmentMode === 'upload' && newFile) {
+        await uploadDocumentFile({
+          file: newFile,
+          document_id: document.id,
+          version_comment: 'Archivo asociado desde edicion',
+        })
+        attachment.uploadedFile = newFile
+      }
+      onUpdated(data, attachment)
       onClose()
     } catch (err) {
       setError(getApiErrorMessage(err, 'No se pudo actualizar la metadata'))
@@ -4300,6 +4358,114 @@ function EditMetadataModal({
                 }}
               />
             </label>
+
+            <div style={{ display: 'grid', gap: 8 }}>
+              <span style={{ color: 'var(--fg-muted)', fontSize: 12 }}>Archivo del documento</span>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 8 }}>
+                {[
+                  ['none', 'No cambiar'],
+                  ['existing', 'Usar sin asignar'],
+                  ['upload', 'Subir nuevo'],
+                ].map(([mode, label]) => (
+                  <button
+                    key={mode}
+                    type="button"
+                    className="edms-button"
+                    disabled={submitting}
+                    onClick={() => {
+                      setAttachmentMode(mode as 'none' | 'existing' | 'upload')
+                      setError(null)
+                    }}
+                    style={{
+                      borderRadius: 8,
+                      border: '1px solid var(--border)',
+                      background: attachmentMode === mode ? 'var(--bg-active)' : 'var(--bg-elev-2)',
+                      color: attachmentMode === mode ? 'var(--fg)' : 'var(--fg-muted)',
+                      padding: '9px 10px',
+                      fontSize: 12.5,
+                      fontWeight: attachmentMode === mode ? 600 : 500,
+                    }}
+                  >
+                    {label}
+                  </button>
+                ))}
+              </div>
+
+              {attachmentMode === 'existing' && (
+                <select
+                  value={selectedUnassignedFileId}
+                  disabled={submitting || unassignedFiles.length === 0}
+                  onChange={(event) => setSelectedUnassignedFileId(event.target.value)}
+                  style={{
+                    border: '1px solid var(--border)',
+                    borderRadius: 8,
+                    background: 'var(--bg-elev-2)',
+                    color: 'var(--fg)',
+                    padding: '10px 11px',
+                    fontSize: 13,
+                    outline: 'none',
+                  }}
+                >
+                  <option value="">
+                    {unassignedFiles.length === 0 ? 'No hay archivos sin asignar' : 'Selecciona un archivo'}
+                  </option>
+                  {unassignedFiles.map((file) => (
+                    <option key={file.id} value={file.id}>
+                      {file.original_filename} · {formatFileSize(file.size_bytes)}
+                    </option>
+                  ))}
+                </select>
+              )}
+
+              {attachmentMode === 'upload' && (
+                <label
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 10,
+                    border: '1px dashed var(--border-strong)',
+                    borderRadius: 10,
+                    background: 'var(--bg-elev-2)',
+                    padding: 12,
+                    cursor: submitting ? 'not-allowed' : 'pointer',
+                  }}
+                >
+                  <input
+                    type="file"
+                    accept="application/pdf,image/png,image/jpeg"
+                    disabled={submitting}
+                    onChange={(event) => {
+                      setNewFile(event.target.files?.[0] ?? null)
+                      event.currentTarget.value = ''
+                    }}
+                    style={{ display: 'none' }}
+                  />
+                  <div
+                    style={{
+                      width: 32,
+                      height: 32,
+                      borderRadius: 8,
+                      background: 'var(--accent-soft)',
+                      color: 'var(--accent)',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      flexShrink: 0,
+                    }}
+                  >
+                    <Icon.Upload size={15} />
+                  </div>
+                  <div style={{ minWidth: 0 }}>
+                    <div style={{ color: 'var(--fg)', fontSize: 12.5, fontWeight: 600 }}>
+                      {newFile ? newFile.name : 'Seleccionar archivo'}
+                    </div>
+                    <div style={{ color: 'var(--fg-muted)', fontSize: 11.5 }}>
+                      {newFile ? formatFileSize(newFile.size) : 'PDF, PNG o JPG. Maximo 100 MB.'}
+                    </div>
+                  </div>
+                </label>
+              )}
+            </div>
 
             {error && (
               <div
@@ -6195,31 +6361,61 @@ export default function DashboardPage() {
     setEditingMetadataDocId(documentId)
   }
 
-  function handleMetadataUpdated(document: DocumentItemResponse) {
+  function handleMetadataUpdated(document: DocumentItemResponse, attachment?: DocumentAttachmentResult) {
     const updated = documentResponseToItem(document)
-    setDocumentDetails((current) => (
-      current[document.id]
-        ? { ...current, [document.id]: { ...current[document.id], document } }
-        : current
-    ))
+    const attachedFile = attachment?.attachedUnassignedFile
+    const uploadedFile = attachment?.uploadedFile
+    setDocumentDetails((current) => {
+      const next = { ...current }
+      delete next[document.id]
+      return next
+    })
     setCreatedDocs((current) => current.map((item) => (
       item.id === updated.id
-        ? {
-            ...item,
-            name: updated.name,
-            kind: updated.kind,
-            description: updated.description,
-            documentTypeId: updated.documentTypeId,
-            confidentialityLevel: updated.confidentialityLevel,
-            metadataActivity: updated.metadataActivity,
-            folder: updated.folder,
-            owner: updated.owner,
-            modified: 'ahora',
-            status: updated.status,
-          }
+        ? (() => {
+            const base = {
+              ...item,
+              name: updated.name,
+              kind: updated.kind,
+              description: updated.description,
+              documentTypeId: updated.documentTypeId,
+              confidentialityLevel: updated.confidentialityLevel,
+              metadataActivity: updated.metadataActivity,
+              folder: updated.folder,
+              owner: updated.owner,
+              modified: 'ahora',
+              status: updated.status,
+            }
+
+            if (attachedFile) {
+              return {
+                ...base,
+                kind: docKindFromMime(attachedFile.mime_type),
+                size: formatFileSize(attachedFile.size_bytes),
+                version: Math.max(1, item.version + 1),
+              }
+            }
+
+            if (uploadedFile) {
+              return {
+                ...base,
+                kind: docKindFromMime(uploadedFile.type),
+                size: formatFileSize(uploadedFile.size),
+                version: Math.max(1, item.version + 1),
+              }
+            }
+
+            return base
+          })()
         : item
     )))
-    setToast(`Metadata de "${document.title}" actualizada`)
+    if (attachment?.attachedUnassignedFileId) markUnassignedFileAsUsed(attachment.attachedUnassignedFileId)
+    if (uploadedFile) void refreshStorageSummary()
+    setToast(
+      attachment?.attachedUnassignedFileId || uploadedFile
+        ? `Documento "${document.title}" actualizado con archivo`
+        : `Metadata de "${document.title}" actualizada`,
+    )
   }
 
   async function handleAction(action: string, docId?: string) {
@@ -6730,6 +6926,7 @@ export default function DashboardPage() {
       {editingMetadataDoc && (
         <EditMetadataModal
           document={editingMetadataDoc}
+          unassignedFiles={unassignedFiles}
           onClose={() => setEditingMetadataDocId(null)}
           onUpdated={handleMetadataUpdated}
         />
