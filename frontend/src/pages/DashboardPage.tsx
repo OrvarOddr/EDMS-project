@@ -36,6 +36,13 @@ import {
   uploadDocumentFile,
   type StoredFileItem,
 } from '../api/files'
+import {
+  listTags,
+  createTag,
+  updateTag,
+  deleteTag,
+  type Tag as ApiTag,
+} from '../api/tags'
 
 type ViewMode = 'list' | 'grid'
 type DocKind = 'pdf' | 'doc' | 'sheet' | 'slide' | 'image' | 'sig'
@@ -498,8 +505,8 @@ function findKind(kindId: DocKind) {
   return dashboardData.kinds[kindId]
 }
 
-function findTag(tagId: string) {
-  return dashboardData.tags.find((tag) => tag.id === tagId) ?? null
+function findTag(tags: ApiTag[], tagId: string) {
+  return tags.find((tag) => tag.id === tagId) ?? null
 }
 
 function Ic({
@@ -673,8 +680,8 @@ function AvatarStack({ ids, max = 3 }: { ids: string[]; max?: number }) {
   )
 }
 
-function TagChip({ id }: { id: string }) {
-  const tag = findTag(id)
+function TagChip({ id, tags }: { id: string; tags: ApiTag[] }) {
+  const tag = findTag(tags, id)
   if (!tag) return null
   return (
     <span
@@ -1598,6 +1605,10 @@ function Sidebar({
   unassignedCount,
   onToggleCollapsed,
   storage,
+  tags,
+  onCreateTag,
+  onEditTag,
+  onDeleteTag,
 }: {
   collapsed: boolean
   selectedView: SelectedView
@@ -1609,6 +1620,10 @@ function Sidebar({
   unassignedCount: number
   onToggleCollapsed: () => void
   storage: { used: number; total: number }
+  tags: ApiTag[]
+  onCreateTag: () => void
+  onEditTag: (tag: ApiTag) => void
+  onDeleteTag: (tagId: string) => void
 }) {
   const [expanded, setExpanded] = useState(new Set(['root', 'legal', 'finanzas', 'producto']))
 
@@ -1810,30 +1825,57 @@ function Sidebar({
           />
         ))}
 
-        <SectionLabel>Etiquetas</SectionLabel>
+        <div style={{ display: 'flex', alignItems: 'center', padding: '12px 14px 6px', justifyContent: 'space-between' }}>
+          <span style={{ color: 'var(--fg-dim)', fontSize: 10.5, letterSpacing: '0.08em', textTransform: 'uppercase', fontWeight: 600 }}>Etiquetas</span>
+          <button
+            onClick={onCreateTag}
+            style={{ background: 'none', color: 'var(--fg-muted)', fontSize: 16, lineHeight: 1, padding: '0 2px', borderRadius: 4 }}
+            title="Nueva etiqueta"
+          >+</button>
+        </div>
         <div style={{ padding: '0 6px' }}>
-          {dashboardData.tags.map((tag) => (
-            <button
+          {tags.map((tag) => (
+            <div
               key={tag.id}
-              onClick={() => onSelectTag(selectedTag === tag.id ? null : tag.id)}
-              className="edms-nav-item"
-              style={{
-                display: 'flex',
-                alignItems: 'center',
-                gap: 9,
-                width: '100%',
-                padding: '6px 10px',
-                borderRadius: 6,
-                background: selectedTag === tag.id ? 'var(--bg-active)' : 'transparent',
-                color: selectedTag === tag.id ? 'var(--fg)' : 'var(--fg-muted)',
-                fontSize: 13,
-                textAlign: 'left',
-              }}
+              style={{ display: 'flex', alignItems: 'center', borderRadius: 6, overflow: 'hidden' }}
+              className="edms-nav-item-wrap"
             >
-              <span style={{ width: 8, height: 8, borderRadius: 2, background: tag.color, flexShrink: 0 }} />
-              <span style={{ flex: 1 }}>{tag.label}</span>
-            </button>
+              <button
+                onClick={() => onSelectTag(selectedTag === tag.id ? null : tag.id)}
+                className="edms-nav-item"
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 9,
+                  flex: 1,
+                  padding: '6px 10px',
+                  borderRadius: 6,
+                  background: selectedTag === tag.id ? 'var(--bg-active)' : 'transparent',
+                  color: selectedTag === tag.id ? 'var(--fg)' : 'var(--fg-muted)',
+                  fontSize: 13,
+                  textAlign: 'left',
+                }}
+              >
+                <span style={{ width: 8, height: 8, borderRadius: 2, background: tag.color, flexShrink: 0 }} />
+                <span style={{ flex: 1 }}>{tag.label}</span>
+              </button>
+              <div style={{ display: 'flex', gap: 2, paddingRight: 4 }}>
+                <button
+                  onClick={() => onEditTag(tag)}
+                  style={{ background: 'none', color: 'var(--fg-dim)', fontSize: 11, padding: '2px 4px', borderRadius: 3 }}
+                  title="Editar"
+                >✎</button>
+                <button
+                  onClick={() => onDeleteTag(tag.id)}
+                  style={{ background: 'none', color: 'var(--fg-dim)', fontSize: 11, padding: '2px 4px', borderRadius: 3 }}
+                  title="Eliminar"
+                >✕</button>
+              </div>
+            </div>
           ))}
+          {tags.length === 0 && (
+            <div style={{ padding: '6px 10px', fontSize: 12, color: 'var(--fg-dim)' }}>Sin etiquetas</div>
+          )}
         </div>
       </div>
 
@@ -2010,6 +2052,7 @@ function ListView({
   allSelected,
   onOpenDoc,
   onContextMenu,
+  tags,
 }: {
   docs: DocumentItem[]
   selected: Set<string>
@@ -2018,6 +2061,7 @@ function ListView({
   allSelected: boolean
   onOpenDoc: (docId: string) => void
   onContextMenu: (event: React.MouseEvent, docId: string) => void
+  tags: ApiTag[]
 }) {
   return (
     <div style={{ flex: 1, overflow: 'auto', padding: '0 8px' }}>
@@ -2100,7 +2144,7 @@ function ListView({
                 <td style={{ padding: '8px 12px', borderBottom: '1px solid var(--border)' }}>
                   <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>
                     {doc.tags.map((tag) => (
-                      <TagChip key={tag} id={tag} />
+                      <TagChip key={tag} id={tag} tags={tags} />
                     ))}
                   </div>
                 </td>
@@ -2518,10 +2562,12 @@ function BulkBar({
 function DetailDrawer({
   doc,
   onClose,
+  tags,
   onEditMetadata,
 }: {
   doc: DocumentItem | null
   onClose: () => void
+  tags: ApiTag[]
   onEditMetadata: (doc: DocumentItem) => void
 }) {
   useEffect(() => {
@@ -2652,7 +2698,7 @@ function DetailDrawer({
               ['Tipo', kind.label],
               [doc.pages ? 'Páginas' : 'Filas', doc.pages ?? doc.rows?.toLocaleString('es-ES') ?? '—'],
               ['Compartido', doc.shared.length > 0 ? <AvatarStack ids={doc.shared} max={5} /> : <span style={{ color: 'var(--fg-dim)' }}>Solo tú</span>],
-              ['Etiquetas', doc.tags.length > 0 ? <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>{doc.tags.map((tag) => <TagChip key={tag} id={tag} />)}</div> : <span style={{ color: 'var(--fg-dim)' }}>—</span>],
+              ['Etiquetas', doc.tags.length > 0 ? <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>{doc.tags.map((tag) => <TagChip key={tag} id={tag} tags={tags} />)}</div> : <span style={{ color: 'var(--fg-dim)' }}>—</span>],
             ].map(([label, value], index) => (
               <div
                 key={String(label)}
@@ -5475,6 +5521,10 @@ export default function DashboardPage() {
   const [dragging, setDragging] = useState(false)
   const [toast, setToast] = useState<string | null>(null)
   const [storage, setStorage] = useState({ used: 0, total: 0 })
+  const [tags, setTags] = useState<ApiTag[]>([])
+  const [tagModalOpen, setTagModalOpen] = useState(false)
+  const [editingTag, setEditingTag] = useState<ApiTag | null>(null)
+  const [tagForm, setTagForm] = useState({ label: '', color: '#6366f1' })
   const dragCounter = useRef(0)
 
   const currentUserLabel = user
@@ -5532,6 +5582,10 @@ export default function DashboardPage() {
         if (!mounted) return
         setStorage(summary)
       })
+      .catch(() => {})
+
+    listTags()
+      .then((res) => { if (mounted) setTags(res.data) })
       .catch(() => {})
 
     return () => {
@@ -6070,6 +6124,14 @@ export default function DashboardPage() {
         unassignedCount={unassignedFiles.length}
         onToggleCollapsed={() => setTweaks((current) => ({ ...current, sidebarCollapsed: !current.sidebarCollapsed }))}
         storage={storage}
+        tags={tags}
+        onCreateTag={() => { setEditingTag(null); setTagForm({ label: '', color: '#6366f1' }); setTagModalOpen(true) }}
+        onEditTag={(tag) => { setEditingTag(tag); setTagForm({ label: tag.label, color: tag.color }); setTagModalOpen(true) }}
+        onDeleteTag={async (tagId) => {
+          await deleteTag(tagId)
+          setTags((prev) => prev.filter((t) => t.id !== tagId))
+          if (selectedTag === tagId) setSelectedTag(null)
+        }}
       />
 
       <main style={{ flex: 1, display: 'flex', flexDirection: 'column', minWidth: 0, position: 'relative' }}>
@@ -6108,7 +6170,7 @@ export default function DashboardPage() {
                   ? `${unassignedFiles.length} archivo${unassignedFiles.length === 1 ? '' : 's'} pendiente${unassignedFiles.length === 1 ? '' : 's'} por convertir en documento`
                   : selectedView === 'papelera'
                     ? `${trashedFiles.length + trashedDocs.length} elemento${trashedFiles.length + trashedDocs.length === 1 ? '' : 's'} en papelera`
-                  : `${visibleDocs.length} documentos${selectedTag ? ` · etiqueta "${findTag(selectedTag)?.label}"` : ''}`}
+                  : `${visibleDocs.length} documentos${selectedTag ? ` · etiqueta "${findTag(tags, selectedTag)?.label}"` : ''}`}
             </div>
           </div>
 
@@ -6266,6 +6328,7 @@ export default function DashboardPage() {
                 allSelected={allSelected}
                 onOpenDoc={openDoc}
                 onContextMenu={openContextMenu}
+                tags={tags}
               />
             ) : (
               <GridView
@@ -6292,6 +6355,7 @@ export default function DashboardPage() {
       <DetailDrawer
         doc={openDocObj}
         onClose={() => setOpenDocId(null)}
+        tags={tags}
         onEditMetadata={(doc) => openMetadataEditor(doc.id)}
       />
       <FileDetailDrawer
@@ -6306,6 +6370,58 @@ export default function DashboardPage() {
       <ContextMenu ctx={ctxMenu} onClose={() => setCtxMenu(null)} onAction={handleAction} />
       <NotifPopover open={notifOpen} onClose={() => setNotifOpen(false)} />
       <DropZoneOverlay active={dragging} />
+
+      {tagModalOpen && (
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000 }}>
+          <div style={{ background: 'var(--bg-elev)', borderRadius: 12, padding: 24, width: 320, display: 'flex', flexDirection: 'column', gap: 16 }}>
+            <h3 style={{ margin: 0, fontSize: 15 }}>{editingTag ? 'Editar etiqueta' : 'Nueva etiqueta'}</h3>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+              <label style={{ fontSize: 12, color: 'var(--fg-muted)' }}>Nombre</label>
+              <input
+                autoFocus
+                value={tagForm.label}
+                onChange={(e) => setTagForm((f) => ({ ...f, label: e.target.value }))}
+                placeholder="Ej: Urgente"
+                style={{ padding: '8px 10px', borderRadius: 7, border: '1px solid var(--border)', background: 'var(--bg)', color: 'var(--fg)', fontSize: 13 }}
+              />
+            </div>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+              <label style={{ fontSize: 12, color: 'var(--fg-muted)' }}>Color</label>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                <input
+                  type="color"
+                  value={tagForm.color}
+                  onChange={(e) => setTagForm((f) => ({ ...f, color: e.target.value }))}
+                  style={{ width: 36, height: 36, borderRadius: 7, border: '1px solid var(--border)', padding: 2, cursor: 'pointer' }}
+                />
+                <span style={{ fontSize: 13, color: 'var(--fg-muted)' }}>{tagForm.color}</span>
+              </div>
+            </div>
+            <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
+              <button onClick={() => setTagModalOpen(false)} style={{ padding: '7px 16px', borderRadius: 7, border: '1px solid var(--border)', background: 'transparent', color: 'var(--fg)', fontSize: 13, cursor: 'pointer' }}>
+                Cancelar
+              </button>
+              <button
+                disabled={!tagForm.label.trim()}
+                onClick={async () => {
+                  if (editingTag) {
+                    const res = await updateTag(editingTag.id, tagForm.label.trim(), tagForm.color)
+                    setTags((prev) => prev.map((t) => t.id === editingTag.id ? res.data : t))
+                  } else {
+                    const res = await createTag(tagForm.label.trim(), tagForm.color)
+                    setTags((prev) => [...prev, res.data])
+                  }
+                  setTagModalOpen(false)
+                }}
+                style={{ padding: '7px 16px', borderRadius: 7, background: 'var(--accent)', color: 'var(--accent-fg)', fontSize: 13, cursor: 'pointer', opacity: tagForm.label.trim() ? 1 : 0.5 }}
+              >
+                {editingTag ? 'Guardar' : 'Crear'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {teamModalOpen && (
         <TeamManagerModal
           onClose={() => setTeamModalOpen(false)}

@@ -78,3 +78,20 @@ class DocumentCreatedFromFileResponse(BaseModel):
 
 class DocumentDeleteResponse(BaseModel):
     deleted_count: int
+
+
+class TagResponse(BaseModel):
+    id: str
+    label: str
+    color: str
+    created_by_user_id: str
+
+
+class CreateTagRequest(BaseModel):
+    label: str
+    color: str = Field(default="#6366f1")
+
+
+class UpdateTagRequest(BaseModel):
+    label: str
+    color: str
