@@ -91,6 +91,18 @@ mark {
   transition: background 0.12s, border-color 0.12s, filter 0.12s, opacity 0.12s;
 }
 
+.edms-dashboard .edms-button:disabled {
+  cursor: not-allowed !important;
+  opacity: 0.48 !important;
+  filter: saturate(0.55);
+}
+
+.edms-dashboard .edms-button-primary:disabled {
+  background: var(--bg-elev-2) !important;
+  border-color: var(--border) !important;
+  color: var(--fg-dim) !important;
+}
+
 .edms-dashboard .edms-button:not(.edms-button-primary):not(:disabled):hover {
   background: var(--bg-hover) !important;
   border-color: var(--border-strong) !important;
