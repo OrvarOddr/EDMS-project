@@ -15,6 +15,11 @@ from app.schemas import (
     CreateDocumentFromFileRequest,
     DocumentCreatedFromFileResponse,
     DocumentDeleteResponse,
+    DocumentDetailFileResponse,
+    DocumentDetailPermissionsResponse,
+    DocumentDetailResponse,
+    DocumentDetailTimelineItemResponse,
+    DocumentDetailWorkflowResponse,
     DocumentResponse,
     DocumentVersionResponse,
     RegisterDocumentVersionRequest,
@@ -31,6 +36,7 @@ def _to_response(version: DocumentVersion) -> DocumentVersionResponse:
         version_number=version.version_number,
         file_id=version.file_id,
         uploaded_by_user_id=version.uploaded_by_user_id,
+        version_comment=version.version_comment,
         checksum=version.checksum,
         is_current=version.is_current,
         created_at=version.created_at.isoformat(),
@@ -131,6 +137,79 @@ def _bootstrap_workflow(document_id: str, actor_user_id: str) -> dict:
     return response.json()
 
 
+def _fetch_workflow_detail(document_id: str, actor_user_id: str) -> dict | None:
+    try:
+        with httpx.Client(timeout=5.0) as client:
+            response = client.get(
+                f"{settings.WORKFLOW_SERVICE_URL}/workflow/documents/{document_id}",
+                headers={"X-User-Id": actor_user_id},
+            )
+        if response.status_code >= 400:
+            return None
+        return response.json()
+    except httpx.HTTPError:
+        return None
+
+
+def _fetch_file_metadata(file_id: str, actor_user_id: str) -> dict | None:
+    try:
+        with httpx.Client(timeout=5.0) as client:
+            response = client.get(
+                f"{settings.FILE_SERVICE_URL}/files/{file_id}",
+                headers={"X-User-Id": actor_user_id},
+            )
+        if response.status_code >= 400:
+            return None
+        return response.json()
+    except httpx.HTTPError:
+        return None
+
+
+def _fetch_collaboration_timeline(document_id: str, actor_user_id: str) -> dict:
+    try:
+        with httpx.Client(timeout=5.0) as client:
+            response = client.get(
+                f"{settings.COLLABORATION_SERVICE_URL}/collaboration/documents/{document_id}/timeline",
+                headers={"X-User-Id": actor_user_id},
+            )
+        if response.status_code >= 400:
+            return {"comments": [], "history": []}
+        return response.json()
+    except httpx.HTTPError:
+        return {"comments": [], "history": []}
+
+
+def _metadata_history(document: Document) -> list[DocumentDetailTimelineItemResponse]:
+    metadata = document.metadata_json if isinstance(document.metadata_json, dict) else {}
+    activity = metadata.get("activity") if isinstance(metadata.get("activity"), list) else []
+    history: list[DocumentDetailTimelineItemResponse] = []
+    for item in activity:
+        changed_fields = item.get("changed_fields") if isinstance(item.get("changed_fields"), list) else []
+        history.append(
+            DocumentDetailTimelineItemResponse(
+                id=str(item.get("id", uuid.uuid4())),
+                actor_user_id=item.get("actor_user_id"),
+                action=str(item.get("action", "metadata_updated")),
+                body=f"Metadata actualizada: {', '.join(str(field) for field in changed_fields)}" if changed_fields else "Metadata actualizada",
+                created_at=str(item.get("created_at", document.updated_at.isoformat())),
+            )
+        )
+    return history
+
+
+def _version_history(versions: list[DocumentVersion]) -> list[DocumentDetailTimelineItemResponse]:
+    return [
+        DocumentDetailTimelineItemResponse(
+            id=f"version-{version.id}",
+            actor_user_id=version.uploaded_by_user_id,
+            action="version_uploaded",
+            body=version.version_comment or f"Version v{version.version_number} registrada",
+            created_at=version.created_at.isoformat(),
+        )
+        for version in versions
+    ]
+
+
 @router.post("", response_model=DocumentResponse, status_code=status.HTTP_201_CREATED)
 def create_document(
     body: CreateDocumentRequest,
@@ -202,6 +281,68 @@ def list_trashed_documents(
         .all()
     )
     return [_to_document_response(document) for document in documents]
+
+
+@router.get("/{document_id}", response_model=DocumentDetailResponse)
+def get_document_detail(
+    document_id: str,
+    x_user_id: str | None = Header(default=None, alias="X-User-Id"),
+    db: Session = Depends(get_db),
+):
+    actor_user_id = _require_user(x_user_id)
+    document = _document_for_actor(db, document_id.strip(), actor_user_id)
+    workflow_raw = _fetch_workflow_detail(document.id, actor_user_id) or {}
+    workflow = DocumentDetailWorkflowResponse(
+        state_code=workflow_raw.get("state_code"),
+        assignee_user_id=workflow_raw.get("assignee_user_id"),
+        assignment_role_code=workflow_raw.get("assignment_role_code"),
+        assignments=workflow_raw.get("assignments") if isinstance(workflow_raw.get("assignments"), list) else [],
+    )
+
+    versions = (
+        db.query(DocumentVersion)
+        .filter(DocumentVersion.document_id == document.id)
+        .order_by(DocumentVersion.version_number.desc())
+        .all()
+    )
+    files: list[DocumentDetailFileResponse] = []
+    for version in versions:
+        metadata = _fetch_file_metadata(version.file_id, actor_user_id) or {}
+        files.append(
+            DocumentDetailFileResponse(
+                **_to_response(version).model_dump(),
+                original_filename=metadata.get("original_filename"),
+                mime_type=metadata.get("mime_type"),
+                size_bytes=metadata.get("size_bytes"),
+                uploaded_at=metadata.get("uploaded_at"),
+            )
+        )
+
+    collaboration = _fetch_collaboration_timeline(document.id, actor_user_id)
+    comments = collaboration.get("comments") if isinstance(collaboration.get("comments"), list) else []
+    collaboration_history = collaboration.get("history") if isinstance(collaboration.get("history"), list) else []
+    history_items = [
+        *[DocumentDetailTimelineItemResponse(**item) for item in collaboration_history if isinstance(item, dict)],
+        *_metadata_history(document),
+        *_version_history(versions),
+    ]
+    history_items.sort(key=lambda item: item.created_at, reverse=True)
+
+    can_operate = document.archived_at is None and _can_upload_version(document, actor_user_id)
+    return DocumentDetailResponse(
+        document=_to_document_response(document, workflow_raw),
+        workflow=workflow,
+        files=files,
+        comments=[DocumentDetailTimelineItemResponse(**item) for item in comments if isinstance(item, dict)],
+        history=history_items,
+        permissions=DocumentDetailPermissionsResponse(
+            can_edit_metadata=can_operate,
+            can_upload_version=can_operate,
+            can_move_to_trash=can_operate,
+            can_download_file=document.archived_at is None,
+            can_comment=document.archived_at is None,
+        ),
+    )
 
 
 @router.patch("/{document_id}/metadata", response_model=DocumentResponse)
@@ -396,10 +537,16 @@ def create_document_from_file(
 
 
 @router.get("/{document_id}/versions", response_model=list[DocumentVersionResponse])
-def list_document_versions(document_id: str, db: Session = Depends(get_db)):
+def list_document_versions(
+    document_id: str,
+    x_user_id: str | None = Header(default=None, alias="X-User-Id"),
+    db: Session = Depends(get_db),
+):
+    actor_user_id = _require_user(x_user_id)
+    _document_for_actor(db, document_id.strip(), actor_user_id)
     versions = (
         db.query(DocumentVersion)
-        .filter(DocumentVersion.document_id == document_id)
+        .filter(DocumentVersion.document_id == document_id.strip())
         .order_by(DocumentVersion.version_number.desc())
         .all()
     )

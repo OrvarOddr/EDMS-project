@@ -11,6 +11,7 @@ import { useAuth } from '../context/AuthContext'
 import { assignRole, createUser, listRoles, listUsers, type RoleItem, type UserMe } from '../api/auth'
 import {
   createDocument,
+  getDocumentDetail,
   listDocuments,
   listTrashedDocuments,
   moveDocumentToTrash,
@@ -18,6 +19,8 @@ import {
   restoreDocumentFromTrash,
   updateDocumentMetadata,
   type DocumentActivityItem,
+  type DocumentDetailResponse,
+  type DocumentDetailTimelineItem,
   type DocumentItemResponse,
 } from '../api/documents'
 import {
@@ -2564,12 +2567,26 @@ function DetailDrawer({
   onClose,
   tags,
   onEditMetadata,
+  detail,
+  loading,
+  error,
 }: {
   doc: DocumentItem | null
   onClose: () => void
   tags: ApiTag[]
   onEditMetadata: (doc: DocumentItem) => void
+  detail: DocumentDetailResponse | null
+  loading: boolean
+  error: string | null
 }) {
+  const [preview, setPreview] = useState<{
+    fileId: string
+    url?: string
+    error?: string
+  } | null>(null)
+  const [downloadingFileId, setDownloadingFileId] = useState<string | null>(null)
+  const currentFile = detail?.files.find((file) => file.is_current) ?? detail?.files[0] ?? null
+
   useEffect(() => {
     if (!doc) return
     function handleEscape(event: KeyboardEvent) {
@@ -2579,11 +2596,111 @@ function DetailDrawer({
     return () => document.removeEventListener('keydown', handleEscape)
   }, [doc, onClose])
 
+  useEffect(() => {
+    if (!currentFile) {
+      setPreview(null)
+      return
+    }
+
+    const controller = new AbortController()
+    let objectUrl: string | null = null
+
+    getFileContent(currentFile.file_id, controller.signal)
+      .then((response) => {
+        objectUrl = URL.createObjectURL(response.data)
+        setPreview({ fileId: currentFile.file_id, url: objectUrl })
+      })
+      .catch(() => {
+        if (!controller.signal.aborted) {
+          setPreview({ fileId: currentFile.file_id, error: 'No se pudo cargar la vista previa' })
+        }
+      })
+
+    return () => {
+      controller.abort()
+      if (objectUrl) URL.revokeObjectURL(objectUrl)
+    }
+  }, [currentFile])
+
   if (!doc) return null
 
   const owner = findUserById(doc.owner)
-  const kind = findKind(doc.kind)
-  const versionLabel = doc.version > 0 ? `v${doc.version}` : 'Sin archivo'
+  const effectiveKind = currentFile?.mime_type ? docKindFromMime(currentFile.mime_type) : doc.kind
+  const kind = findKind(effectiveKind)
+  const effectiveVersion = currentFile?.version_number ?? doc.version
+  const versionLabel = effectiveVersion > 0 ? `v${effectiveVersion}` : 'Sin archivo'
+  const workflow = detail?.workflow
+  const permissions = detail?.permissions
+  const canEditMetadata = permissions?.can_edit_metadata ?? true
+  const canDownloadFile = Boolean(currentFile) && (permissions?.can_download_file ?? true)
+  const assignments = workflow?.assignments ?? []
+  const assigneeId = workflow?.assignee_user_id ?? doc.owner
+  const activePreview = currentFile && preview?.fileId === currentFile.file_id ? preview : null
+  const fallbackHistory: DocumentDetailTimelineItem[] = (doc.metadataActivity ?? []).map((item) => ({
+    id: item.id,
+    actor_user_id: item.actor_user_id,
+    action: item.action,
+    body: `Metadata actualizada: ${item.changed_fields.map(metadataFieldLabel).join(', ')}`,
+    created_at: item.created_at,
+  }))
+  const historyItems = detail ? detail.history : fallbackHistory
+
+  function userLabel(userId?: string | null) {
+    if (!userId) return 'Sin asignar'
+    const found = findUserById(userId)
+    if (found) return found.name
+    return `Usuario ${userId.slice(0, 8)}`
+  }
+
+  function workflowStateLabel(stateCode?: string | null) {
+    const labels: Record<string, string> = {
+      borrador: 'Borrador',
+      en_revision: 'En revision',
+      pendiente_firma: 'Pendiente de firma',
+      aprobado: 'Aprobado',
+      firmado: 'Firmado',
+      archivado: 'Archivado',
+    }
+    return labels[stateCode ?? ''] ?? 'Borrador'
+  }
+
+  function roleLabel(roleCode?: string | null) {
+    const labels: Record<string, string> = {
+      encargado: 'Encargado',
+      revisor: 'Revisor',
+      aprobador: 'Aprobador',
+      lector: 'Lector',
+    }
+    return labels[roleCode ?? ''] ?? roleCode ?? 'Asignado'
+  }
+
+  function timelineLabel(item: DocumentDetailTimelineItem) {
+    if (item.body) return item.body
+    const labels: Record<string, string> = {
+      metadata_updated: 'Metadata actualizada',
+      version_uploaded: 'Nueva version registrada',
+      comment: 'Comentario agregado',
+    }
+    return labels[item.action] ?? item.action
+  }
+
+  async function handleDownloadCurrentFile() {
+    if (!currentFile) return
+    setDownloadingFileId(currentFile.file_id)
+    try {
+      const response = await getFileContent(currentFile.file_id)
+      const objectUrl = URL.createObjectURL(response.data)
+      const link = document.createElement('a')
+      link.href = objectUrl
+      link.download = currentFile.original_filename || `${doc?.name ?? 'documento'}.bin`
+      document.body.appendChild(link)
+      link.click()
+      link.remove()
+      URL.revokeObjectURL(objectUrl)
+    } finally {
+      setDownloadingFileId(null)
+    }
+  }
 
   return (
     <aside
@@ -2616,49 +2733,76 @@ function DetailDrawer({
               aspectRatio: '8.5 / 11',
               borderRadius: 8,
               overflow: 'hidden',
-              background: `linear-gradient(135deg, color-mix(in oklch, ${kind.tone} 16%, var(--bg-elev-2)), var(--bg-elev-2))`,
+              background: currentFile ? 'var(--bg-elev-2)' : `linear-gradient(135deg, color-mix(in oklch, ${kind.tone} 16%, var(--bg-elev-2)), var(--bg-elev-2))`,
               border: '1px solid var(--border)',
               position: 'relative',
-              padding: 18,
+              padding: currentFile ? 0 : 18,
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
             }}
           >
-            <svg width="100%" height="100%" style={{ position: 'absolute', inset: 0, opacity: 0.4 }}>
-              <defs>
-                <pattern id={`stripes-dr-${doc.id}`} patternUnits="userSpaceOnUse" width="8" height="8" patternTransform="rotate(45)">
-                  <line x1="0" y1="0" x2="0" y2="8" stroke={kind.tone} strokeWidth="1" opacity="0.3" />
-                </pattern>
-              </defs>
-              <rect width="100%" height="100%" fill={`url(#stripes-dr-${doc.id})`} />
-            </svg>
-            <div style={{ position: 'relative', display: 'flex', flexDirection: 'column', gap: 6 }}>
-              <div style={{ height: 8, width: '75%', background: 'color-mix(in oklch, currentColor 35%, transparent)', borderRadius: 2, color: kind.tone }} />
-              <div style={{ height: 4, width: '55%', background: 'color-mix(in oklch, currentColor 25%, transparent)', borderRadius: 1, color: kind.tone, marginBottom: 10 }} />
-              {Array.from({ length: 8 }).map((_, index) => (
+            {currentFile ? (
+              activePreview?.url ? (
+                currentFile.mime_type?.startsWith('image/') ? (
+                  <img
+                    src={activePreview.url}
+                    alt={`Vista previa de ${currentFile.original_filename ?? doc.name}`}
+                    style={{ width: '100%', height: '100%', objectFit: 'contain', background: '#05070a' }}
+                  />
+                ) : (
+                  <iframe
+                    src={activePreview.url}
+                    title={`Vista previa de ${currentFile.original_filename ?? doc.name}`}
+                    style={{ width: '100%', height: '100%', border: 0, background: '#05070a' }}
+                  />
+                )
+              ) : (
+                <div style={{ padding: 18, textAlign: 'center', color: activePreview?.error ? 'var(--danger)' : 'var(--fg-muted)', fontSize: 12.5 }}>
+                  {activePreview?.error ?? 'Cargando vista previa...'}
+                </div>
+              )
+            ) : (
+              <>
+                <svg width="100%" height="100%" style={{ position: 'absolute', inset: 0, opacity: 0.4 }}>
+                  <defs>
+                    <pattern id={`stripes-dr-${doc.id}`} patternUnits="userSpaceOnUse" width="8" height="8" patternTransform="rotate(45)">
+                      <line x1="0" y1="0" x2="0" y2="8" stroke={kind.tone} strokeWidth="1" opacity="0.3" />
+                    </pattern>
+                  </defs>
+                  <rect width="100%" height="100%" fill={`url(#stripes-dr-${doc.id})`} />
+                </svg>
+                <div style={{ position: 'relative', display: 'flex', flexDirection: 'column', gap: 6, width: '100%' }}>
+                  <div style={{ height: 8, width: '75%', background: 'color-mix(in oklch, currentColor 35%, transparent)', borderRadius: 2, color: kind.tone }} />
+                  <div style={{ height: 4, width: '55%', background: 'color-mix(in oklch, currentColor 25%, transparent)', borderRadius: 1, color: kind.tone, marginBottom: 10 }} />
+                  {Array.from({ length: 8 }).map((_, index) => (
+                    <div
+                      key={index}
+                      style={{
+                        height: 4,
+                        width: `${85 - (index % 3) * 10}%`,
+                        background: 'color-mix(in oklch, currentColor 16%, transparent)',
+                        borderRadius: 1,
+                        color: kind.tone,
+                      }}
+                    />
+                  ))}
+                </div>
                 <div
-                  key={index}
                   style={{
-                    height: 4,
-                    width: `${85 - (index % 3) * 10}%`,
-                    background: 'color-mix(in oklch, currentColor 16%, transparent)',
-                    borderRadius: 1,
+                    position: 'absolute',
+                    bottom: 10,
+                    right: 12,
+                    fontFamily: "'JetBrains Mono', ui-monospace, monospace",
+                    fontSize: 10,
                     color: kind.tone,
+                    opacity: 0.6,
                   }}
-                />
-              ))}
-            </div>
-            <div
-              style={{
-                position: 'absolute',
-                bottom: 10,
-                right: 12,
-                fontFamily: "'JetBrains Mono', ui-monospace, monospace",
-                fontSize: 10,
-                color: kind.tone,
-                opacity: 0.6,
-              }}
-            >
-              Vista previa · {doc.pages ? `pág. 1 de ${doc.pages}` : doc.rows ? `${doc.rows.toLocaleString('es-ES')} filas` : '—'}
-            </div>
+                >
+                  Vista previa · Sin archivo principal
+                </div>
+              </>
+            )}
           </div>
         </div>
 
@@ -2673,31 +2817,59 @@ function DetailDrawer({
           </div>
 
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 6, marginBottom: 14 }}>
-            <button style={btnStylePrimary}>
+            <button className="edms-button edms-button-primary" style={btnStylePrimary} disabled={!canDownloadFile}>
               <Icon.Eye size={13} /> Abrir
             </button>
-            <button style={btnStyleGhost} onClick={() => onEditMetadata(doc)}>
+            <button className="edms-button" style={btnStyleGhost} onClick={() => onEditMetadata(doc)} disabled={!canEditMetadata}>
               <Icon.File size={13} /> Editar
             </button>
-            <button style={btnStyleGhost}>
-              <Icon.Download size={13} /> Descargar
+            <button className="edms-button" style={btnStyleGhost} disabled={!canDownloadFile || downloadingFileId === currentFile?.file_id} onClick={handleDownloadCurrentFile}>
+              <Icon.Download size={13} /> {downloadingFileId === currentFile?.file_id ? 'Descargando' : 'Descargar'}
             </button>
-            <button style={btnStyleGhost}>
+            <button className="edms-button" style={btnStyleGhost} disabled={permissions ? !permissions.can_upload_version : false}>
               <Icon.Signature size={13} /> Firmar
             </button>
           </div>
 
+          {(loading || error) && (
+            <div
+              style={{
+                border: `1px solid ${error ? 'color-mix(in oklch, var(--danger) 55%, var(--border))' : 'var(--border)'}`,
+                background: error ? 'color-mix(in oklch, var(--danger) 10%, var(--bg-elev-2))' : 'var(--bg-elev-2)',
+                color: error ? 'var(--danger)' : 'var(--fg-muted)',
+                borderRadius: 8,
+                padding: '9px 10px',
+                marginBottom: 12,
+                fontSize: 12,
+              }}
+            >
+              {error ?? 'Cargando detalle consolidado...'}
+            </div>
+          )}
+
           <div style={{ display: 'flex', flexDirection: 'column', gap: 0 }}>
             {[
-              ['Autor', <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}><OwnerAvatar userId={doc.owner} size={18} /><span>{owner?.name ?? 'Usuario autenticado'}</span></div>],
+              ['Autor', <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}><OwnerAvatar userId={doc.owner} size={18} /><span>{owner?.name ?? userLabel(doc.owner)}</span></div>],
+              ['Encargado', userLabel(assigneeId)],
+              ['Estado workflow', workflowStateLabel(workflow?.state_code ?? detail?.document.workflow_state_code)],
               ['Carpeta', <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5 }}><Icon.Folder size={12} style={{ color: 'var(--fg-dim)' }} />{doc.folder}</span>],
               ['Tipo documental', doc.documentTypeId ?? kind.label],
               ['Confidencialidad', confidentialityLabel(doc.confidentialityLevel)],
               ['Descripcion', doc.description || <span style={{ color: 'var(--fg-dim)' }}>—</span>],
-              ['Tamaño', doc.size],
-              ['Tipo', kind.label],
+              ['Archivo', currentFile?.original_filename ?? <span style={{ color: 'var(--fg-dim)' }}>Sin archivo principal</span>],
+              ['Tamaño', currentFile?.size_bytes ? formatFileSize(currentFile.size_bytes) : doc.size],
+              ['Tipo', currentFile?.mime_type ? fileKindLabel(currentFile.mime_type) : kind.label],
               [doc.pages ? 'Páginas' : 'Filas', doc.pages ?? doc.rows?.toLocaleString('es-ES') ?? '—'],
-              ['Compartido', doc.shared.length > 0 ? <AvatarStack ids={doc.shared} max={5} /> : <span style={{ color: 'var(--fg-dim)' }}>Solo tú</span>],
+              ['Asignados', assignments.length > 0 ? (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                  {assignments.map((assignment) => (
+                    <span key={assignment.id} style={{ color: 'var(--fg)', display: 'flex', gap: 6, alignItems: 'center' }}>
+                      <span>{userLabel(assignment.user_id)}</span>
+                      <span style={{ color: 'var(--fg-dim)' }}>· {roleLabel(assignment.role_code)}</span>
+                    </span>
+                  ))}
+                </div>
+              ) : doc.shared.length > 0 ? <AvatarStack ids={doc.shared} max={5} /> : <span style={{ color: 'var(--fg-dim)' }}>Solo tú</span>],
               ['Etiquetas', doc.tags.length > 0 ? <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>{doc.tags.map((tag) => <TagChip key={tag} id={tag} tags={tags} />)}</div> : <span style={{ color: 'var(--fg-dim)' }}>—</span>],
             ].map(([label, value], index) => (
               <div
@@ -2718,18 +2890,18 @@ function DetailDrawer({
           </div>
         </div>
 
-        {doc.metadataActivity && doc.metadataActivity.length > 0 && (
+        {historyItems.length > 0 && (
           <div style={{ padding: '0 14px 14px' }}>
             <div style={{ fontSize: 11, color: 'var(--fg-dim)', letterSpacing: '0.06em', textTransform: 'uppercase', fontWeight: 600, marginBottom: 8, display: 'flex', alignItems: 'center', gap: 6 }}>
-              <Icon.Clock size={11} /> Actividad de metadata
+              <Icon.Clock size={11} /> Comentarios e historial
             </div>
-            {doc.metadataActivity.slice(0, 3).map((item) => (
+            {historyItems.slice(0, 5).map((item) => (
               <div key={item.id} style={{ padding: '7px 0', borderTop: '1px solid var(--border)', fontSize: 12 }}>
                 <div style={{ color: 'var(--fg)' }}>
-                  Edicion de {item.changed_fields.map(metadataFieldLabel).join(', ')}
+                  {timelineLabel(item)}
                 </div>
                 <div style={{ color: 'var(--fg-dim)', fontSize: 11 }}>
-                  {formatDocumentDate(item.created_at)}
+                  {formatDocumentDate(item.created_at)} · {userLabel(item.actor_user_id)}
                 </div>
               </div>
             ))}
@@ -2740,12 +2912,41 @@ function DetailDrawer({
           <div style={{ fontSize: 11, color: 'var(--fg-dim)', letterSpacing: '0.06em', textTransform: 'uppercase', fontWeight: 600, marginBottom: 8, display: 'flex', alignItems: 'center', gap: 6 }}>
             <Icon.Branch size={11} /> Historial de versiones
           </div>
-          {doc.version === 0 && (
+          {effectiveVersion === 0 && (
             <div style={{ color: 'var(--fg-muted)', fontSize: 12, padding: '7px 0' }}>
               Aun no hay archivo principal ni versiones registradas.
             </div>
           )}
-          {Array.from({ length: Math.min(doc.version, 4) }).map((_, index) => {
+          {(detail?.files ?? []).slice(0, 4).map((file, index) => {
+            return (
+              <div key={file.id} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '7px 0', borderTop: index === 0 ? 'none' : '1px solid var(--border)' }}>
+                <span
+                  style={{
+                    width: 28,
+                    height: 18,
+                    borderRadius: 4,
+                    fontFamily: "'JetBrains Mono', ui-monospace, monospace",
+                    fontSize: 10.5,
+                    fontWeight: 600,
+                    background: index === 0 ? 'var(--accent-soft)' : 'var(--bg-elev-2)',
+                    color: index === 0 ? 'var(--accent)' : 'var(--fg-muted)',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                  }}
+                >
+                  v{file.version_number}
+                </span>
+                <div style={{ flex: 1, fontSize: 12 }}>
+                  <div style={{ color: 'var(--fg)' }}>{file.is_current ? 'actual' : file.original_filename ?? 'version anterior'}</div>
+                  <div style={{ color: 'var(--fg-dim)', fontSize: 11 }}>
+                    {formatDocumentDate(file.created_at)} · {userLabel(file.uploaded_by_user_id)}
+                  </div>
+                </div>
+              </div>
+            )
+          })}
+          {!detail && Array.from({ length: Math.min(doc.version, 4) }).map((_, index) => {
             const version = doc.version - index
             const labels = ['actual', 'hace 1 día', 'hace 3 días', 'hace 1 semana']
             return (
@@ -2771,7 +2972,6 @@ function DetailDrawer({
                   <div style={{ color: 'var(--fg)' }}>{labels[index] ?? `hace ${index} semanas`}</div>
                   <div style={{ color: 'var(--fg-dim)', fontSize: 11 }}>por {dashboardData.users[index % dashboardData.users.length].name.split(' ')[0]}</div>
                 </div>
-                {index > 0 && <button style={{ fontSize: 11, color: 'var(--accent)' }}>Restaurar</button>}
               </div>
             )
           })}
@@ -5516,6 +5716,9 @@ export default function DashboardPage() {
   const [selectingTrashFiles, setSelectingTrashFiles] = useState(false)
   const [selectedTrashFileIds, setSelectedTrashFileIds] = useState<Set<string>>(new Set())
   const [createdDocs, setCreatedDocs] = useState<DocumentItem[]>([])
+  const [documentDetails, setDocumentDetails] = useState<Record<string, DocumentDetailResponse>>({})
+  const [detailLoadingDocId, setDetailLoadingDocId] = useState<string | null>(null)
+  const [detailError, setDetailError] = useState<string | null>(null)
   const [loadingFileLists, setLoadingFileLists] = useState(true)
   const [busyFileId, setBusyFileId] = useState<string | null>(null)
   const [dragging, setDragging] = useState(false)
@@ -5593,6 +5796,35 @@ export default function DashboardPage() {
     }
   }, [])
 
+  useEffect(() => {
+    const backendDoc = openDocId ? createdDocs.some((doc) => doc.id === openDocId) : false
+    if (!openDocId || !backendDoc) {
+      setDetailError(null)
+      return
+    }
+    if (documentDetails[openDocId]) return
+
+    let mounted = true
+    setDetailLoadingDocId(openDocId)
+    setDetailError(null)
+    getDocumentDetail(openDocId)
+      .then((response) => {
+        if (!mounted) return
+        setDocumentDetails((current) => ({ ...current, [openDocId]: response.data }))
+      })
+      .catch((err) => {
+        if (!mounted) return
+        setDetailError(getApiErrorMessage(err, 'No se pudo cargar el detalle del documento'))
+      })
+      .finally(() => {
+        if (mounted) setDetailLoadingDocId(null)
+      })
+
+    return () => {
+      mounted = false
+    }
+  }, [createdDocs, documentDetails, openDocId])
+
   const visibleDocs = useMemo(() => {
     let list = allDocs
 
@@ -5629,6 +5861,8 @@ export default function DashboardPage() {
   }, [selectedView, selectedFolder])
 
   const openDocObj = openDocId ? allDocs.find((doc) => doc.id === openDocId) ?? null : null
+  const openDocDetail = openDocId ? documentDetails[openDocId] ?? null : null
+  const isOpenDocFromBackend = openDocId ? createdDocs.some((doc) => doc.id === openDocId) : false
   const allSelected = visibleDocs.length > 0 && visibleDocs.every((doc) => selected.has(doc.id))
   const showDashboard =
     selectedView === 'inicio' &&
@@ -5721,6 +5955,11 @@ export default function DashboardPage() {
       const trashedDocument = documentResponseToItem(data)
       setCreatedDocs((current) => current.filter((item) => item.id !== documentId))
       setTrashedDocs((current) => [trashedDocument, ...current.filter((item) => item.id !== documentId)])
+      setDocumentDetails((current) => {
+        const next = { ...current }
+        delete next[documentId]
+        return next
+      })
       setSelected((current) => {
         const next = new Set(current)
         next.delete(documentId)
@@ -5915,6 +6154,11 @@ export default function DashboardPage() {
   }
 
   function markDocumentHasFile(documentId: string, file: StoredFileItem) {
+    setDocumentDetails((current) => {
+      const next = { ...current }
+      delete next[documentId]
+      return next
+    })
     setCreatedDocs((current) => current.map((doc) => (
       doc.id === documentId
         ? {
@@ -5947,6 +6191,11 @@ export default function DashboardPage() {
 
   function handleMetadataUpdated(document: DocumentItemResponse) {
     const updated = documentResponseToItem(document)
+    setDocumentDetails((current) => (
+      current[document.id]
+        ? { ...current, [document.id]: { ...current[document.id], document } }
+        : current
+    ))
     setCreatedDocs((current) => current.map((item) => (
       item.id === updated.id
         ? {
@@ -6357,6 +6606,9 @@ export default function DashboardPage() {
         onClose={() => setOpenDocId(null)}
         tags={tags}
         onEditMetadata={(doc) => openMetadataEditor(doc.id)}
+        detail={openDocDetail}
+        loading={Boolean(openDocId && detailLoadingDocId === openDocId)}
+        error={openDocId && isOpenDocFromBackend ? detailError : null}
       />
       <FileDetailDrawer
         file={selectedView === 'archivos-sin-asignar' ? selectedUnassignedFile : null}

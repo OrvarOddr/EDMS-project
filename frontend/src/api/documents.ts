@@ -26,6 +26,62 @@ export interface DocumentActivityItem {
   created_at: string
 }
 
+export interface DocumentDetailWorkflowAssignment {
+  id: string
+  user_id: string
+  role_code: string
+  assigned_by_user_id: string
+  assigned_at: string
+}
+
+export interface DocumentDetailWorkflow {
+  state_code?: string | null
+  assignee_user_id?: string | null
+  assignment_role_code?: string | null
+  assignments: DocumentDetailWorkflowAssignment[]
+}
+
+export interface DocumentDetailFileItem {
+  id: string
+  document_id: string
+  version_number: number
+  file_id: string
+  uploaded_by_user_id: string
+  version_comment?: string | null
+  checksum?: string | null
+  is_current: boolean
+  created_at: string
+  original_filename?: string | null
+  mime_type?: string | null
+  size_bytes?: number | null
+  uploaded_at?: string | null
+}
+
+export interface DocumentDetailTimelineItem {
+  id: string
+  actor_user_id?: string | null
+  action: string
+  body?: string | null
+  created_at: string
+}
+
+export interface DocumentDetailPermissions {
+  can_edit_metadata: boolean
+  can_upload_version: boolean
+  can_move_to_trash: boolean
+  can_download_file: boolean
+  can_comment: boolean
+}
+
+export interface DocumentDetailResponse {
+  document: DocumentItemResponse
+  workflow: DocumentDetailWorkflow
+  files: DocumentDetailFileItem[]
+  comments: DocumentDetailTimelineItem[]
+  history: DocumentDetailTimelineItem[]
+  permissions: DocumentDetailPermissions
+}
+
 export interface CreateDocumentPayload {
   title: string
   document_type_id: string
@@ -46,6 +102,9 @@ export const createDocument = (payload: CreateDocumentPayload) =>
 
 export const listDocuments = () =>
   client.get<DocumentItemResponse[]>('/documents')
+
+export const getDocumentDetail = (documentId: string) =>
+  client.get<DocumentDetailResponse>(`/documents/${documentId}`)
 
 export const updateDocumentMetadata = (documentId: string, payload: UpdateDocumentMetadataPayload) =>
   client.patch<DocumentItemResponse>(`/documents/${documentId}/metadata`, payload)
