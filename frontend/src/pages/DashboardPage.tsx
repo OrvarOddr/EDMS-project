@@ -2570,6 +2570,8 @@ function DetailDrawer({
   detail,
   loading,
   error,
+  currentUserId,
+  currentUserLabel,
 }: {
   doc: DocumentItem | null
   onClose: () => void
@@ -2578,6 +2580,8 @@ function DetailDrawer({
   detail: DocumentDetailResponse | null
   loading: boolean
   error: string | null
+  currentUserId?: string | null
+  currentUserLabel: string
 }) {
   const [preview, setPreview] = useState<{
     fileId: string
@@ -2646,6 +2650,7 @@ function DetailDrawer({
 
   function userLabel(userId?: string | null) {
     if (!userId) return 'Sin asignar'
+    if (currentUserId && userId === currentUserId) return currentUserLabel
     const found = findUserById(userId)
     if (found) return found.name
     return `Usuario ${userId.slice(0, 8)}`
@@ -2825,7 +2830,7 @@ function DetailDrawer({
             <button className="edms-button" style={btnStyleGhost} disabled={!canDownloadFile || downloadingFileId === currentFile?.file_id} onClick={handleDownloadCurrentFile}>
               <Icon.Download size={13} /> {downloadingFileId === currentFile?.file_id ? 'Descargando' : 'Descargar'}
             </button>
-            <button className="edms-button" style={btnStyleGhost} disabled={permissions ? !permissions.can_upload_version : false}>
+            <button className="edms-button" style={btnStyleGhost} disabled={!canDownloadFile || (permissions ? !permissions.can_upload_version : false)}>
               <Icon.Signature size={13} /> Firmar
             </button>
           </div>
@@ -6610,6 +6615,8 @@ export default function DashboardPage() {
         detail={openDocDetail}
         loading={Boolean(openDocId && detailLoadingDocId === openDocId)}
         error={openDocId && isOpenDocFromBackend ? detailError : null}
+        currentUserId={user?.id}
+        currentUserLabel={currentUserLabel}
       />
       <FileDetailDrawer
         file={selectedView === 'archivos-sin-asignar' ? selectedUnassignedFile : null}
