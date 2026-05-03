@@ -18,3 +18,4 @@ async def lifespan(app: FastAPI):
 app = FastAPI(title="workflow-service", lifespan=lifespan)
 app.include_router(health.router)
 app.include_router(documents.router)
+app.include_router(documents.public_router)

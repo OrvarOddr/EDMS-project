@@ -32,6 +32,7 @@ class DocumentVersionResponse(BaseModel):
     version_number: int
     file_id: str
     uploaded_by_user_id: str
+    version_comment: str | None = None
     checksum: str | None = None
     is_current: bool
     created_at: str
@@ -78,6 +79,53 @@ class DocumentCreatedFromFileResponse(BaseModel):
 
 class DocumentDeleteResponse(BaseModel):
     deleted_count: int
+
+
+class DocumentDetailWorkflowAssignmentResponse(BaseModel):
+    id: str
+    user_id: str
+    role_code: str
+    assigned_by_user_id: str
+    assigned_at: str
+
+
+class DocumentDetailWorkflowResponse(BaseModel):
+    state_code: str | None = None
+    assignee_user_id: str | None = None
+    assignment_role_code: str | None = None
+    assignments: list[DocumentDetailWorkflowAssignmentResponse] = Field(default_factory=list)
+
+
+class DocumentDetailFileResponse(DocumentVersionResponse):
+    original_filename: str | None = None
+    mime_type: str | None = None
+    size_bytes: int | None = None
+    uploaded_at: str | None = None
+
+
+class DocumentDetailTimelineItemResponse(BaseModel):
+    id: str
+    actor_user_id: str | None = None
+    action: str
+    body: str | None = None
+    created_at: str
+
+
+class DocumentDetailPermissionsResponse(BaseModel):
+    can_edit_metadata: bool
+    can_upload_version: bool
+    can_move_to_trash: bool
+    can_download_file: bool
+    can_comment: bool
+
+
+class DocumentDetailResponse(BaseModel):
+    document: DocumentResponse
+    workflow: DocumentDetailWorkflowResponse
+    files: list[DocumentDetailFileResponse] = Field(default_factory=list)
+    comments: list[DocumentDetailTimelineItemResponse] = Field(default_factory=list)
+    history: list[DocumentDetailTimelineItemResponse] = Field(default_factory=list)
+    permissions: DocumentDetailPermissionsResponse
 
 
 class TagResponse(BaseModel):
