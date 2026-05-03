@@ -1,7 +1,17 @@
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict, Field
 
 
 class CreateDocumentRequest(BaseModel):
+    title: str
+    document_type_id: str
+    description: str
+    expedient_id: str | None = None
+    confidentiality_level: str = "publico_interno"
+
+
+class UpdateDocumentMetadataRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     title: str
     document_type_id: str
     description: str
@@ -35,6 +45,14 @@ class CreateDocumentFromFileRequest(BaseModel):
     description: str | None = None
 
 
+class DocumentActivityResponse(BaseModel):
+    id: str
+    actor_user_id: str
+    action: str
+    changed_fields: list[str]
+    created_at: str
+
+
 class DocumentResponse(BaseModel):
     id: str
     code: str
@@ -48,6 +66,7 @@ class DocumentResponse(BaseModel):
     created_at: str
     updated_at: str
     archived_at: str | None = None
+    metadata_activity: list[DocumentActivityResponse] = Field(default_factory=list)
     workflow_state_code: str | None = None
     assignee_user_id: str | None = None
 

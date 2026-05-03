@@ -16,6 +16,8 @@ import {
   moveDocumentToTrash,
   permanentlyDeleteDocument,
   restoreDocumentFromTrash,
+  updateDocumentMetadata,
+  type DocumentActivityItem,
   type DocumentItemResponse,
 } from '../api/documents'
 import {
@@ -78,6 +80,10 @@ interface DocumentItem {
   id: string
   name: string
   kind: DocKind
+  description?: string | null
+  documentTypeId?: string | null
+  confidentialityLevel?: string
+  metadataActivity?: DocumentActivityItem[]
   folder: string
   owner: string
   size: string
@@ -393,6 +399,10 @@ function documentResponseToItem(document: DocumentItemResponse): DocumentItem {
     id: document.id,
     name: document.title,
     kind: docKindFromType(document.document_type_id),
+    description: document.description ?? null,
+    documentTypeId: document.document_type_id ?? null,
+    confidentialityLevel: document.confidentiality_level,
+    metadataActivity: document.metadata_activity ?? [],
     folder: document.expedient_id || 'root',
     owner: document.owner_user_id,
     size: 'Sin archivo',
@@ -415,6 +425,26 @@ function fileTone(mimeType: string) {
   if (mimeType === 'application/pdf') return '#ff6b6b'
   if (mimeType.startsWith('image/')) return '#34d399'
   return '#6aa8ff'
+}
+
+function metadataFieldLabel(field: string) {
+  const labels: Record<string, string> = {
+    title: 'titulo',
+    description: 'descripcion',
+    document_type_id: 'tipo documental',
+    expedient_id: 'expediente',
+    confidentiality_level: 'confidencialidad',
+  }
+  return labels[field] ?? field
+}
+
+function confidentialityLabel(value?: string | null) {
+  const labels: Record<string, string> = {
+    publico_interno: 'Publico interno',
+    confidencial: 'Confidencial',
+    reservado: 'Reservado',
+  }
+  return labels[value ?? ''] ?? 'Publico interno'
 }
 
 async function fetchFileLists() {
@@ -2488,9 +2518,11 @@ function BulkBar({
 function DetailDrawer({
   doc,
   onClose,
+  onEditMetadata,
 }: {
   doc: DocumentItem | null
   onClose: () => void
+  onEditMetadata: (doc: DocumentItem) => void
 }) {
   useEffect(() => {
     if (!doc) return
@@ -2598,8 +2630,8 @@ function DetailDrawer({
             <button style={btnStylePrimary}>
               <Icon.Eye size={13} /> Abrir
             </button>
-            <button style={btnStyleGhost}>
-              <Icon.Share size={13} /> Compartir
+            <button style={btnStyleGhost} onClick={() => onEditMetadata(doc)}>
+              <Icon.File size={13} /> Editar
             </button>
             <button style={btnStyleGhost}>
               <Icon.Download size={13} /> Descargar
@@ -2613,6 +2645,9 @@ function DetailDrawer({
             {[
               ['Autor', <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}><OwnerAvatar userId={doc.owner} size={18} /><span>{owner?.name ?? 'Usuario autenticado'}</span></div>],
               ['Carpeta', <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5 }}><Icon.Folder size={12} style={{ color: 'var(--fg-dim)' }} />{doc.folder}</span>],
+              ['Tipo documental', doc.documentTypeId ?? kind.label],
+              ['Confidencialidad', confidentialityLabel(doc.confidentialityLevel)],
+              ['Descripcion', doc.description || <span style={{ color: 'var(--fg-dim)' }}>—</span>],
               ['Tamaño', doc.size],
               ['Tipo', kind.label],
               [doc.pages ? 'Páginas' : 'Filas', doc.pages ?? doc.rows?.toLocaleString('es-ES') ?? '—'],
@@ -2636,6 +2671,24 @@ function DetailDrawer({
             ))}
           </div>
         </div>
+
+        {doc.metadataActivity && doc.metadataActivity.length > 0 && (
+          <div style={{ padding: '0 14px 14px' }}>
+            <div style={{ fontSize: 11, color: 'var(--fg-dim)', letterSpacing: '0.06em', textTransform: 'uppercase', fontWeight: 600, marginBottom: 8, display: 'flex', alignItems: 'center', gap: 6 }}>
+              <Icon.Clock size={11} /> Actividad de metadata
+            </div>
+            {doc.metadataActivity.slice(0, 3).map((item) => (
+              <div key={item.id} style={{ padding: '7px 0', borderTop: '1px solid var(--border)', fontSize: 12 }}>
+                <div style={{ color: 'var(--fg)' }}>
+                  Edicion de {item.changed_fields.map(metadataFieldLabel).join(', ')}
+                </div>
+                <div style={{ color: 'var(--fg-dim)', fontSize: 11 }}>
+                  {formatDocumentDate(item.created_at)}
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
 
         <div style={{ padding: '0 14px 14px' }}>
           <div style={{ fontSize: 11, color: 'var(--fg-dim)', letterSpacing: '0.06em', textTransform: 'uppercase', fontWeight: 600, marginBottom: 8, display: 'flex', alignItems: 'center', gap: 6 }}>
@@ -2956,7 +3009,7 @@ function ContextMenu({
     { id: 'sign', icon: <Icon.Signature size={13} />, label: 'Solicitar firma' },
     { id: 'download', icon: <Icon.Download size={13} />, label: 'Descargar', shortcut: '⌘D' },
     null,
-    { id: 'rename', icon: <Icon.File size={13} />, label: 'Renombrar', shortcut: 'F2' },
+    { id: 'edit-metadata', icon: <Icon.File size={13} />, label: 'Editar metadata', shortcut: 'F2' },
     { id: 'move', icon: <Icon.Move size={13} />, label: 'Mover a…' },
     { id: 'tag', icon: <Icon.Tag size={13} />, label: 'Añadir etiqueta' },
     { id: 'star', icon: <Icon.Star size={13} />, label: 'Marcar favorito' },
@@ -3787,6 +3840,274 @@ function CreateDocumentModal({
               }}
             >
               {submitting ? 'Creando...' : 'Crear documento'}
+            </button>
+          </div>
+        </form>
+      </div>
+    </>
+  )
+}
+
+function EditMetadataModal({
+  document,
+  onClose,
+  onUpdated,
+}: {
+  document: DocumentItem
+  onClose: () => void
+  onUpdated: (document: DocumentItemResponse) => void
+}) {
+  const [title, setTitle] = useState(document.name)
+  const [documentTypeId, setDocumentTypeId] = useState(document.documentTypeId ?? 'contrato')
+  const [description, setDescription] = useState(document.description ?? '')
+  const [expedientId, setExpedientId] = useState(document.folder === 'root' ? '' : document.folder)
+  const [confidentialityLevel, setConfidentialityLevel] = useState(document.confidentialityLevel ?? 'publico_interno')
+  const [submitting, setSubmitting] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+
+  async function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    if (!title.trim()) {
+      setError('Ingresa un titulo')
+      return
+    }
+    if (!documentTypeId.trim()) {
+      setError('Selecciona un tipo documental')
+      return
+    }
+    if (!description.trim()) {
+      setError('Ingresa una descripcion breve')
+      return
+    }
+
+    setSubmitting(true)
+    setError(null)
+    try {
+      const { data } = await updateDocumentMetadata(document.id, {
+        title: title.trim(),
+        document_type_id: documentTypeId,
+        description: description.trim(),
+        expedient_id: expedientId.trim() || null,
+        confidentiality_level: confidentialityLevel,
+      })
+      onUpdated(data)
+      onClose()
+    } catch (err) {
+      setError(getApiErrorMessage(err, 'No se pudo actualizar la metadata'))
+    } finally {
+      setSubmitting(false)
+    }
+  }
+
+  return (
+    <>
+      <div
+        onClick={() => !submitting && onClose()}
+        style={{
+          position: 'fixed',
+          inset: 0,
+          zIndex: 120,
+          background: 'oklch(0 0 0 / 0.56)',
+          backdropFilter: 'blur(10px)',
+          pointerEvents: 'auto',
+        }}
+      />
+      <div
+        role="dialog"
+        aria-modal="true"
+        style={{
+          position: 'fixed',
+          inset: 0,
+          zIndex: 121,
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          padding: 24,
+          pointerEvents: 'none',
+        }}
+      >
+        <form
+          onSubmit={handleSubmit}
+          style={{
+            width: 'min(560px, 100%)',
+            background: 'var(--bg-elev)',
+            border: '1px solid var(--border-strong)',
+            borderRadius: 14,
+            boxShadow: 'var(--shadow)',
+            overflow: 'hidden',
+            pointerEvents: 'auto',
+          }}
+        >
+          <div style={{ padding: '16px 18px', borderBottom: '1px solid var(--border)' }}>
+            <div style={{ fontSize: 16, fontWeight: 600, color: 'var(--fg)', marginBottom: 4 }}>Editar metadata</div>
+            <div style={{ fontSize: 12.5, color: 'var(--fg-muted)' }}>
+              Actualiza solo datos descriptivos del documento. Estado y asignaciones quedan en workflow.
+            </div>
+          </div>
+
+          <div style={{ padding: 18, display: 'grid', gap: 13 }}>
+            <label style={{ display: 'grid', gap: 6 }}>
+              <span style={{ color: 'var(--fg-muted)', fontSize: 12 }}>Titulo</span>
+              <input
+                value={title}
+                disabled={submitting}
+                onChange={(event) => setTitle(event.target.value)}
+                style={{
+                  border: '1px solid var(--border)',
+                  borderRadius: 8,
+                  background: 'var(--bg-elev-2)',
+                  color: 'var(--fg)',
+                  padding: '10px 11px',
+                  fontSize: 13,
+                  outline: 'none',
+                }}
+              />
+            </label>
+
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+              <label style={{ display: 'grid', gap: 6 }}>
+                <span style={{ color: 'var(--fg-muted)', fontSize: 12 }}>Tipo documental</span>
+                <select
+                  value={documentTypeId}
+                  disabled={submitting}
+                  onChange={(event) => setDocumentTypeId(event.target.value)}
+                  style={{
+                    border: '1px solid var(--border)',
+                    borderRadius: 8,
+                    background: 'var(--bg-elev-2)',
+                    color: 'var(--fg)',
+                    padding: '10px 11px',
+                    fontSize: 13,
+                    outline: 'none',
+                  }}
+                >
+                  <option value="contrato">Contrato</option>
+                  <option value="informe">Informe</option>
+                  <option value="politica">Politica</option>
+                  <option value="factura">Factura</option>
+                  <option value="planilla">Planilla</option>
+                  <option value="presentacion">Presentacion</option>
+                </select>
+              </label>
+              <label style={{ display: 'grid', gap: 6 }}>
+                <span style={{ color: 'var(--fg-muted)', fontSize: 12 }}>Confidencialidad</span>
+                <select
+                  value={confidentialityLevel}
+                  disabled={submitting}
+                  onChange={(event) => setConfidentialityLevel(event.target.value)}
+                  style={{
+                    border: '1px solid var(--border)',
+                    borderRadius: 8,
+                    background: 'var(--bg-elev-2)',
+                    color: 'var(--fg)',
+                    padding: '10px 11px',
+                    fontSize: 13,
+                    outline: 'none',
+                  }}
+                >
+                  <option value="publico_interno">Publico interno</option>
+                  <option value="confidencial">Confidencial</option>
+                  <option value="reservado">Reservado</option>
+                </select>
+              </label>
+            </div>
+
+            <label style={{ display: 'grid', gap: 6 }}>
+              <span style={{ color: 'var(--fg-muted)', fontSize: 12 }}>Expediente o carpeta</span>
+              <input
+                value={expedientId}
+                disabled={submitting}
+                onChange={(event) => setExpedientId(event.target.value)}
+                placeholder="Ej: contratos"
+                style={{
+                  border: '1px solid var(--border)',
+                  borderRadius: 8,
+                  background: 'var(--bg-elev-2)',
+                  color: 'var(--fg)',
+                  padding: '10px 11px',
+                  fontSize: 13,
+                  outline: 'none',
+                }}
+              />
+            </label>
+
+            <label style={{ display: 'grid', gap: 6 }}>
+              <span style={{ color: 'var(--fg-muted)', fontSize: 12 }}>Descripcion</span>
+              <textarea
+                value={description}
+                disabled={submitting}
+                onChange={(event) => setDescription(event.target.value)}
+                rows={4}
+                style={{
+                  border: '1px solid var(--border)',
+                  borderRadius: 8,
+                  background: 'var(--bg-elev-2)',
+                  color: 'var(--fg)',
+                  padding: '10px 11px',
+                  fontSize: 13,
+                  outline: 'none',
+                  resize: 'vertical',
+                }}
+              />
+            </label>
+
+            {error && (
+              <div
+                style={{
+                  borderRadius: 8,
+                  border: '1px solid color-mix(in oklch, var(--danger) 55%, var(--border))',
+                  background: 'color-mix(in oklch, var(--danger) 12%, var(--bg-elev))',
+                  color: 'var(--danger)',
+                  padding: '10px 12px',
+                  fontSize: 12.5,
+                }}
+              >
+                {error}
+              </div>
+            )}
+          </div>
+
+          <div
+            style={{
+              padding: '14px 18px',
+              borderTop: '1px solid var(--border)',
+              display: 'flex',
+              justifyContent: 'flex-end',
+              gap: 10,
+            }}
+          >
+            <button
+              type="button"
+              onClick={onClose}
+              className="edms-button"
+              disabled={submitting}
+              style={{
+                borderRadius: 8,
+                border: '1px solid var(--border)',
+                background: 'var(--bg-elev-2)',
+                color: 'var(--fg-muted)',
+                padding: '9px 14px',
+                fontSize: 12.5,
+              }}
+            >
+              Cancelar
+            </button>
+            <button
+              type="submit"
+              className="edms-button edms-button-primary"
+              disabled={submitting}
+              style={{
+                borderRadius: 8,
+                border: '1px solid color-mix(in oklch, var(--accent) 60%, transparent)',
+                background: 'var(--accent)',
+                color: 'var(--accent-fg)',
+                padding: '9px 14px',
+                fontSize: 12.5,
+                fontWeight: 600,
+                opacity: submitting ? 0.7 : 1,
+              }}
+            >
+              {submitting ? 'Guardando...' : 'Guardar metadata'}
             </button>
           </div>
         </form>
@@ -5137,6 +5458,7 @@ export default function DashboardPage() {
   const [notifOpen, setNotifOpen] = useState(false)
   const [teamModalOpen, setTeamModalOpen] = useState(false)
   const [createDocumentModalOpen, setCreateDocumentModalOpen] = useState(false)
+  const [editingMetadataDocId, setEditingMetadataDocId] = useState<string | null>(null)
   const [createDocumentInitialFile, setCreateDocumentInitialFile] = useState<StoredFileItem | null>(null)
   const [assignFileModalFile, setAssignFileModalFile] = useState<StoredFileItem | null>(null)
   const [uploadModalOpen, setUploadModalOpen] = useState(false)
@@ -5162,6 +5484,10 @@ export default function DashboardPage() {
   const currentUserEmail = user?.email ?? 'laura@nimbera.com'
   const firstName = currentUserLabel.split(' ')[0]
   const allDocs = useMemo(() => [...createdDocs, ...dashboardData.docs], [createdDocs])
+  const editingMetadataDoc = useMemo(
+    () => createdDocs.find((doc) => doc.id === editingMetadataDocId) ?? null,
+    [createdDocs, editingMetadataDocId],
+  )
   const selectedUnassignedFile = useMemo(
     () => unassignedFiles.find((file) => file.id === selectedUnassignedFileId) ?? null,
     [selectedUnassignedFileId, unassignedFiles],
@@ -5557,6 +5883,36 @@ export default function DashboardPage() {
     setAssignFileModalFile(file)
   }
 
+  function openMetadataEditor(documentId: string) {
+    if (!createdDocs.some((doc) => doc.id === documentId)) {
+      setToast('Solo se puede editar metadata de documentos creados en el sistema')
+      return
+    }
+    setEditingMetadataDocId(documentId)
+  }
+
+  function handleMetadataUpdated(document: DocumentItemResponse) {
+    const updated = documentResponseToItem(document)
+    setCreatedDocs((current) => current.map((item) => (
+      item.id === updated.id
+        ? {
+            ...item,
+            name: updated.name,
+            kind: updated.kind,
+            description: updated.description,
+            documentTypeId: updated.documentTypeId,
+            confidentialityLevel: updated.confidentialityLevel,
+            metadataActivity: updated.metadataActivity,
+            folder: updated.folder,
+            owner: updated.owner,
+            modified: 'ahora',
+            status: updated.status,
+          }
+        : item
+    )))
+    setToast(`Metadata de "${document.title}" actualizada`)
+  }
+
   async function handleAction(action: string, docId?: string) {
     if (action === 'team') {
       if (!user?.is_superuser) {
@@ -5583,6 +5939,11 @@ export default function DashboardPage() {
 
     if (action === 'trash' && docId) {
       await handleTrashDocument(docId)
+      return
+    }
+
+    if (action === 'edit-metadata' && docId) {
+      openMetadataEditor(docId)
       return
     }
 
@@ -5669,11 +6030,26 @@ export default function DashboardPage() {
         event.preventDefault()
         setOpenDocId([...selected][0] ?? null)
       }
+
+      if (
+        event.key === 'F2' &&
+        selected.size === 1 &&
+        !(event.target instanceof HTMLInputElement) &&
+        !(event.target instanceof HTMLTextAreaElement)
+      ) {
+        event.preventDefault()
+        const selectedId = [...selected][0] ?? ''
+        if (!createdDocs.some((doc) => doc.id === selectedId)) {
+          setToast('Solo se puede editar metadata de documentos creados en el sistema')
+          return
+        }
+        setEditingMetadataDocId(selectedId)
+      }
     }
 
     document.addEventListener('keydown', handleKey)
     return () => document.removeEventListener('keydown', handleKey)
-  }, [selected])
+  }, [createdDocs, selected])
 
   return (
     <div className="edms-dashboard" style={{ display: 'flex', height: '100vh', width: '100vw', position: 'relative', background: 'var(--bg)' }}>
@@ -5913,7 +6289,11 @@ export default function DashboardPage() {
         />
       </main>
 
-      <DetailDrawer doc={openDocObj} onClose={() => setOpenDocId(null)} />
+      <DetailDrawer
+        doc={openDocObj}
+        onClose={() => setOpenDocId(null)}
+        onEditMetadata={(doc) => openMetadataEditor(doc.id)}
+      />
       <FileDetailDrawer
         file={selectedView === 'archivos-sin-asignar' ? selectedUnassignedFile : null}
         busy={selectedUnassignedFile ? busyFileId === selectedUnassignedFile.id : false}
@@ -5969,6 +6349,13 @@ export default function DashboardPage() {
             setOpenDocId(created.id)
             setToast(`Documento "${document.title}" creado`)
           }}
+        />
+      )}
+      {editingMetadataDoc && (
+        <EditMetadataModal
+          document={editingMetadataDoc}
+          onClose={() => setEditingMetadataDocId(null)}
+          onUpdated={handleMetadataUpdated}
         />
       )}
       {assignFileModalFile && (
