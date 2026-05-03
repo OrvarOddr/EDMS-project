@@ -30,6 +30,11 @@ class CreateDocumentFromFileRequest(BaseModel):
     description: str | None = None
 
 
+class AssignFileToDocumentRequest(BaseModel):
+    document_id: str
+    version_comment: str | None = None
+
+
 class FileBulkActionRequest(BaseModel):
     file_ids: list[str]
 

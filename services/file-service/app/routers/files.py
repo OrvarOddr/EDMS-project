@@ -16,6 +16,7 @@ from app.config import settings
 from app.database import get_db
 from app.models import FileUpload, StoredFile
 from app.schemas import (
+    AssignFileToDocumentRequest,
     CreateDocumentFromFileRequest,
     DocumentFromFileResponse,
     FileBulkActionRequest,
@@ -419,6 +420,56 @@ async def create_document_from_file(
         document_version_id=created["version"]["id"],
         file=_to_file_response(stored_file),
     )
+
+
+@router.patch("/{file_id}/document", response_model=FileListItemResponse)
+async def assign_file_to_document(
+    file_id: str,
+    body: AssignFileToDocumentRequest,
+    x_user_id: str | None = Header(default=None, alias="X-User-Id"),
+    db: Session = Depends(get_db),
+):
+    if not x_user_id:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Usuario autenticado requerido")
+
+    document_id = body.document_id.strip()
+    if not document_id:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Documento requerido")
+
+    stored_file, upload = _find_upload(db, file_id, status_filter="completed")
+    if upload.uploader_user_id != x_user_id:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="No puedes usar este archivo")
+    if upload.document_id:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Archivo ya asociado a un documento")
+
+    try:
+        version = await _register_document_version(
+            document_id=document_id,
+            file_id=stored_file.id,
+            uploaded_by_user_id=x_user_id,
+            checksum=stored_file.checksum or "",
+            version_comment=body.version_comment,
+        )
+    except httpx.HTTPStatusError as exc:
+        detail = "No se pudo asociar el archivo al documento"
+        try:
+            response_detail = exc.response.json().get("detail")
+            if isinstance(response_detail, str):
+                detail = response_detail
+        except ValueError:
+            pass
+        raise HTTPException(status_code=exc.response.status_code, detail=detail) from exc
+    except httpx.HTTPError as exc:
+        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail="No se pudo registrar version documental") from exc
+
+    upload.document_id = document_id
+    upload.document_version_id = version["id"]
+    upload.upload_status = "assigned"
+    upload.completed_at = utcnow()
+    db.commit()
+    db.refresh(upload)
+
+    return _to_file_list_response(stored_file, upload)
 
 
 @router.patch("/{file_id}/trash", response_model=FileListItemResponse)

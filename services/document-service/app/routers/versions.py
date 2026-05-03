@@ -14,9 +14,11 @@ from app.schemas import (
     CreateDocumentRequest,
     CreateDocumentFromFileRequest,
     DocumentCreatedFromFileResponse,
+    DocumentDeleteResponse,
     DocumentResponse,
     DocumentVersionResponse,
     RegisterDocumentVersionRequest,
+    UpdateDocumentMetadataRequest,
 )
 
 router = APIRouter(prefix="/documents", tags=["documents"])
@@ -36,6 +38,8 @@ def _to_response(version: DocumentVersion) -> DocumentVersionResponse:
 
 
 def _to_document_response(document: Document, workflow: dict | None = None) -> DocumentResponse:
+    metadata = document.metadata_json if isinstance(document.metadata_json, dict) else {}
+    activity = metadata.get("activity") if isinstance(metadata.get("activity"), list) else []
     return DocumentResponse(
         id=document.id,
         code=document.code,
@@ -48,6 +52,8 @@ def _to_document_response(document: Document, workflow: dict | None = None) -> D
         owner_user_id=document.owner_user_id,
         created_at=document.created_at.isoformat(),
         updated_at=document.updated_at.isoformat(),
+        archived_at=document.archived_at.isoformat() if document.archived_at else None,
+        metadata_activity=activity,
         workflow_state_code=workflow.get("state_code") if workflow else None,
         assignee_user_id=workflow.get("assignee_user_id") if workflow else None,
     )
@@ -69,11 +75,36 @@ def _can_upload_version(document: Document, user_id: str) -> bool:
     return user_id in {document.owner_user_id, document.created_by_user_id}
 
 
+def _document_for_actor(db: Session, document_id: str, user_id: str) -> Document:
+    document = db.query(Document).filter(Document.id == document_id).first()
+    if not document:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Documento no encontrado")
+    if not _can_upload_version(document, user_id):
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="No puedes operar sobre este documento")
+    return document
+
+
 def _clean_required(value: str, field_name: str) -> str:
     cleaned = value.strip()
     if not cleaned:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"{field_name} requerido")
     return cleaned
+
+
+def _record_metadata_activity(document: Document, actor_user_id: str, changed_fields: list[str]) -> None:
+    metadata = document.metadata_json if isinstance(document.metadata_json, dict) else {}
+    activity = metadata.get("activity") if isinstance(metadata.get("activity"), list) else []
+    metadata["activity"] = [
+        {
+            "id": str(uuid.uuid4()),
+            "actor_user_id": actor_user_id,
+            "action": "metadata_updated",
+            "changed_fields": changed_fields,
+            "created_at": datetime.now(timezone.utc).isoformat(),
+        },
+        *activity,
+    ][:20]
+    document.metadata_json = metadata
 
 
 def _bootstrap_workflow(document_id: str, actor_user_id: str) -> dict:
@@ -153,6 +184,115 @@ def list_documents(
         .all()
     )
     return [_to_document_response(document) for document in documents]
+
+
+@router.get("/trash", response_model=list[DocumentResponse])
+def list_trashed_documents(
+    x_user_id: str | None = Header(default=None, alias="X-User-Id"),
+    db: Session = Depends(get_db),
+):
+    actor_user_id = _require_user(x_user_id)
+    documents = (
+        db.query(Document)
+        .filter(
+            Document.archived_at.is_not(None),
+            (Document.owner_user_id == actor_user_id) | (Document.created_by_user_id == actor_user_id),
+        )
+        .order_by(Document.archived_at.desc())
+        .all()
+    )
+    return [_to_document_response(document) for document in documents]
+
+
+@router.patch("/{document_id}/metadata", response_model=DocumentResponse)
+def update_document_metadata(
+    document_id: str,
+    body: UpdateDocumentMetadataRequest,
+    x_user_id: str | None = Header(default=None, alias="X-User-Id"),
+    db: Session = Depends(get_db),
+):
+    actor_user_id = _require_user(x_user_id)
+    document = _document_for_actor(db, document_id.strip(), actor_user_id)
+    if document.archived_at is not None:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="No puedes editar un documento en papelera")
+
+    title = _clean_required(body.title, "Titulo")
+    description = _clean_required(body.description, "Descripcion")
+    document_type_id = _clean_required(body.document_type_id, "Tipo documental")
+    expedient_id = body.expedient_id.strip() if body.expedient_id else None
+    confidentiality_level = _clean_required(body.confidentiality_level, "Confidencialidad")
+
+    updates = {
+        "title": title,
+        "description": description,
+        "document_type_id": document_type_id,
+        "expedient_id": expedient_id or None,
+        "confidentiality_level": confidentiality_level,
+    }
+    changed_fields = [
+        field
+        for field, value in updates.items()
+        if getattr(document, field) != value
+    ]
+
+    if not changed_fields:
+        return _to_document_response(document)
+
+    for field, value in updates.items():
+        setattr(document, field, value)
+    document.updated_at = datetime.now(timezone.utc)
+    _record_metadata_activity(document, actor_user_id, changed_fields)
+
+    db.commit()
+    db.refresh(document)
+    return _to_document_response(document)
+
+
+@router.patch("/{document_id}/trash", response_model=DocumentResponse)
+def move_document_to_trash(
+    document_id: str,
+    x_user_id: str | None = Header(default=None, alias="X-User-Id"),
+    db: Session = Depends(get_db),
+):
+    actor_user_id = _require_user(x_user_id)
+    document = _document_for_actor(db, document_id.strip(), actor_user_id)
+    if document.archived_at is None:
+        document.archived_at = datetime.now(timezone.utc)
+        db.commit()
+        db.refresh(document)
+    return _to_document_response(document)
+
+
+@router.patch("/{document_id}/restore", response_model=DocumentResponse)
+def restore_document_from_trash(
+    document_id: str,
+    x_user_id: str | None = Header(default=None, alias="X-User-Id"),
+    db: Session = Depends(get_db),
+):
+    actor_user_id = _require_user(x_user_id)
+    document = _document_for_actor(db, document_id.strip(), actor_user_id)
+    if document.archived_at is not None:
+        document.archived_at = None
+        db.commit()
+        db.refresh(document)
+    return _to_document_response(document)
+
+
+@router.delete("/{document_id}", response_model=DocumentDeleteResponse)
+def delete_trashed_document(
+    document_id: str,
+    x_user_id: str | None = Header(default=None, alias="X-User-Id"),
+    db: Session = Depends(get_db),
+):
+    actor_user_id = _require_user(x_user_id)
+    document = _document_for_actor(db, document_id.strip(), actor_user_id)
+    if document.archived_at is None:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Envia el documento a papelera antes de eliminarlo")
+
+    db.query(DocumentVersion).filter(DocumentVersion.document_id == document.id).delete(synchronize_session=False)
+    db.delete(document)
+    db.commit()
+    return DocumentDeleteResponse(deleted_count=1)
 
 
 @router.post("/{document_id}/versions", response_model=DocumentVersionResponse, status_code=status.HTTP_201_CREATED)
