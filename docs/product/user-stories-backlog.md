@@ -479,6 +479,23 @@ Prioridad: P1
 Sprint sugerido: 2
 Estado: Done
 
+### US-037 Visualizar almacenamiento disponible
+
+Como usuario quiero ver cuanto espacio estoy usando y cuanto tengo disponible para gestionar mis archivos dentro del limite asignado.
+
+Criterios de aceptacion:
+
+- el dashboard muestra un card con GB usados y porcentaje del total
+- el sidebar muestra una barra de progreso con `usado / total GB`
+- el calculo de espacio usado refleja solo archivos activos del usuario (excluye papelera)
+- el total se determina por la cuota configurada en el servidor (`STORAGE_QUOTA_GB`)
+- los valores se actualizan automaticamente al subir un archivo, eliminar permanentemente o vaciar la papelera
+- cambiar `STORAGE_QUOTA_GB` en el `.env` actualiza el total sin modificar codigo
+
+Prioridad: P1
+Sprint sugerido: 3
+Estado: Done
+
 ## Epic 15 - Etiquetas
 
 ### US-035 Gestionar etiquetas de documentos

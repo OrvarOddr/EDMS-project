@@ -191,6 +191,27 @@ Reglas de integridad:
 - `collaboration-service` define quien tiene permiso `download`
 - el control de acceso antes de servir un archivo debe validarse contra `collaboration-service` via `api-gateway`
 
+## Resumen de almacenamiento por usuario
+
+`file-service` expone un endpoint `GET /files/storage/summary` que retorna:
+
+- `used_bytes`: suma de `size_bytes` de todos los archivos del usuario con `upload_status != trashed` y `!= deleted`, consultada directamente en DB
+- `total_bytes`: cuota asignada al usuario, calculada como `STORAGE_QUOTA_GB * 1024^3`
+
+Variables de entorno relevantes:
+
+| Variable | Default | Descripcion |
+|----------|---------|-------------|
+| `STORAGE_QUOTA_GB` | `10` | Cuota maxima del usuario en GB |
+| `MAX_FILE_SIZE_MB` | `100` | Tamaño maximo por archivo en MB |
+| `STORAGE_BACKEND` | `minio` | Backend de almacenamiento (`local` o `minio`) |
+
+Notas:
+
+- `STORAGE_QUOTA_GB` se puede cambiar en el `.env` sin modificar codigo
+- existe una opcion alternativa comentada en el codigo para usar el disco fisico real del servidor (`shutil.disk_usage`)
+- el resumen se consulta al cargar el dashboard y se refresca automaticamente tras subir, eliminar o vaciar la papelera
+
 ## Reglas de implementacion para el MVP
 
 - usar `uuid` como PK en todas las tablas
