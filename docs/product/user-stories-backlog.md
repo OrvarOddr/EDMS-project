@@ -458,6 +458,27 @@ Criterios de aceptacion:
 Prioridad: P1
 Sprint sugerido: 4
 
+## Epic 13 - Etiquetas
+
+### US-035 Gestionar etiquetas de documentos
+
+Como usuario quiero crear, editar y eliminar etiquetas, y asignarlas a documentos para facilitar su clasificacion y filtrado.
+
+Criterios de aceptacion:
+
+- el usuario puede crear una etiqueta con nombre y color
+- el usuario puede editar nombre y color de una etiqueta existente
+- el usuario puede eliminar una etiqueta; sus asociaciones con documentos se eliminan en cascada
+- las etiquetas se persisten en base de datos y se cargan desde la API
+- se puede asignar una o varias etiquetas a un documento
+- se puede quitar una etiqueta de un documento
+- el sidebar muestra las etiquetas disponibles y permite filtrar documentos por etiqueta
+- los documentos muestran sus etiquetas como chips de color en la vista de lista y detalle
+
+Prioridad: P1
+Sprint sugerido: 4
+Estado: Done
+
 ## Orden sugerido de implementacion
 
 ### Sprint 1

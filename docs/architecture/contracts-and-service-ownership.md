@@ -55,6 +55,7 @@ Es duenio de:
 - versiones logicas
 - tipos documentales
 - expedientes
+- etiquetas de clasificacion y sus asociaciones a documentos
 
 Entidades:
 
@@ -62,6 +63,8 @@ Entidades:
 - `DocumentVersion`
 - `DocumentType`
 - `Expedient`
+- `Tag`
+- `DocumentTag`
 
 Expone:
 
@@ -325,6 +328,13 @@ Entrada minima:
 - `CreateExpedient(code?, title, description?, created_by_user_id)`
 - `UpdateDocumentMetadata(document_id, ...)`
 - `RegisterDocumentVersion(document_id, file_id, uploaded_by_user_id, version_comment?)`
+- `ListTags()`
+- `CreateTag(label, color, created_by_user_id)`
+- `UpdateTag(tag_id, label, color)`
+- `DeleteTag(tag_id)`
+- `GetDocumentTags(document_id)`
+- `AssignTagToDocument(document_id, tag_id)`
+- `RemoveTagFromDocument(document_id, tag_id)`
 
 Salida minima:
 

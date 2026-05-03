@@ -8,6 +8,7 @@ Diseñar el modelo entidad-relacion del servicio documental para soportar:
 - tipos documentales
 - expedientes
 - versiones logicas
+- etiquetas de clasificacion
 
 ## Scope del servicio
 
@@ -18,6 +19,7 @@ Diseñar el modelo entidad-relacion del servicio documental para soportar:
 - tipos documentales
 - expedientes
 - historial de versiones logicas
+- etiquetas de clasificacion y sus asociaciones a documentos
 
 No debe guardar:
 
@@ -150,11 +152,57 @@ Notas:
 - `file_id` referencia logicamente a `file-service`
 - este servicio guarda la version logica, no el archivo fisico
 
+### 5. `tags`
+
+Catalogo de etiquetas de clasificacion documental.
+
+Campos sugeridos:
+
+- `id` uuid pk
+- `label` varchar not null
+- `color` varchar not null
+- `created_by_user_id` varchar not null
+- `created_at` timestamptz not null
+
+Restricciones:
+
+- `label` no nulo
+- `color` no nulo
+- `created_by_user_id` es referencia logica a `auth-service`
+
+Notas:
+
+- el color se almacena como codigo hexadecimal
+- cualquier usuario autenticado puede crear etiquetas
+
+### 6. `document_tags`
+
+Tabla de asociacion many-to-many entre documentos y etiquetas.
+
+Campos sugeridos:
+
+- `id` uuid pk
+- `document_id` varchar not null
+- `tag_id` varchar not null
+
+Restricciones:
+
+- unique compuesto en `document_id` + `tag_id`
+- `document_id` referencia logica a `documents`
+- `tag_id` referencia logica a `tags`
+
+Notas:
+
+- al eliminar una etiqueta, sus asociaciones se eliminan en cascada
+- un documento puede tener multiples etiquetas
+- una etiqueta puede estar asociada a multiples documentos
+
 ## Relaciones
 
 - `document_types` 1 -> N `documents`
 - `expedients` 1 -> N `documents`
 - `documents` 1 -> N `document_versions`
+- `tags` N -> N `documents` via `document_tags`
 
 ## Diagrama relacional sugerido
 
@@ -163,6 +211,8 @@ erDiagram
     document_types ||--o{ documents : classifies
     expedients ||--o{ documents : groups
     documents ||--o{ document_versions : has
+    documents ||--o{ document_tags : tagged_with
+    tags ||--o{ document_tags : applied_to
 
     document_types {
         uuid id PK
@@ -214,6 +264,20 @@ erDiagram
         boolean is_current
         timestamptz created_at
     }
+
+    tags {
+        uuid id PK
+        varchar label
+        varchar color
+        varchar created_by_user_id
+        timestamptz created_at
+    }
+
+    document_tags {
+        uuid id PK
+        varchar document_id
+        varchar tag_id
+    }
 ```
 
 ## PK, indices y reglas de integridad internas
@@ -229,6 +293,8 @@ Indices sugeridos:
 - indice en `documents.due_at`
 - indice unico compuesto en `document_versions.document_id, document_versions.version_number`
 - indice en `document_versions.file_id`
+- indice en `tags.created_by_user_id`
+- indice unico compuesto en `document_tags.document_id, document_tags.tag_id`
 
 Reglas de integridad:
 
