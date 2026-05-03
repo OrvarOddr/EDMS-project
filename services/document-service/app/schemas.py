@@ -1,4 +1,4 @@
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 
 class CreateDocumentRequest(BaseModel):
@@ -54,3 +54,20 @@ class DocumentResponse(BaseModel):
 class DocumentCreatedFromFileResponse(BaseModel):
     document: DocumentResponse
     version: DocumentVersionResponse
+
+
+class TagResponse(BaseModel):
+    id: str
+    label: str
+    color: str
+    created_by_user_id: str
+
+
+class CreateTagRequest(BaseModel):
+    label: str
+    color: str = Field(default="#6366f1")
+
+
+class UpdateTagRequest(BaseModel):
+    label: str
+    color: str
