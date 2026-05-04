@@ -27,6 +27,37 @@ jobs:
             # Pull sin credenciales manuales
             git pull https://$GH_TOKEN@github.com/OrvarOddr/EDMS-project.git develop
 
+            # Completar variables nuevas del .env del servidor sin imprimir secretos
+            touch .env
+
+            generate_secret() {
+              openssl rand -hex "$1"
+            }
+
+            ensure_env_var() {
+              key="$1"
+              value="$2"
+
+              if grep -q "^${key}=" .env; then
+                return 0
+              fi
+
+              printf "%s=%s\n" "$key" "$value" >> .env
+            }
+
+            ensure_env_var POSTGRES_PASSWORD "$(generate_secret 24)"
+            ensure_env_var AUTH_DB_PASSWORD "$(generate_secret 24)"
+            ensure_env_var DOCUMENTS_DB_PASSWORD "$(generate_secret 24)"
+            ensure_env_var WORKFLOW_DB_PASSWORD "$(generate_secret 24)"
+            ensure_env_var COLLABORATION_DB_PASSWORD "$(generate_secret 24)"
+            ensure_env_var FILES_DB_PASSWORD "$(generate_secret 24)"
+            ensure_env_var MINIO_ROOT_PASSWORD "$(generate_secret 24)"
+            ensure_env_var JWT_SECRET_KEY "$(generate_secret 32)"
+            ensure_env_var JWT_ISSUER "edms-auth"
+            ensure_env_var JWT_AUDIENCE "edms"
+            ensure_env_var BOOTSTRAP_ADMIN_EMAIL "admin@edms.dev"
+            ensure_env_var BOOTSTRAP_ADMIN_PASSWORD "$(generate_secret 24)"
+
             # Rebuild forzado sin caché y levantar todos los servicios
             docker-compose build --no-cache
             docker-compose up -d
