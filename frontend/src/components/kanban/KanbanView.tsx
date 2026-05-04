@@ -240,10 +240,9 @@ interface KanbanViewProps {
   docs: KanbanDocItem[]
   tags: KanbanTagItem[]
   onOpen: (id: string) => void
-  onStateChange?: (docId: string, newColId: string) => Promise<void>
 }
 
-export default function KanbanView({ docs, tags, onOpen, onStateChange }: KanbanViewProps) {
+export default function KanbanView({ docs, tags, onOpen }: KanbanViewProps) {
   const [dragging, setDragging] = useState<{ docId: string; fromCol: string } | null>(null)
   const [dragOverCol, setDragOverCol] = useState<string | null>(null)
   const [statuses, setStatuses] = useState<Record<string, string>>(() => {
@@ -252,7 +251,6 @@ export default function KanbanView({ docs, tags, onOpen, onStateChange }: Kanban
     return map
   })
   const [filterKind, setFilterKind] = useState<string | null>(null)
-  const [savingId, setSavingId] = useState<string | null>(null)
 
   const filtered = useMemo(() =>
     docs.filter((d) => !filterKind || d.kind === filterKind),
@@ -271,26 +269,15 @@ export default function KanbanView({ docs, tags, onOpen, onStateChange }: Kanban
     return map
   }, [filtered, statuses])
 
-  async function handleDrop(toCol: string) {
+  function handleDrop(toCol: string) {
     if (!dragging || dragging.fromCol === toCol) {
       setDragging(null)
       setDragOverCol(null)
       return
     }
-    const { docId, fromCol } = dragging
+    setStatuses((prev) => ({ ...prev, [dragging.docId]: toCol }))
     setDragging(null)
     setDragOverCol(null)
-    setStatuses((prev) => ({ ...prev, [docId]: toCol }))
-    if (onStateChange) {
-      setSavingId(docId)
-      try {
-        await onStateChange(docId, toCol)
-      } catch {
-        setStatuses((prev) => ({ ...prev, [docId]: fromCol }))
-      } finally {
-        setSavingId(null)
-      }
-    }
   }
 
   const kinds = ['pdf', 'doc', 'sheet', 'slide', 'image']

@@ -35,16 +35,3 @@ class AssignmentCountsRequest(BaseModel):
 
 class AssignmentCountsResponse(BaseModel):
     counts: dict[str, int]
-
-
-class ChangeDocumentStateRequest(BaseModel):
-    new_state_code: str
-    comment: str | None = None
-
-
-class ChangeDocumentStateResponse(BaseModel):
-    document_id: str
-    previous_state_code: str | None
-    new_state_code: str
-    changed_by_user_id: str
-    changed_at: str
