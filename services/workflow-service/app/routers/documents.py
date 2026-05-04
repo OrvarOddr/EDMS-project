@@ -34,15 +34,12 @@ VALID_STATES: frozenset[str] = frozenset({
     "archivado",
 })
 
+_KANBAN_STATES = {"borrador", "en_revision", "observado", "pendiente_firma", "aprobado", "rechazado"}
+
 WORKFLOW_TRANSITIONS: dict[str, set[str]] = {
-    "borrador":        {"en_revision"},
-    "en_revision":     {"borrador", "observado", "pendiente_firma", "rechazado"},
-    "observado":       {"en_revision"},
-    "pendiente_firma": {"aprobado", "rechazado"},
-    "aprobado":        {"archivado"},
-    "rechazado":       set(),
-    "archivado":       set(),
-}
+    state: (_KANBAN_STATES - {state})
+    for state in _KANBAN_STATES
+} | {"archivado": set()}
 
 
 def _require_value(value: str, field_name: str) -> str:
