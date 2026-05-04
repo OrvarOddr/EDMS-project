@@ -61,14 +61,13 @@ function ownerInitials(ownerId: string): string {
 interface KanbanCardProps {
   doc: KanbanDocItem
   tags: KanbanTagItem[]
-  col: KanbanCol
   isDragging: boolean
   onOpen: (id: string) => void
   onDragStart: () => void
   onDragEnd: () => void
 }
 
-function KanbanCard({ doc, tags, col: _col, isDragging, onOpen, onDragStart, onDragEnd }: KanbanCardProps) {
+function KanbanCard({ doc, tags, isDragging, onOpen, onDragStart, onDragEnd }: KanbanCardProps) {
   const tone = kindTone(doc.kind)
   const docTags = tags.filter((t) => doc.tags.includes(t.id))
 
@@ -206,7 +205,6 @@ function KanbanColumn({ col, docs, tags, draggingId, dragOverCol, onOpen, onDrag
             key={doc.id}
             doc={doc}
             tags={tags}
-            col={col}
             isDragging={draggingId === doc.id}
             onOpen={onOpen}
             onDragStart={() => onDragStart(doc.id, col.id)}
