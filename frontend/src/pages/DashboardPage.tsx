@@ -1767,7 +1767,7 @@ function Sidebar({
           >
             Muninn
           </div>
-          <div style={{ fontSize: 11, color: 'var(--fg-dim)' }}>Workspace · 42 personas</div>
+          <div style={{ fontSize: 11, color: 'var(--fg-dim)' }}>Workspace</div>
         </div>
         <button
           onClick={onToggleCollapsed}
