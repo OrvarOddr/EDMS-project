@@ -56,3 +56,11 @@ class ChangeDocumentStateResponse(BaseModel):
     new_state_code: str
     changed_by_user_id: str
     changed_at: str
+
+
+class WorkflowHistoryItem(BaseModel):
+    id: str
+    actor_user_id: str
+    action: str
+    body: str | None = None
+    created_at: str

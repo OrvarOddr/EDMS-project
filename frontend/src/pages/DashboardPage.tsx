@@ -11,6 +11,7 @@ import { useAuth } from '../context/AuthContext'
 import KanbanView from '../components/kanban/KanbanView'
 import { assignRole, createUser, listRoles, listUsers, type RoleItem, type UserMe } from '../api/auth'
 import {
+  createComment,
   createDocument,
   getDocumentDetail,
   listDocuments,
@@ -2592,6 +2593,7 @@ function DetailDrawer({
   error,
   currentUserId,
   currentUserLabel,
+  onCommentPosted,
 }: {
   doc: DocumentItem | null
   onClose: () => void
@@ -2602,6 +2604,7 @@ function DetailDrawer({
   error: string | null
   currentUserId?: string | null
   currentUserLabel: string
+  onCommentPosted?: (item: DocumentDetailTimelineItem) => void
 }) {
   const [preview, setPreview] = useState<{
     fileId: string
@@ -2609,6 +2612,9 @@ function DetailDrawer({
     error?: string
   } | null>(null)
   const [downloadingFileId, setDownloadingFileId] = useState<string | null>(null)
+  const [commentText, setCommentText] = useState('')
+  const [commentSending, setCommentSending] = useState(false)
+  const [showFullTimeline, setShowFullTimeline] = useState(false)
   const currentFile = detail?.files.find((file) => file.is_current) ?? detail?.files[0] ?? null
 
   useEffect(() => {
@@ -2700,13 +2706,33 @@ function DetailDrawer({
   }
 
   function timelineLabel(item: DocumentDetailTimelineItem) {
+    if (item.action === 'state_change' && item.body) {
+      const stateLabels: Record<string, string> = {
+        borrador: 'Borrador', en_revision: 'En revisión', observado: 'Observado',
+        aprobado: 'Aprobado', pendiente_firma: 'Pendiente de firma', rechazado: 'Rechazado', archivado: 'Archivado',
+      }
+      return `Estado cambiado a: ${stateLabels[item.body] ?? item.body}`
+    }
     if (item.body) return item.body
     const labels: Record<string, string> = {
       metadata_updated: 'Metadata actualizada',
       version_uploaded: 'Nueva version registrada',
       comment: 'Comentario agregado',
+      state_change: 'Estado cambiado',
     }
     return labels[item.action] ?? item.action
+  }
+
+  async function handleSubmitComment() {
+    if (!doc || !commentText.trim()) return
+    setCommentSending(true)
+    try {
+      const { data } = await createComment(doc.id, commentText.trim())
+      setCommentText('')
+      onCommentPosted?.(data)
+    } finally {
+      setCommentSending(false)
+    }
   }
 
   async function handleDownloadCurrentFile() {
@@ -2915,23 +2941,81 @@ function DetailDrawer({
           </div>
         </div>
 
-        {historyItems.length > 0 && (
-          <div style={{ padding: '0 14px 14px' }}>
-            <div style={{ fontSize: 11, color: 'var(--fg-dim)', letterSpacing: '0.06em', textTransform: 'uppercase', fontWeight: 600, marginBottom: 8, display: 'flex', alignItems: 'center', gap: 6 }}>
-              <Icon.Clock size={11} /> Comentarios e historial
-            </div>
-            {historyItems.slice(0, 5).map((item) => (
-              <div key={item.id} style={{ padding: '7px 0', borderTop: '1px solid var(--border)', fontSize: 12 }}>
-                <div style={{ color: 'var(--fg)' }}>
-                  {timelineLabel(item)}
-                </div>
-                <div style={{ color: 'var(--fg-dim)', fontSize: 11 }}>
-                  {formatDocumentDate(item.created_at)} · {userLabel(item.actor_user_id)}
-                </div>
-              </div>
-            ))}
+        <div style={{ padding: '0 14px 14px' }}>
+          <div style={{ fontSize: 11, color: 'var(--fg-dim)', letterSpacing: '0.06em', textTransform: 'uppercase', fontWeight: 600, marginBottom: 8, display: 'flex', alignItems: 'center', gap: 6 }}>
+            <Icon.Clock size={11} /> Comentarios e historial
           </div>
-        )}
+
+          {detail?.permissions?.can_comment !== false && (
+            <div style={{ display: 'flex', gap: 6, marginBottom: 10 }}>
+              <textarea
+                value={commentText}
+                onChange={(e) => setCommentText(e.target.value)}
+                placeholder="Escribe un comentario..."
+                rows={2}
+                onKeyDown={(e) => { if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) handleSubmitComment() }}
+                style={{
+                  flex: 1, resize: 'none', fontSize: 12, padding: '6px 8px',
+                  borderRadius: 6, border: '1px solid var(--border)',
+                  background: 'var(--bg-elev-2)', color: 'var(--fg)',
+                  outline: 'none', fontFamily: 'inherit',
+                }}
+              />
+              <button
+                onClick={handleSubmitComment}
+                disabled={commentSending || !commentText.trim()}
+                style={{
+                  padding: '6px 10px', borderRadius: 6, fontSize: 12, alignSelf: 'flex-end',
+                  background: 'var(--accent)', color: '#fff', border: 'none',
+                  cursor: commentSending || !commentText.trim() ? 'default' : 'pointer',
+                  opacity: commentSending || !commentText.trim() ? 0.5 : 1,
+                }}
+              >
+                {commentSending ? '…' : 'Enviar'}
+              </button>
+            </div>
+          )}
+
+          {(detail?.comments ?? []).length > 0 && (
+            <div style={{ marginBottom: 8 }}>
+              {detail!.comments.map((item) => (
+                <div key={item.id} style={{ padding: '7px 0', borderTop: '1px solid var(--border)', fontSize: 12 }}>
+                  <div style={{ color: 'var(--fg)', whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>{item.body}</div>
+                  <div style={{ color: 'var(--fg-dim)', fontSize: 11, marginTop: 2 }}>
+                    {userLabel(item.actor_user_id)} · {formatDocumentDate(item.created_at)}
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+          {(detail?.comments ?? []).length === 0 && (
+            <div style={{ color: 'var(--fg-muted)', fontSize: 12, padding: '6px 0 4px' }}>Sin comentarios aún.</div>
+          )}
+
+          {historyItems.length > 0 && (
+            <>
+              <div style={{ fontSize: 11, color: 'var(--fg-dim)', letterSpacing: '0.06em', textTransform: 'uppercase', fontWeight: 600, margin: '10px 0 6px', display: 'flex', alignItems: 'center', gap: 6 }}>
+                Actividad del documento
+              </div>
+              {(showFullTimeline ? historyItems : historyItems.slice(0, 5)).map((item) => (
+                <div key={item.id} style={{ padding: '7px 0', borderTop: '1px solid var(--border)', fontSize: 12 }}>
+                  <div style={{ color: 'var(--fg)' }}>{timelineLabel(item)}</div>
+                  <div style={{ color: 'var(--fg-dim)', fontSize: 11 }}>
+                    {formatDocumentDate(item.created_at)} · {userLabel(item.actor_user_id)}
+                  </div>
+                </div>
+              ))}
+              {historyItems.length > 5 && (
+                <button
+                  onClick={() => setShowFullTimeline((v) => !v)}
+                  style={{ marginTop: 6, fontSize: 11.5, color: 'var(--accent)', background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}
+                >
+                  {showFullTimeline ? 'Ver menos' : `Ver todos (${historyItems.length})`}
+                </button>
+              )}
+            </>
+          )}
+        </div>
 
         <div style={{ padding: '0 14px 14px' }}>
           <div style={{ fontSize: 11, color: 'var(--fg-dim)', letterSpacing: '0.06em', textTransform: 'uppercase', fontWeight: 600, marginBottom: 8, display: 'flex', alignItems: 'center', gap: 6 }}>
@@ -6878,6 +6962,14 @@ export default function DashboardPage() {
         error={openDocId && isOpenDocFromBackend ? detailError : null}
         currentUserId={user?.id}
         currentUserLabel={currentUserLabel}
+        onCommentPosted={(item) => {
+          if (!openDocId) return
+          setDocumentDetails((current) => {
+            const existing = current[openDocId]
+            if (!existing) return current
+            return { ...current, [openDocId]: { ...existing, comments: [item, ...existing.comments] } }
+          })
+        }}
       />
       <FileDetailDrawer
         file={selectedView === 'archivos-sin-asignar' ? selectedUnassignedFile : null}

@@ -1,8 +1,11 @@
 import httpx
-from fastapi import APIRouter, Header, HTTPException, status
+from fastapi import APIRouter, Depends, Header, HTTPException, status
 from pydantic import BaseModel, Field
+from sqlalchemy.orm import Session
 
 from app.config import settings
+from app.database import get_db
+from app.models import Comment
 
 router = APIRouter(prefix="/collaboration/documents", tags=["collaboration-documents"])
 
@@ -18,6 +21,10 @@ class TimelineItemResponse(BaseModel):
 class DocumentTimelineResponse(BaseModel):
     comments: list[TimelineItemResponse] = Field(default_factory=list)
     history: list[TimelineItemResponse] = Field(default_factory=list)
+
+
+class CreateCommentRequest(BaseModel):
+    body: str
 
 
 def _assert_document_access(document_id: str, user_id: str) -> None:
@@ -46,10 +53,56 @@ def _assert_document_access(document_id: str, user_id: str) -> None:
         )
 
 
+def _fetch_workflow_history(document_id: str) -> list[TimelineItemResponse]:
+    try:
+        with httpx.Client(timeout=5.0) as client:
+            response = client.get(
+                f"{settings.WORKFLOW_SERVICE_URL}/internal/workflow/documents/{document_id}/history",
+            )
+        if response.status_code >= 400:
+            return []
+        return [TimelineItemResponse(**item) for item in response.json()]
+    except httpx.HTTPError:
+        return []
+
+
+@router.post("/{document_id}/comments", response_model=TimelineItemResponse, status_code=status.HTTP_201_CREATED)
+def create_comment(
+    document_id: str,
+    body: CreateCommentRequest,
+    x_user_id: str | None = Header(default=None, alias="X-User-Id"),
+    db: Session = Depends(get_db),
+):
+    if not x_user_id:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Usuario autenticado requerido")
+    document_id = document_id.strip()
+    if not document_id:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Documento requerido")
+    text = body.body.strip()
+    if not text:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="El comentario no puede estar vacío")
+
+    _assert_document_access(document_id, x_user_id)
+
+    comment = Comment(document_id=document_id, author_user_id=x_user_id, body=text)
+    db.add(comment)
+    db.commit()
+    db.refresh(comment)
+
+    return TimelineItemResponse(
+        id=comment.id,
+        actor_user_id=comment.author_user_id,
+        action="comment",
+        body=comment.body,
+        created_at=comment.created_at.isoformat(),
+    )
+
+
 @router.get("/{document_id}/timeline", response_model=DocumentTimelineResponse)
 def get_document_timeline(
     document_id: str,
     x_user_id: str | None = Header(default=None, alias="X-User-Id"),
+    db: Session = Depends(get_db),
 ):
     if not x_user_id:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Usuario autenticado requerido")
@@ -58,6 +111,23 @@ def get_document_timeline(
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Documento requerido")
     _assert_document_access(document_id, x_user_id)
 
-    # US-011 solo necesita consolidar la lectura del detalle. Comentarios reales
-    # se implementaran cuando llegue la historia de colaboracion.
-    return DocumentTimelineResponse()
+    comments_rows = (
+        db.query(Comment)
+        .filter(Comment.document_id == document_id)
+        .order_by(Comment.created_at.desc())
+        .all()
+    )
+    comments = [
+        TimelineItemResponse(
+            id=c.id,
+            actor_user_id=c.author_user_id,
+            action="comment",
+            body=c.body,
+            created_at=c.created_at.isoformat(),
+        )
+        for c in comments_rows
+    ]
+
+    history = _fetch_workflow_history(document_id)
+
+    return DocumentTimelineResponse(comments=comments, history=history)

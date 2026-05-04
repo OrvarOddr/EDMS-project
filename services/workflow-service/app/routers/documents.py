@@ -16,6 +16,7 @@ from app.schemas import (
     ChangeDocumentStateResponse,
     DocumentAssignmentResponse,
     DocumentWorkflowDetailResponse,
+    WorkflowHistoryItem,
 )
 
 router = APIRouter(prefix="/internal/workflow/documents", tags=["workflow-documents"])
@@ -73,6 +74,30 @@ def _assert_document_access(document_id: str, user_id: str) -> None:
             status_code=status.HTTP_502_BAD_GATEWAY,
             detail="document-service rechazo la validacion de acceso",
         )
+
+
+@router.get("/{document_id}/history", response_model=list[WorkflowHistoryItem])
+def get_document_workflow_history(
+    document_id: str,
+    db: Session = Depends(get_db),
+):
+    document_id = _require_value(document_id, "Documento")
+    rows = (
+        db.query(DocumentState)
+        .filter(DocumentState.document_id == document_id)
+        .order_by(DocumentState.created_at.desc())
+        .all()
+    )
+    return [
+        WorkflowHistoryItem(
+            id=row.id,
+            actor_user_id=row.changed_by_user_id,
+            action="state_change",
+            body=row.state_code,
+            created_at=row.created_at.isoformat(),
+        )
+        for row in rows
+    ]
 
 
 @router.post("/bootstrap", response_model=BootstrapDocumentWorkflowResponse, status_code=status.HTTP_201_CREATED)
