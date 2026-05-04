@@ -56,3 +56,13 @@ class DocumentFromFileResponse(BaseModel):
 class StorageSummaryResponse(BaseModel):
     used_bytes: int
     total_bytes: int
+
+
+class FileBatchMetadataRequest(BaseModel):
+    file_ids: list[str]
+
+
+class FileBatchMetadataItem(BaseModel):
+    file_id: str
+    mime_type: str | None = None
+    original_filename: str | None = None

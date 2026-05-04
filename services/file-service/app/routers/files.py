@@ -19,6 +19,8 @@ from app.schemas import (
     AssignFileToDocumentRequest,
     CreateDocumentFromFileRequest,
     DocumentFromFileResponse,
+    FileBatchMetadataItem,
+    FileBatchMetadataRequest,
     FileBulkActionRequest,
     FileBulkDeleteResponse,
     FileListItemResponse,
@@ -28,6 +30,7 @@ from app.schemas import (
 )
 
 router = APIRouter(prefix="/files", tags=["files"])
+internal_router = APIRouter(prefix="/internal/files", tags=["internal-files"])
 
 ALLOWED_MIME_TYPES = {"application/pdf", "image/png", "image/jpeg"}
 READ_CHUNK_SIZE = 1024 * 1024
@@ -715,3 +718,21 @@ def get_storage_summary(
     # total_bytes = __import__("shutil").disk_usage("/").total
 
     return StorageSummaryResponse(used_bytes=used_bytes, total_bytes=total_bytes)
+
+
+@internal_router.post("/batch-metadata", response_model=list[FileBatchMetadataItem])
+def get_batch_file_metadata(
+    body: FileBatchMetadataRequest,
+    db: Session = Depends(get_db),
+):
+    if not body.file_ids:
+        return []
+    rows = (
+        db.query(StoredFile.id, StoredFile.mime_type, StoredFile.original_filename)
+        .filter(StoredFile.id.in_(body.file_ids))
+        .all()
+    )
+    return [
+        FileBatchMetadataItem(file_id=file_id, mime_type=mime, original_filename=fname)
+        for file_id, mime, fname in rows
+    ]

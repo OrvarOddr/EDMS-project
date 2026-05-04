@@ -14,3 +14,4 @@ async def lifespan(app: FastAPI):
 app = FastAPI(title="file-service", lifespan=lifespan)
 app.include_router(health.router)
 app.include_router(files.router)
+app.include_router(files.internal_router)
