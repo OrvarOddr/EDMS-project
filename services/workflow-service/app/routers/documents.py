@@ -10,6 +10,8 @@ from app.schemas import (
     AssignmentCountsResponse,
     BootstrapDocumentWorkflowRequest,
     BootstrapDocumentWorkflowResponse,
+    ChangeDocumentStateRequest,
+    ChangeDocumentStateResponse,
     DocumentAssignmentResponse,
     DocumentWorkflowDetailResponse,
 )
@@ -201,3 +203,68 @@ def get_assignment_counts(
         counts[document_id] = counts.get(document_id, 0) + 1
 
     return AssignmentCountsResponse(counts=counts)
+
+
+@public_router.patch("/{document_id}/state", response_model=ChangeDocumentStateResponse)
+def change_document_state(
+    document_id: str,
+    body: ChangeDocumentStateRequest,
+    x_user_id: str | None = Header(default=None, alias="X-User-Id"),
+    db: Session = Depends(get_db),
+):
+    if not x_user_id:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Usuario autenticado requerido")
+
+    document_id = _require_value(document_id, "Documento")
+    new_state = _require_value(body.new_state_code, "Estado")
+
+    if new_state not in VALID_STATES:
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=f"Estado inválido: {new_state}")
+
+    current_state = (
+        db.query(DocumentState)
+        .filter(DocumentState.document_id == document_id, DocumentState.is_current.is_(True))
+        .first()
+    )
+    if not current_state:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Documento sin estado en workflow")
+
+    allowed = WORKFLOW_TRANSITIONS.get(current_state.state_code, set())
+    if new_state not in allowed:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=f"Transición no permitida: {current_state.state_code} → {new_state}",
+        )
+
+    has_assignment = (
+        db.query(DocumentAssignment)
+        .filter(
+            DocumentAssignment.document_id == document_id,
+            DocumentAssignment.user_id == x_user_id,
+            DocumentAssignment.is_active.is_(True),
+        )
+        .first()
+    )
+    if not has_assignment:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="No tienes asignación activa en este documento")
+
+    previous_code = current_state.state_code
+    current_state.is_current = False
+
+    new_state_record = DocumentState(
+        document_id=document_id,
+        state_code=new_state,
+        changed_by_user_id=x_user_id,
+        is_current=True,
+    )
+    db.add(new_state_record)
+    db.commit()
+    db.refresh(new_state_record)
+
+    return ChangeDocumentStateResponse(
+        document_id=document_id,
+        previous_state_code=previous_code,
+        new_state_code=new_state,
+        changed_by_user_id=x_user_id,
+        changed_at=new_state_record.created_at.isoformat(),
+    )
