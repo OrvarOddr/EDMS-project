@@ -8,6 +8,8 @@ from app.models import DocumentAssignment, DocumentState
 from app.schemas import (
     AssignmentCountsRequest,
     AssignmentCountsResponse,
+    BatchStatesRequest,
+    BatchStatesResponse,
     BootstrapDocumentWorkflowRequest,
     BootstrapDocumentWorkflowResponse,
     ChangeDocumentStateRequest,
@@ -34,7 +36,7 @@ VALID_STATES: frozenset[str] = frozenset({
 
 WORKFLOW_TRANSITIONS: dict[str, set[str]] = {
     "borrador":        {"en_revision"},
-    "en_revision":     {"observado", "pendiente_firma", "rechazado"},
+    "en_revision":     {"borrador", "observado", "pendiente_firma", "rechazado"},
     "observado":       {"en_revision"},
     "pendiente_firma": {"aprobado", "rechazado"},
     "aprobado":        {"archivado"},
@@ -133,6 +135,24 @@ def bootstrap_document_workflow(
         assignee_user_id=assignment.user_id,
         assignment_role_code=assignment.role_code,
     )
+
+
+@router.post("/batch-states", response_model=BatchStatesResponse)
+def get_batch_document_states(
+    body: BatchStatesRequest,
+    db: Session = Depends(get_db),
+):
+    if not body.document_ids:
+        return BatchStatesResponse(states={})
+    rows = (
+        db.query(DocumentState.document_id, DocumentState.state_code)
+        .filter(
+            DocumentState.document_id.in_(body.document_ids),
+            DocumentState.is_current.is_(True),
+        )
+        .all()
+    )
+    return BatchStatesResponse(states={doc_id: state for doc_id, state in rows})
 
 
 @public_router.get("/{document_id}", response_model=DocumentWorkflowDetailResponse)

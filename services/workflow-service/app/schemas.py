@@ -37,6 +37,14 @@ class AssignmentCountsResponse(BaseModel):
     counts: dict[str, int]
 
 
+class BatchStatesRequest(BaseModel):
+    document_ids: list[str]
+
+
+class BatchStatesResponse(BaseModel):
+    states: dict[str, str]
+
+
 class ChangeDocumentStateRequest(BaseModel):
     new_state_code: str
     comment: str | None = None

@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react'
+import { useState, useMemo, useEffect } from 'react'
 
 export interface KanbanDocItem {
   id: string
@@ -252,6 +252,14 @@ export default function KanbanView({ docs, tags, onOpen, onStateChange }: Kanban
     return map
   })
   const [filterKind, setFilterKind] = useState<string | null>(null)
+
+  useEffect(() => {
+    setStatuses((prev) => {
+      const next = { ...prev }
+      docs.forEach((d) => { next[d.id] = normalizeStatus(d.status) })
+      return next
+    })
+  }, [docs])
 
   const filtered = useMemo(() =>
     docs.filter((d) => !filterKind || d.kind === filterKind),
