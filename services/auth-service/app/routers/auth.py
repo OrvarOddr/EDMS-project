@@ -1,4 +1,4 @@
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 from sqlalchemy.orm import Session
 from app.database import get_db
@@ -8,6 +8,10 @@ from app.security import verify_password, create_access_token, create_refresh_to
 from jose import JWTError
 
 router = APIRouter(prefix="/auth", tags=["auth"])
+
+LOGIN_WINDOW = timedelta(minutes=15)
+LOGIN_MAX_ATTEMPTS = 5
+LOGIN_ATTEMPTS: dict[str, list[datetime]] = {}
 
 
 def _get_active_roles(db: Session, user_id: str) -> list[str]:
@@ -21,17 +25,48 @@ def _get_active_roles(db: Session, user_id: str) -> list[str]:
     return [r.code for r in rows]
 
 
+def _login_key(email: str, request: Request) -> str:
+    ip = request.client.host if request.client else "unknown"
+    return f"{ip}:{email}"
+
+
+def _prune_attempts(key: str, now: datetime) -> list[datetime]:
+    attempts = [item for item in LOGIN_ATTEMPTS.get(key, []) if now - item < LOGIN_WINDOW]
+    LOGIN_ATTEMPTS[key] = attempts
+    return attempts
+
+
+def _ensure_login_not_limited(key: str) -> None:
+    attempts = _prune_attempts(key, datetime.now(timezone.utc))
+    if len(attempts) >= LOGIN_MAX_ATTEMPTS:
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail="Demasiados intentos de inicio de sesion. Intenta mas tarde.",
+        )
+
+
+def _record_failed_login(key: str) -> None:
+    now = datetime.now(timezone.utc)
+    attempts = _prune_attempts(key, now)
+    attempts.append(now)
+    LOGIN_ATTEMPTS[key] = attempts
+
+
 @router.post("/login", response_model=TokenResponse)
 def login(body: LoginRequest, request: Request, db: Session = Depends(get_db)):
     normalized_email = body.email.strip().lower()
+    login_key = _login_key(normalized_email, request)
+    _ensure_login_not_limited(login_key)
     user = db.query(User).filter(User.email == normalized_email, User.deleted_at.is_(None)).first()
     if not user or not verify_password(body.password, user.password_hash):
+        _record_failed_login(login_key)
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Credenciales inválidas")
     if user.status != "active":
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Cuenta inactiva")
 
+    LOGIN_ATTEMPTS.pop(login_key, None)
     roles = _get_active_roles(db, user.id)
-    access_token = create_access_token(user.id, roles)
+    access_token = create_access_token(user.id, roles, email=user.email, status=user.status)
     refresh_token = create_refresh_token(user.id)
 
     payload = decode_token(refresh_token, expected_type="refresh")
@@ -82,7 +117,7 @@ def refresh(body: RefreshRequest, request: Request, db: Session = Depends(get_db
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Usuario no disponible")
 
     roles = _get_active_roles(db, user_id)
-    new_access = create_access_token(user_id, roles)
+    new_access = create_access_token(user_id, roles, email=user.email, status=user.status)
     new_refresh = create_refresh_token(user_id)
 
     new_payload = decode_token(new_refresh, expected_type="refresh")

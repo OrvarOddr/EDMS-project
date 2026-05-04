@@ -1,6 +1,8 @@
+import httpx
 from fastapi import APIRouter, Depends, Header, HTTPException, status
 from sqlalchemy.orm import Session
 
+from app.config import settings
 from app.database import get_db
 from app.models import DocumentAssignment, DocumentState
 from app.schemas import (
@@ -22,6 +24,32 @@ def _require_value(value: str, field_name: str) -> str:
     if not cleaned:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"{field_name} requerido")
     return cleaned
+
+
+def _assert_document_access(document_id: str, user_id: str) -> None:
+    try:
+        with httpx.Client(timeout=5.0) as client:
+            response = client.get(
+                f"{settings.DOCUMENT_SERVICE_URL}/internal/documents/{document_id}/access",
+                headers={"X-User-Id": user_id},
+            )
+    except httpx.HTTPError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail="No se pudo validar acceso al documento",
+        ) from exc
+
+    if response.status_code in {
+        status.HTTP_401_UNAUTHORIZED,
+        status.HTTP_403_FORBIDDEN,
+        status.HTTP_404_NOT_FOUND,
+    }:
+        raise HTTPException(status_code=response.status_code, detail="No puedes ver este documento")
+    if response.status_code >= 400:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail="document-service rechazo la validacion de acceso",
+        )
 
 
 @router.post("/bootstrap", response_model=BootstrapDocumentWorkflowResponse, status_code=status.HTTP_201_CREATED)
@@ -93,6 +121,7 @@ def get_document_workflow_detail(
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Usuario autenticado requerido")
 
     document_id = _require_value(document_id, "Documento")
+    _assert_document_access(document_id, x_user_id)
     state = (
         db.query(DocumentState)
         .filter(DocumentState.document_id == document_id, DocumentState.is_current.is_(True))

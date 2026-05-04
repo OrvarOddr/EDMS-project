@@ -31,10 +31,10 @@ def _base_claims(user_id: str, expire: datetime, token_type: str) -> dict:
     }
 
 
-def create_access_token(user_id: str, roles: list[str]) -> str:
+def create_access_token(user_id: str, roles: list[str], *, email: str, status: str) -> str:
     expire = datetime.now(timezone.utc) + timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES)
     return jwt.encode(
-        {**_base_claims(user_id, expire, "access"), "roles": roles},
+        {**_base_claims(user_id, expire, "access"), "email": email, "status": status, "roles": roles},
         settings.JWT_SECRET_KEY,
         algorithm=settings.JWT_ALGORITHM,
     )

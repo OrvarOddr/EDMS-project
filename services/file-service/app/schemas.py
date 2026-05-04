@@ -27,7 +27,10 @@ class FileListItemResponse(FileMetadataResponse):
 
 class CreateDocumentFromFileRequest(BaseModel):
     title: str | None = None
-    description: str | None = None
+    document_type_id: str
+    description: str
+    confidentiality_level: str = "publico_interno"
+    expedient_id: str | None = None
 
 
 class AssignFileToDocumentRequest(BaseModel):

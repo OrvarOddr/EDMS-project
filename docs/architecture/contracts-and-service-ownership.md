@@ -211,12 +211,15 @@ No debe manejar:
 
 - consume `document_id`
 - workflow consulta existencia logica del documento en `document-service`
+- workflow valida que el actor tenga acceso al documento antes de exponer estado o asignaciones
 - workflow no modifica metadata documental
+- la validacion se hace por contrato interno de document-service, no por lectura directa de tablas
 
 ### document-service -> file-service
 
 - document-service referencia archivos subidos por `file_id`
 - file-service no modifica versiones logicas del documento
+- file-service consulta a document-service por HTTP interno antes de servir archivos asociados a documentos
 
 ### workflow-service -> collaboration-service
 

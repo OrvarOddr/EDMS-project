@@ -10,6 +10,7 @@ Para el MVP se usara:
 
 - una sola instancia de `PostgreSQL`
 - un `schema` por microservicio
+- un usuario de base de datos por microservicio, sin usar el superusuario `postgres` en runtime
 - migraciones independientes por servicio
 - integracion entre servicios por HTTP interno, no por acceso directo a tablas
 
@@ -38,6 +39,24 @@ Nota:
 - `api-gateway` no tiene schema propio
 - `frontend` no tiene schema propio
 - `MinIO` es infraestructura de storage, no un schema de PostgreSQL
+- `postgres` solo se usa en el contenedor de inicializacion para crear roles y schemas
+
+## Usuarios de base de datos en runtime
+
+Cada servicio se conecta con un rol propio:
+
+- `auth-service` -> `edms_auth`
+- `document-service` -> `edms_documents`
+- `workflow-service` -> `edms_workflow`
+- `collaboration-service` -> `edms_collaboration`
+- `file-service` -> `edms_files`
+
+Reglas:
+
+- cada rol solo recibe permisos sobre su schema
+- las contrasenas viven en `.env` y no se versionan
+- `infra/postgres/init-service-users.sh` crea o actualiza roles y schemas antes de arrancar los servicios
+- si una variable de password falta o usa un placeholder debil, el arranque debe fallar
 
 ## Ownership por schema
 

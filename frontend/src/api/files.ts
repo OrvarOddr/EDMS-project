@@ -45,6 +45,14 @@ export interface UploadDocumentFilePayload {
   version_comment?: string
 }
 
+export interface CreateDocumentFromFilePayload {
+  title?: string | null
+  document_type_id: string
+  description: string
+  confidentiality_level: string
+  expedient_id?: string | null
+}
+
 export const uploadDocumentFile = (payload: UploadDocumentFilePayload) => {
   const form = new FormData()
   form.append('file', payload.file)
@@ -81,8 +89,8 @@ export const permanentlyDeleteFiles = (fileIds: string[]) =>
 export const permanentlyDeleteAllTrashedFiles = () =>
   client.post<FileBulkDeleteResponse>('/files/trash/delete-all')
 
-export const createDocumentFromFile = (fileId: string) =>
-  client.post<DocumentFromFileResponse>(`/files/${fileId}/document`, {})
+export const createDocumentFromFile = (fileId: string, payload: CreateDocumentFromFilePayload) =>
+  client.post<DocumentFromFileResponse>(`/files/${fileId}/document`, payload)
 
 export const assignFileToDocument = (fileId: string, documentId: string, versionComment?: string) =>
   client.patch<StoredFileItem>(`/files/${fileId}/document`, {

@@ -58,6 +58,7 @@ async def proxy(path: str, request: Request):
             "connection",
             "x-user-id",
             "x-user-email",
+            "x-user-status",
             "x-user-roles",
         }
     }
@@ -65,6 +66,7 @@ async def proxy(path: str, request: Request):
         roles = payload.get("roles") or []
         headers["X-User-Id"] = str(payload.get("sub", ""))
         headers["X-User-Email"] = str(payload.get("email", ""))
+        headers["X-User-Status"] = str(payload.get("status", ""))
         headers["X-User-Roles"] = ",".join(str(role) for role in roles)
 
     async with httpx.AsyncClient(timeout=TIMEOUT) as client:
