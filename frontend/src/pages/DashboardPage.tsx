@@ -2724,7 +2724,7 @@ function DetailDrawer({
   }
 
   function renderCommentBody(text: string) {
-    const parts = text.split(/(@[\w\-]+)/g)
+    const parts = text.split(/(@[\w-]+)/g)
     return parts.map((part, i) =>
       part.startsWith('@')
         ? <span key={i} style={{ color: 'var(--accent)', fontWeight: 500 }}>{part}</span>
