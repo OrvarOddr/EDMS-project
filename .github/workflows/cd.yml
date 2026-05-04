@@ -60,7 +60,7 @@ jobs:
 
             # Rebuild forzado sin caché y levantar todos los servicios
             docker-compose build --no-cache
-            docker-compose up -d
+            docker-compose up -d || (docker-compose logs --tail=50 && exit 1)
 
             # Recargar nginx para aplicar cualquier cambio de config
             docker-compose restart nginx
