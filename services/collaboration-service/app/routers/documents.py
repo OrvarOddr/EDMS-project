@@ -1,3 +1,5 @@
+import json
+import re
 import httpx
 from fastapi import APIRouter, Depends, Header, HTTPException, status
 from pydantic import BaseModel, Field
@@ -25,6 +27,11 @@ class DocumentTimelineResponse(BaseModel):
 
 class CreateCommentRequest(BaseModel):
     body: str
+    version_id: str | None = None
+
+
+def _extract_mentions(text: str) -> list[str]:
+    return list(dict.fromkeys(re.findall(r'@([\w\-]+)', text)))
 
 
 def _assert_document_access(document_id: str, user_id: str) -> None:
@@ -84,7 +91,14 @@ def create_comment(
 
     _assert_document_access(document_id, x_user_id)
 
-    comment = Comment(document_id=document_id, author_user_id=x_user_id, body=text)
+    mentions = _extract_mentions(text)
+    comment = Comment(
+        document_id=document_id,
+        author_user_id=x_user_id,
+        body=text,
+        version_id=body.version_id,
+        mentions=json.dumps(mentions) if mentions else None,
+    )
     db.add(comment)
     db.commit()
     db.refresh(comment)
@@ -128,6 +142,22 @@ def get_document_timeline(
         for c in comments_rows
     ]
 
-    history = _fetch_workflow_history(document_id)
+    workflow_history = _fetch_workflow_history(document_id)
+
+    comment_activities = [
+        TimelineItemResponse(
+            id=c.id,
+            actor_user_id=c.author_user_id,
+            action="comment",
+            body=c.body,
+            created_at=c.created_at.isoformat(),
+        )
+        for c in comments_rows
+    ]
+    history = sorted(
+        workflow_history + comment_activities,
+        key=lambda x: x.created_at,
+        reverse=True,
+    )
 
     return DocumentTimelineResponse(comments=comments, history=history)

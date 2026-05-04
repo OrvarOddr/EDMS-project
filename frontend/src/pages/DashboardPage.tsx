@@ -2723,11 +2723,20 @@ function DetailDrawer({
     return labels[item.action] ?? item.action
   }
 
+  function renderCommentBody(text: string) {
+    const parts = text.split(/(@[\w\-]+)/g)
+    return parts.map((part, i) =>
+      part.startsWith('@')
+        ? <span key={i} style={{ color: 'var(--accent)', fontWeight: 500 }}>{part}</span>
+        : part
+    )
+  }
+
   async function handleSubmitComment() {
     if (!doc || !commentText.trim()) return
     setCommentSending(true)
     try {
-      const { data } = await createComment(doc.id, commentText.trim())
+      const { data } = await createComment(doc.id, commentText.trim(), currentFile?.id ?? null)
       setCommentText('')
       onCommentPosted?.(data)
     } finally {
@@ -2980,7 +2989,7 @@ function DetailDrawer({
             <div style={{ marginBottom: 8 }}>
               {detail!.comments.map((item) => (
                 <div key={item.id} style={{ padding: '7px 0', borderTop: '1px solid var(--border)', fontSize: 12 }}>
-                  <div style={{ color: 'var(--fg)', whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>{item.body}</div>
+                  <div style={{ color: 'var(--fg)', whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>{renderCommentBody(item.body ?? '')}</div>
                   <div style={{ color: 'var(--fg-dim)', fontSize: 11, marginTop: 2 }}>
                     {userLabel(item.actor_user_id)} · {formatDocumentDate(item.created_at)}
                   </div>

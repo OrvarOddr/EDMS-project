@@ -18,4 +18,6 @@ class Comment(Base):
     document_id = Column(String, nullable=False, index=True)
     author_user_id = Column(String, nullable=False, index=True)
     body = Column(Text, nullable=False)
+    version_id = Column(String, nullable=True, index=True)
+    mentions = Column(Text, nullable=True)
     created_at = Column(DateTime(timezone=True), nullable=False, default=utcnow)
