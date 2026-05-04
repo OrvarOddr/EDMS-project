@@ -157,6 +157,22 @@ def _fetch_workflow_detail(document_id: str, actor_user_id: str) -> dict | None:
         return None
 
 
+def _fetch_batch_workflow_states(document_ids: list[str]) -> dict[str, str]:
+    if not document_ids:
+        return {}
+    try:
+        with httpx.Client(timeout=5.0) as client:
+            response = client.post(
+                f"{settings.WORKFLOW_SERVICE_URL}/internal/workflow/documents/batch-states",
+                json={"document_ids": document_ids},
+            )
+        if response.status_code >= 400:
+            return {}
+        return response.json().get("states", {})
+    except httpx.HTTPError:
+        return {}
+
+
 def _fetch_file_metadata(file_id: str, actor_user_id: str) -> dict | None:
     try:
         with httpx.Client(timeout=5.0) as client:
@@ -279,8 +295,17 @@ def list_documents(
         .order_by(Document.created_at.desc())
         .all()
     )
-    mime_map = _current_mime_map(db, [d.id for d in documents])
-    return [_to_document_response(document, current_mime_type=mime_map.get(document.id)) for document in documents]
+    ids = [d.id for d in documents]
+    mime_map = _current_mime_map(db, ids)
+    state_map = _fetch_batch_workflow_states(ids)
+    return [
+        _to_document_response(
+            document,
+            workflow={"state_code": state_map.get(document.id)} if state_map.get(document.id) else None,
+            current_mime_type=mime_map.get(document.id),
+        )
+        for document in documents
+    ]
 
 
 @router.get("/trash", response_model=list[DocumentResponse])
@@ -298,8 +323,17 @@ def list_trashed_documents(
         .order_by(Document.archived_at.desc())
         .all()
     )
-    mime_map = _current_mime_map(db, [d.id for d in documents])
-    return [_to_document_response(document, current_mime_type=mime_map.get(document.id)) for document in documents]
+    ids = [d.id for d in documents]
+    mime_map = _current_mime_map(db, ids)
+    state_map = _fetch_batch_workflow_states(ids)
+    return [
+        _to_document_response(
+            document,
+            workflow={"state_code": state_map.get(document.id)} if state_map.get(document.id) else None,
+            current_mime_type=mime_map.get(document.id),
+        )
+        for document in documents
+    ]
 
 
 @router.get("/{document_id}", response_model=DocumentDetailResponse)
