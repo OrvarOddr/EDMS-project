@@ -252,7 +252,6 @@ export default function KanbanView({ docs, tags, onOpen, onStateChange }: Kanban
     return map
   })
   const [filterKind, setFilterKind] = useState<string | null>(null)
-  const [savingId, setSavingId] = useState<string | null>(null)
 
   const filtered = useMemo(() =>
     docs.filter((d) => !filterKind || d.kind === filterKind),
@@ -282,13 +281,10 @@ export default function KanbanView({ docs, tags, onOpen, onStateChange }: Kanban
     setDragOverCol(null)
     setStatuses((prev) => ({ ...prev, [docId]: toCol }))
     if (onStateChange) {
-      setSavingId(docId)
       try {
         await onStateChange(docId, toCol)
       } catch {
         setStatuses((prev) => ({ ...prev, [docId]: fromCol }))
-      } finally {
-        setSavingId(null)
       }
     }
   }
