@@ -8,7 +8,6 @@ import {
 } from 'react'
 import logo from '../assets/logo.png'
 import { useAuth } from '../context/AuthContext'
-import KanbanView from '../components/kanban/KanbanView'
 import { assignRole, createUser, listRoles, listUsers, type RoleItem, type UserMe } from '../api/auth'
 import {
   createDocument,
@@ -52,7 +51,6 @@ type ViewMode = 'list' | 'grid'
 type DocKind = 'pdf' | 'doc' | 'sheet' | 'slide' | 'image' | 'sig'
 type SelectedView =
   | 'inicio'
-  | 'kanban'
   | 'archivos-sin-asignar'
   | 'recientes'
   | 'compartidos'
@@ -586,7 +584,6 @@ const Icon = {
   Branch: (props: Partial<Parameters<typeof Ic>[0]>) => <Ic {...props} d="M6 3v12M6 21a3 3 0 1 0 0-6 3 3 0 0 0 0 6zM18 9a3 3 0 1 0 0-6 3 3 0 0 0 0 6zM6 15a9 9 0 0 0 9-9" />,
   Home: (props: Partial<Parameters<typeof Ic>[0]>) => <Ic {...props} d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2h-4v-7H9v7H5a2 2 0 0 1-2-2V9z" />,
   Arrow: (props: Partial<Parameters<typeof Ic>[0]>) => <Ic {...props} d="M5 12h14M13 5l7 7-7 7" />,
-  Kanban: (props: Partial<Parameters<typeof Ic>[0]>) => <Ic {...props} d="M3 3h5v18H3zM10 3h5v11h-5zM17 3h5v14h-5z" />,
 } as const
 
 function SectionLabel({ children, action }: { children: ReactNode; action?: ReactNode }) {
@@ -1674,7 +1671,6 @@ function Sidebar({
         />
         {[
           { id: 'inicio', icon: <Icon.Home size={16} /> },
-          { id: 'kanban', icon: <Icon.Kanban size={16} /> },
           { id: 'archivos-sin-asignar', icon: <Icon.File size={16} /> },
           { id: 'recientes', icon: <Icon.Clock size={16} /> },
           { id: 'compartidos', icon: <Icon.Users size={16} /> },
@@ -1788,7 +1784,6 @@ function Sidebar({
       <div style={{ flex: 1, overflow: 'auto', paddingBottom: 12 }}>
         <div style={{ padding: '8px 0 4px' }}>
           <NavItem icon={<Icon.Home size={14} />} label="Inicio" active={selectedView === 'inicio'} onClick={() => onSelectView('inicio')} />
-          <NavItem icon={<Icon.Kanban size={14} />} label="Pipeline" active={selectedView === 'kanban'} onClick={() => onSelectView('kanban')} />
           <NavItem
             icon={<Icon.File size={14} />}
             label="Archivos sin asignar"
@@ -6027,7 +6022,6 @@ export default function DashboardPage() {
 
   const breadcrumb = useMemo(() => {
     if (selectedView === 'inicio') return [{ id: 'inicio', label: 'Inicio' }]
-    if (selectedView === 'kanban') return [{ id: 'kanban', label: 'Pipeline' }]
     if (selectedView === 'archivos-sin-asignar') return [{ id: 'archivos-sin-asignar', label: 'Archivos sin asignar' }]
     if (selectedView === 'recientes') return [{ id: 'recientes', label: 'Recientes' }]
     if (selectedView === 'compartidos') return [{ id: 'compartidos', label: 'Compartidos conmigo' }]
@@ -6050,7 +6044,6 @@ export default function DashboardPage() {
     !filters.status &&
     !filters.date &&
     !selectedTag
-  const showKanban = selectedView === 'kanban'
 
   function toggleSelect(id: string) {
     const next = new Set(selected)
@@ -6624,8 +6617,6 @@ export default function DashboardPage() {
             <div style={{ fontSize: 12.5, color: 'var(--fg-muted)' }}>
               {showDashboard
                 ? 'Tienes 3 documentos que requieren tu firma hoy.'
-                : showKanban
-                  ? `${createdDocs.length} documento${createdDocs.length !== 1 ? 's' : ''} en el pipeline · arrastra para cambiar estado`
                 : selectedView === 'archivos-sin-asignar'
                   ? `${unassignedFiles.length} archivo${unassignedFiles.length === 1 ? '' : 's'} pendiente${unassignedFiles.length === 1 ? '' : 's'} por convertir en documento`
                   : selectedView === 'papelera'
@@ -6634,7 +6625,7 @@ export default function DashboardPage() {
             </div>
           </div>
 
-          {!showDashboard && !showKanban && selectedView !== 'archivos-sin-asignar' && (
+          {!showDashboard && selectedView !== 'archivos-sin-asignar' && (
             <div style={{ display: 'flex', gap: 6 }}>
               <button
                 onClick={() => handleAction('new-folder')}
@@ -6672,21 +6663,7 @@ export default function DashboardPage() {
           )}
         </div>
 
-        {showKanban ? (
-          <KanbanView
-            docs={createdDocs.map((doc) => ({
-              id: doc.id,
-              name: doc.name,
-              kind: doc.kind,
-              status: doc.status,
-              owner: doc.owner,
-              version: doc.version,
-              tags: doc.tags,
-            }))}
-            tags={tags}
-            onOpen={openDoc}
-          />
-        ) : showDashboard ? (
+        {showDashboard ? (
           <div style={{ flex: 1, overflow: 'auto' }}>
             <OverviewCards storage={storage} />
             <div style={{ display: 'grid', gridTemplateColumns: '1.5fr 1fr', gap: 12, padding: '14px 18px' }}>
