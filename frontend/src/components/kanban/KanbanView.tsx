@@ -8,6 +8,7 @@ export interface KanbanDocItem {
   owner: string
   version: number
   tags: string[]
+  assignedCount?: number
 }
 
 export interface KanbanTagItem {
@@ -140,6 +141,11 @@ function KanbanCard({ doc, tags, isDragging, onOpen, onDragStart, onDragEnd }: K
             border: '1.5px solid var(--bg-elev)',
             flexShrink: 0,
           }}>{ownerInitials(doc.owner)}</span>
+          {doc.assignedCount !== undefined && doc.assignedCount > 0 && (
+            <span style={{ fontSize: 10.5, color: 'var(--fg-dim)' }}>
+              +{doc.assignedCount} asignado{doc.assignedCount !== 1 ? 's' : ''}
+            </span>
+          )}
         </div>
         <span style={{ fontSize: 11, color: 'var(--fg-dim)', fontFamily: 'JetBrains Mono, monospace' }}>
           {doc.version > 0 ? `v${doc.version}` : 'v1'}

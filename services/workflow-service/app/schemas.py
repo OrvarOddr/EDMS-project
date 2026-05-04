@@ -27,3 +27,11 @@ class DocumentWorkflowDetailResponse(BaseModel):
     assignee_user_id: str | None = None
     assignment_role_code: str | None = None
     assignments: list[DocumentAssignmentResponse] = Field(default_factory=list)
+
+
+class AssignmentCountsRequest(BaseModel):
+    document_ids: list[str]
+
+
+class AssignmentCountsResponse(BaseModel):
+    counts: dict[str, int]

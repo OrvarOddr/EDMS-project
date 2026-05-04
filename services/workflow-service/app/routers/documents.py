@@ -6,6 +6,8 @@ from app.config import settings
 from app.database import get_db
 from app.models import DocumentAssignment, DocumentState
 from app.schemas import (
+    AssignmentCountsRequest,
+    AssignmentCountsResponse,
     BootstrapDocumentWorkflowRequest,
     BootstrapDocumentWorkflowResponse,
     DocumentAssignmentResponse,
@@ -171,3 +173,31 @@ def get_document_workflow_detail(
             for assignment in assignments
         ],
     )
+
+
+@public_router.post("/assignment-counts", response_model=AssignmentCountsResponse)
+def get_assignment_counts(
+    body: AssignmentCountsRequest,
+    x_user_id: str | None = Header(default=None, alias="X-User-Id"),
+    db: Session = Depends(get_db),
+):
+    if not x_user_id:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Usuario autenticado requerido")
+
+    if not body.document_ids:
+        return AssignmentCountsResponse(counts={})
+
+    rows = (
+        db.query(DocumentAssignment.document_id, DocumentAssignment.id)
+        .filter(
+            DocumentAssignment.document_id.in_(body.document_ids),
+            DocumentAssignment.is_active.is_(True),
+        )
+        .all()
+    )
+
+    counts: dict[str, int] = {doc_id: 0 for doc_id in body.document_ids}
+    for document_id, _ in rows:
+        counts[document_id] = counts.get(document_id, 0) + 1
+
+    return AssignmentCountsResponse(counts=counts)

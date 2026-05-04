@@ -47,6 +47,7 @@ import {
   deleteTag,
   type Tag as ApiTag,
 } from '../api/tags'
+import { getAssignmentCounts } from '../api/workflow'
 
 type ViewMode = 'list' | 'grid'
 type DocKind = 'pdf' | 'doc' | 'sheet' | 'slide' | 'image' | 'sig'
@@ -1623,6 +1624,7 @@ function Sidebar({
   onCreateTag,
   onEditTag,
   onDeleteTag,
+  userCount,
 }: {
   collapsed: boolean
   selectedView: SelectedView
@@ -1638,6 +1640,7 @@ function Sidebar({
   onCreateTag: () => void
   onEditTag: (tag: ApiTag) => void
   onDeleteTag: (tagId: string) => void
+  userCount?: number | null
 }) {
   const [expanded, setExpanded] = useState(new Set(['root', 'legal', 'finanzas', 'producto']))
 
@@ -1767,7 +1770,9 @@ function Sidebar({
           >
             Muninn
           </div>
-          <div style={{ fontSize: 11, color: 'var(--fg-dim)' }}>Workspace</div>
+          <div style={{ fontSize: 11, color: 'var(--fg-dim)' }}>
+            {userCount != null ? `Workspace · ${userCount} personas` : 'Workspace'}
+          </div>
         </div>
         <button
           onClick={onToggleCollapsed}
@@ -5894,6 +5899,8 @@ export default function DashboardPage() {
   const [selectingTrashFiles, setSelectingTrashFiles] = useState(false)
   const [selectedTrashFileIds, setSelectedTrashFileIds] = useState<Set<string>>(new Set())
   const [createdDocs, setCreatedDocs] = useState<DocumentItem[]>([])
+  const [assignmentCounts, setAssignmentCounts] = useState<Record<string, number>>({})
+  const [workspaceUserCount, setWorkspaceUserCount] = useState<number | null>(null)
   const [documentDetails, setDocumentDetails] = useState<Record<string, DocumentDetailResponse>>({})
   const [detailLoadingDocId, setDetailLoadingDocId] = useState<string | null>(null)
   const [detailError, setDetailError] = useState<string | null>(null)
@@ -5953,9 +5960,18 @@ export default function DashboardPage() {
     Promise.all([listDocuments(), listTrashedDocuments()])
       .then(([activeResponse, trashResponse]) => {
         if (!mounted) return
-        setCreatedDocs(activeResponse.data.map(documentResponseToItem))
+        const docs = activeResponse.data.map(documentResponseToItem)
+        setCreatedDocs(docs)
         setTrashedDocs(trashResponse.data.map(documentResponseToItem))
+        const ids = docs.map((d) => d.id)
+        getAssignmentCounts(ids)
+          .then((counts) => { if (mounted) setAssignmentCounts(counts) })
+          .catch(() => {})
       })
+      .catch(() => {})
+
+    listUsers()
+      .then((response) => { if (mounted) setWorkspaceUserCount(response.data.length) })
       .catch(() => {})
 
     fetchStorageSummaryGb()
@@ -6588,6 +6604,7 @@ export default function DashboardPage() {
         tags={tags}
         onCreateTag={() => { setEditingTag(null); setTagForm({ label: '', color: '#6366f1' }); setTagModalOpen(true) }}
         onEditTag={(tag) => { setEditingTag(tag); setTagForm({ label: tag.label, color: tag.color }); setTagModalOpen(true) }}
+        userCount={workspaceUserCount}
         onDeleteTag={async (tagId) => {
           await deleteTag(tagId)
           setTags((prev) => prev.filter((t) => t.id !== tagId))
@@ -6685,6 +6702,7 @@ export default function DashboardPage() {
               owner: doc.owner,
               version: doc.version,
               tags: doc.tags,
+              assignedCount: assignmentCounts[doc.id] ?? 0,
             }))}
             tags={tags}
             onOpen={openDoc}
