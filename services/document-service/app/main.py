@@ -9,14 +9,21 @@ from app.routers import tags
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    with engine.connect() as conn:
-        conn.execute(text("CREATE SCHEMA IF NOT EXISTS documents"))
-        conn.commit()
     Base.metadata.create_all(bind=engine)
+    with engine.begin() as conn:
+        conn.execute(text(
+            "CREATE UNIQUE INDEX IF NOT EXISTS uq_document_versions_document_number "
+            "ON documents.document_versions (document_id, version_number)"
+        ))
+        conn.execute(text(
+            "CREATE UNIQUE INDEX IF NOT EXISTS uq_document_versions_current "
+            "ON documents.document_versions (document_id) WHERE is_current = true"
+        ))
     yield
 
 
 app = FastAPI(title="document-service", lifespan=lifespan)
 app.include_router(health.router)
 app.include_router(versions.router)
+app.include_router(versions.internal_router)
 app.include_router(tags.router)

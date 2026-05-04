@@ -42,8 +42,11 @@ class CreateDocumentFromFileRequest(BaseModel):
     file_id: str
     title: str
     created_by_user_id: str
+    document_type_id: str
+    confidentiality_level: str = "publico_interno"
+    expedient_id: str | None = None
     checksum: str | None = None
-    description: str | None = None
+    description: str
 
 
 class DocumentActivityResponse(BaseModel):

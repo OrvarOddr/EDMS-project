@@ -27,6 +27,7 @@ from app.schemas import (
 )
 
 router = APIRouter(prefix="/documents", tags=["documents"])
+internal_router = APIRouter(prefix="/internal/documents", tags=["internal-documents"])
 
 
 def _to_response(version: DocumentVersion) -> DocumentVersionResponse:
@@ -88,6 +89,10 @@ def _document_for_actor(db: Session, document_id: str, user_id: str) -> Document
     if not _can_upload_version(document, user_id):
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="No puedes operar sobre este documento")
     return document
+
+
+def _document_exists_for_actor(db: Session, document_id: str, user_id: str) -> Document:
+    return _document_for_actor(db, document_id, user_id)
 
 
 def _clean_required(value: str, field_name: str) -> str:
@@ -499,11 +504,18 @@ def create_document_from_file(
     title = body.title.strip()
     if not title:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Titulo requerido")
+    description = _clean_required(body.description, "Descripcion")
+    document_type_id = _clean_required(body.document_type_id, "Tipo documental")
+    confidentiality_level = _clean_required(body.confidentiality_level, "Confidencialidad")
+    expedient_id = body.expedient_id.strip() if body.expedient_id else None
 
     document = Document(
         code=_document_code(title),
         title=title,
-        description=body.description,
+        description=description,
+        document_type_id=document_type_id,
+        expedient_id=expedient_id or None,
+        confidentiality_level=confidentiality_level,
         owner_user_id=actor_user_id,
         created_by_user_id=actor_user_id,
         metadata_json={"source_file_id": body.file_id},
@@ -534,6 +546,17 @@ def create_document_from_file(
         document=_to_document_response(document, workflow),
         version=_to_response(version),
     )
+
+
+@internal_router.get("/{document_id}/access")
+def check_document_access(
+    document_id: str,
+    x_user_id: str | None = Header(default=None, alias="X-User-Id"),
+    db: Session = Depends(get_db),
+):
+    actor_user_id = _require_user(x_user_id)
+    document = _document_exists_for_actor(db, document_id.strip(), actor_user_id)
+    return {"document_id": document.id, "can_access": True}
 
 
 @router.get("/{document_id}/versions", response_model=list[DocumentVersionResponse])

@@ -1,9 +1,18 @@
 from contextlib import asynccontextmanager
-from sqlalchemy import text
 from fastapi import FastAPI
 from app.database import engine, Base, SessionLocal
 from app.routers import health
 from app.routers import auth, users, roles
+
+WEAK_BOOTSTRAP_PASSWORDS = {
+    "admin",
+    "admin123",
+    "cambia_esto",
+    "changeme123",
+    "generar_un_valor_fuerte",
+    "generar_un_valor_fuerte_de_minimo_12_caracteres",
+    "password",
+}
 
 
 def _seed(db):
@@ -23,9 +32,18 @@ def _seed(db):
             db.add(Role(code=code, name=name, description=desc))
 
     admin_email = os.getenv("BOOTSTRAP_ADMIN_EMAIL", "admin@edms.dev").strip().lower()
-    admin_password = os.getenv("BOOTSTRAP_ADMIN_PASSWORD", "changeme123")
     admin_user = db.query(User).filter(User.email == admin_email).first()
     if not admin_user:
+        admin_password = os.getenv("BOOTSTRAP_ADMIN_PASSWORD")
+        if (
+            not admin_password
+            or len(admin_password) < 12
+            or admin_password.strip().lower() in WEAK_BOOTSTRAP_PASSWORDS
+        ):
+            raise RuntimeError(
+                "BOOTSTRAP_ADMIN_PASSWORD es obligatorio, debe tener al menos 12 caracteres "
+                "y no puede ser un valor por defecto."
+            )
         admin_user = User(
             email=admin_email,
             password_hash=hash_password(admin_password),
@@ -50,9 +68,6 @@ def _seed(db):
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    with engine.connect() as conn:
-        conn.execute(text("CREATE SCHEMA IF NOT EXISTS auth"))
-        conn.commit()
     Base.metadata.create_all(bind=engine)
     db = SessionLocal()
     try:

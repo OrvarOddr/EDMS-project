@@ -188,8 +188,19 @@ Reglas de integridad:
 ## Limite con collaboration-service
 
 - `file-service` no administra permisos de descarga
-- `collaboration-service` define quien tiene permiso `download`
-- el control de acceso antes de servir un archivo debe validarse contra `collaboration-service` via `api-gateway`
+- para archivos asociados a un documento, `file-service` valida acceso consultando `document-service` por HTTP interno
+- para archivos sin asignar, solo el usuario que subio el archivo puede consultar metadata, descargarlo, moverlo a papelera o eliminarlo
+- cuando se implemente permisos finos por documento, `document-service` debera delegar o consolidar esa decision con `workflow-service` y `collaboration-service` sin que `file-service` lea tablas ajenas
+
+## Validacion de subida
+
+El upload debe aplicar estas reglas antes de persistir:
+
+- leer el archivo con limite incremental para cortar sobre `MAX_FILE_SIZE_MB`
+- rechazar archivos vacios
+- detectar MIME por firma del binario, no solo por `Content-Type` enviado por el navegador
+- rechazar MIME no permitido o inconsistente
+- guardar en MinIO solo despues de validar tamaño y tipo
 
 ## Resumen de almacenamiento por usuario
 

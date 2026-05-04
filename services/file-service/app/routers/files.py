@@ -30,6 +30,7 @@ from app.schemas import (
 router = APIRouter(prefix="/files", tags=["files"])
 
 ALLOWED_MIME_TYPES = {"application/pdf", "image/png", "image/jpeg"}
+READ_CHUNK_SIZE = 1024 * 1024
 
 
 def utcnow():
@@ -76,6 +77,86 @@ def _title_from_filename(filename: str) -> str:
     return Path(filename).stem.replace("-", " ").replace("_", " ").strip() or filename
 
 
+def _detect_mime_type(content: bytes) -> str | None:
+    if content.startswith(b"%PDF-"):
+        return "application/pdf"
+    if content.startswith(b"\x89PNG\r\n\x1a\n"):
+        return "image/png"
+    if content.startswith(b"\xff\xd8\xff"):
+        return "image/jpeg"
+    return None
+
+
+async def _read_limited_upload(file: UploadFile, max_bytes: int) -> bytes:
+    chunks: list[bytes] = []
+    size = 0
+    while True:
+        chunk = await file.read(READ_CHUNK_SIZE)
+        if not chunk:
+            break
+        size += len(chunk)
+        if size > max_bytes:
+            raise HTTPException(
+                status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+                detail="Archivo excede tamano maximo",
+            )
+        chunks.append(chunk)
+    return b"".join(chunks)
+
+
+async def _assert_document_access(document_id: str, user_id: str) -> None:
+    async with httpx.AsyncClient(timeout=5.0) as client:
+        response = await client.get(
+            f"{settings.DOCUMENT_SERVICE_URL}/internal/documents/{document_id}/access",
+            headers={"X-User-Id": user_id},
+        )
+    if response.status_code in {
+        status.HTTP_401_UNAUTHORIZED,
+        status.HTTP_403_FORBIDDEN,
+        status.HTTP_404_NOT_FOUND,
+    }:
+        raise HTTPException(status_code=response.status_code, detail="No puedes ver este archivo")
+    if response.status_code >= 400:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail="No se pudo validar acceso documental",
+        )
+
+
+def _assert_document_access_sync(document_id: str, user_id: str) -> None:
+    try:
+        with httpx.Client(timeout=5.0) as client:
+            response = client.get(
+                f"{settings.DOCUMENT_SERVICE_URL}/internal/documents/{document_id}/access",
+                headers={"X-User-Id": user_id},
+            )
+    except httpx.HTTPError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail="No se pudo validar acceso documental",
+        ) from exc
+
+    if response.status_code in {
+        status.HTTP_401_UNAUTHORIZED,
+        status.HTTP_403_FORBIDDEN,
+        status.HTTP_404_NOT_FOUND,
+    }:
+        raise HTTPException(status_code=response.status_code, detail="No puedes ver este archivo")
+    if response.status_code >= 400:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail="document-service rechazo la validacion de acceso",
+        )
+
+
+def _assert_file_access(upload: FileUpload, user_id: str) -> None:
+    if upload.document_id:
+        _assert_document_access_sync(upload.document_id, user_id)
+        return
+    if upload.uploader_user_id != user_id:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="No puedes ver este archivo")
+
+
 async def _register_document_version(
     *,
     document_id: str,
@@ -103,7 +184,10 @@ async def _create_document_from_file(
     *,
     file_id: str,
     title: str,
-    description: str | None,
+    description: str,
+    document_type_id: str,
+    confidentiality_level: str,
+    expedient_id: str | None,
     created_by_user_id: str,
     checksum: str | None,
 ) -> dict:
@@ -115,6 +199,9 @@ async def _create_document_from_file(
                 "file_id": file_id,
                 "title": title,
                 "description": description,
+                "document_type_id": document_type_id,
+                "confidentiality_level": confidentiality_level,
+                "expedient_id": expedient_id,
                 "created_by_user_id": created_by_user_id,
                 "checksum": checksum,
             },
@@ -290,17 +377,29 @@ async def upload_file(
     if not x_user_id:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Usuario autenticado requerido")
 
-    mime_type = file.content_type or "application/octet-stream"
-    if mime_type not in ALLOWED_MIME_TYPES:
-        raise HTTPException(status_code=status.HTTP_415_UNSUPPORTED_MEDIA_TYPE, detail="Tipo MIME no permitido")
+    document_id = document_id.strip() if document_id else None
+    if document_id:
+        try:
+            await _assert_document_access(document_id, x_user_id)
+        except httpx.HTTPError as exc:
+            raise HTTPException(
+                status_code=status.HTTP_502_BAD_GATEWAY,
+                detail="No se pudo validar acceso al documento",
+            ) from exc
 
-    content = await file.read()
-    size_bytes = len(content)
     max_bytes = settings.MAX_FILE_SIZE_MB * 1024 * 1024
+    content = await _read_limited_upload(file, max_bytes)
+    size_bytes = len(content)
     if size_bytes <= 0:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="El archivo esta vacio")
-    if size_bytes > max_bytes:
-        raise HTTPException(status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE, detail="Archivo excede tamano maximo")
+
+    detected_mime_type = _detect_mime_type(content)
+    declared_mime_type = file.content_type or "application/octet-stream"
+    if detected_mime_type not in ALLOWED_MIME_TYPES:
+        raise HTTPException(status_code=status.HTTP_415_UNSUPPORTED_MEDIA_TYPE, detail="Tipo MIME no permitido")
+    if declared_mime_type in ALLOWED_MIME_TYPES and detected_mime_type and declared_mime_type != detected_mime_type:
+        raise HTTPException(status_code=status.HTTP_415_UNSUPPORTED_MEDIA_TYPE, detail="Tipo MIME no coincide con el archivo")
+    mime_type = detected_mime_type
 
     file_id = str(uuid.uuid4())
     original_filename = _safe_filename(file.filename)
@@ -397,11 +496,24 @@ async def create_document_from_file(
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Archivo ya asociado a un documento")
 
     title = body.title.strip() if body.title else _title_from_filename(stored_file.original_filename)
+    description = body.description.strip()
+    document_type_id = body.document_type_id.strip()
+    confidentiality_level = body.confidentiality_level.strip()
+    expedient_id = body.expedient_id.strip() if body.expedient_id else None
+    if not description:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Descripcion requerida")
+    if not document_type_id:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Tipo documental requerido")
+    if not confidentiality_level:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Confidencialidad requerida")
     try:
         created = await _create_document_from_file(
             file_id=stored_file.id,
             title=title,
-            description=body.description,
+            description=description,
+            document_type_id=document_type_id,
+            confidentiality_level=confidentiality_level,
+            expedient_id=expedient_id,
             created_by_user_id=x_user_id,
             checksum=stored_file.checksum,
         )
@@ -540,8 +652,7 @@ def get_file_content(
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Usuario autenticado requerido")
 
     stored_file, upload = _find_upload(db, file_id)
-    if upload.uploader_user_id != x_user_id:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="No puedes ver este archivo")
+    _assert_file_access(upload, x_user_id)
 
     minio_client = _client()
     obj = None
@@ -575,8 +686,7 @@ def get_file_metadata(
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Usuario autenticado requerido")
 
     stored_file, upload = _find_upload(db, file_id)
-    if upload.uploader_user_id != x_user_id:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="No puedes ver este archivo")
+    _assert_file_access(upload, x_user_id)
     return _to_file_response(stored_file)
 
 

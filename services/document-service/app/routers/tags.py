@@ -2,7 +2,7 @@ from fastapi import APIRouter, Depends, Header, HTTPException, status
 from sqlalchemy.orm import Session
 
 from app.database import get_db
-from app.models import DocumentTag, Tag
+from app.models import Document, DocumentTag, Tag
 from app.schemas import CreateTagRequest, TagResponse, UpdateTagRequest
 
 router = APIRouter(tags=["tags"])
@@ -12,6 +12,32 @@ def _require_user(x_user_id: str | None) -> str:
     if not x_user_id:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED)
     return x_user_id
+
+
+def _roles(value: str | None) -> set[str]:
+    return {role.strip() for role in (value or "").split(",") if role.strip()}
+
+
+def _document_for_actor(db: Session, document_id: str, user_id: str) -> Document:
+    document_id = document_id.strip()
+    if not document_id:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Documento requerido")
+    document = db.query(Document).filter(Document.id == document_id).first()
+    if not document:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Documento no encontrado")
+    if user_id not in {document.owner_user_id, document.created_by_user_id}:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="No puedes operar sobre este documento")
+    return document
+
+
+def _ensure_document_editable(document: Document) -> None:
+    if document.archived_at is not None:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="No puedes modificar un documento en papelera")
+
+
+def _ensure_tag_manager(tag: Tag, user_id: str, roles: set[str]) -> None:
+    if tag.created_by_user_id != user_id and "admin" not in roles:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="No puedes administrar esta etiqueta")
 
 
 @router.get("/tags", response_model=list[TagResponse])
@@ -42,12 +68,14 @@ def update_tag(
     tag_id: str,
     body: UpdateTagRequest,
     x_user_id: str | None = Header(default=None, alias="X-User-Id"),
+    x_user_roles: str | None = Header(default=None, alias="X-User-Roles"),
     db: Session = Depends(get_db),
 ):
-    _require_user(x_user_id)
+    user_id = _require_user(x_user_id)
     tag = db.query(Tag).filter(Tag.id == tag_id).first()
     if not tag:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Etiqueta no encontrada")
+    _ensure_tag_manager(tag, user_id, _roles(x_user_roles))
     tag.label = body.label
     tag.color = body.color
     db.commit()
@@ -59,12 +87,14 @@ def update_tag(
 def delete_tag(
     tag_id: str,
     x_user_id: str | None = Header(default=None, alias="X-User-Id"),
+    x_user_roles: str | None = Header(default=None, alias="X-User-Roles"),
     db: Session = Depends(get_db),
 ):
-    _require_user(x_user_id)
+    user_id = _require_user(x_user_id)
     tag = db.query(Tag).filter(Tag.id == tag_id).first()
     if not tag:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Etiqueta no encontrada")
+    _ensure_tag_manager(tag, user_id, _roles(x_user_roles))
     db.query(DocumentTag).filter(DocumentTag.tag_id == tag_id).delete()
     db.delete(tag)
     db.commit()
@@ -76,7 +106,8 @@ def get_document_tags(
     x_user_id: str | None = Header(default=None, alias="X-User-Id"),
     db: Session = Depends(get_db),
 ):
-    _require_user(x_user_id)
+    user_id = _require_user(x_user_id)
+    _document_for_actor(db, document_id, user_id)
     tag_ids = [
         dt.tag_id
         for dt in db.query(DocumentTag).filter(DocumentTag.document_id == document_id).all()
@@ -93,7 +124,9 @@ def assign_tag(
     x_user_id: str | None = Header(default=None, alias="X-User-Id"),
     db: Session = Depends(get_db),
 ):
-    _require_user(x_user_id)
+    user_id = _require_user(x_user_id)
+    document = _document_for_actor(db, document_id, user_id)
+    _ensure_document_editable(document)
     if not db.query(Tag).filter(Tag.id == tag_id).first():
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Etiqueta no encontrada")
     exists = db.query(DocumentTag).filter(
@@ -112,7 +145,9 @@ def remove_tag(
     x_user_id: str | None = Header(default=None, alias="X-User-Id"),
     db: Session = Depends(get_db),
 ):
-    _require_user(x_user_id)
+    user_id = _require_user(x_user_id)
+    document = _document_for_actor(db, document_id, user_id)
+    _ensure_document_editable(document)
     dt = db.query(DocumentTag).filter(
         DocumentTag.document_id == document_id,
         DocumentTag.tag_id == tag_id,
