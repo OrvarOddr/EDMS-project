@@ -8,3 +8,23 @@ export async function getAssignmentCounts(documentIds: string[]): Promise<Record
   )
   return data.counts
 }
+
+export interface ChangeStateResponse {
+  document_id: string
+  previous_state_code: string | null
+  new_state_code: string
+  changed_by_user_id: string
+  changed_at: string
+}
+
+export async function changeDocumentState(
+  documentId: string,
+  newStateCode: string,
+  comment?: string,
+): Promise<ChangeStateResponse> {
+  const { data } = await client.patch<ChangeStateResponse>(
+    `/workflow/documents/${documentId}/state`,
+    { new_state_code: newStateCode, comment: comment ?? null },
+  )
+  return data
+}
