@@ -103,7 +103,7 @@ interface DocumentItem {
   version: number
   tags: string[]
   shared: string[]
-  status: 'borrador' | 'revision' | 'pendiente-firma' | 'publicado' | 'firmado' | 'archivado'
+  status: 'borrador' | 'revision' | 'observado' | 'aprobado' | 'pendiente-firma' | 'rechazado' | 'archivado'
   pages?: number
   rows?: number
   starred?: boolean
@@ -266,17 +266,17 @@ const dashboardData: DashboardData = {
   },
   docs: [
     { id: 'd01', name: 'Contrato de servicios — Acme Logística v4.2', kind: 'pdf', folder: 'contratos', owner: 'u1', size: '1.4 MB', modified: 'hace 14 min', version: 12, tags: ['revision', 'urgente'], shared: ['u2', 'u3', 'u6'], status: 'pendiente-firma', pages: 24, starred: true },
-    { id: 'd02', name: 'NDA Mútuo — Klarva Labs', kind: 'pdf', folder: 'nda', owner: 'u3', size: '312 KB', modified: 'hace 2 h', version: 3, tags: ['confidencial'], shared: ['u1'], status: 'firmado', pages: 6 },
-    { id: 'd03', name: 'Política de tratamiento de datos 2026', kind: 'doc', folder: 'compliance', owner: 'u1', size: '640 KB', modified: 'ayer', version: 8, tags: ['aprobado'], shared: ['u2', 'u4', 'u5'], status: 'publicado', pages: 18, starred: true },
+    { id: 'd02', name: 'NDA Mútuo — Klarva Labs', kind: 'pdf', folder: 'nda', owner: 'u3', size: '312 KB', modified: 'hace 2 h', version: 3, tags: ['confidencial'], shared: ['u1'], status: 'archivado', pages: 6 },
+    { id: 'd03', name: 'Política de tratamiento de datos 2026', kind: 'doc', folder: 'compliance', owner: 'u1', size: '640 KB', modified: 'ayer', version: 8, tags: ['aprobado'], shared: ['u2', 'u4', 'u5'], status: 'aprobado', pages: 18, starred: true },
     { id: 'd04', name: 'Análisis financiero Q1 — Borrador', kind: 'sheet', folder: 'auditoria', owner: 'u5', size: '2.8 MB', modified: 'hace 3 h', version: 6, tags: ['revision'], shared: ['u1', 'u2'], status: 'borrador', rows: 4821 },
-    { id: 'd05', name: 'PRD — Motor de búsqueda semántica', kind: 'doc', folder: 'prds', owner: 'u3', size: '420 KB', modified: 'hace 1 d', version: 4, tags: [], shared: ['u2', 'u4'], status: 'publicado', pages: 11 },
+    { id: 'd05', name: 'PRD — Motor de búsqueda semántica', kind: 'doc', folder: 'prds', owner: 'u3', size: '420 KB', modified: 'hace 1 d', version: 4, tags: [], shared: ['u2', 'u4'], status: 'aprobado', pages: 11 },
     { id: 'd06', name: 'Presentación All-Hands abril', kind: 'slide', folder: 'roadmap', owner: 'u2', size: '14.2 MB', modified: 'hace 2 d', version: 2, tags: ['revision'], shared: ['u1', 'u3', 'u4', 'u5'], status: 'borrador', pages: 38 },
     { id: 'd07', name: 'Nómina — marzo 2026 (cifrado)', kind: 'sheet', folder: 'rrhh', owner: 'u4', size: '890 KB', modified: 'hace 3 d', version: 1, tags: ['confidencial'], shared: [], status: 'archivado', rows: 214, locked: true },
-    { id: 'd08', name: 'Plan de investigación — Onboarding B2B', kind: 'doc', folder: 'research', owner: 'u3', size: '1.1 MB', modified: 'hace 4 d', version: 9, tags: ['aprobado'], shared: ['u1', 'u2'], status: 'publicado', pages: 32 },
+    { id: 'd08', name: 'Plan de investigación — Onboarding B2B', kind: 'doc', folder: 'research', owner: 'u3', size: '1.1 MB', modified: 'hace 4 d', version: 9, tags: ['aprobado'], shared: ['u1', 'u2'], status: 'aprobado', pages: 32 },
     { id: 'd09', name: 'Wireframes — Pantalla de cobro', kind: 'image', folder: 'producto', owner: 'u2', size: '5.4 MB', modified: 'hace 5 d', version: 3, tags: [], shared: ['u3', 'u4'], status: 'borrador' },
-    { id: 'd10', name: 'Memorando fiscal — Operaciones México', kind: 'pdf', folder: 'impuestos', owner: 'u5', size: '720 KB', modified: 'hace 6 d', version: 2, tags: ['confidencial', 'aprobado'], shared: ['u1'], status: 'publicado', pages: 14 },
-    { id: 'd11', name: 'Contrato laboral — Plantilla 2026', kind: 'doc', folder: 'contratacion', owner: 'u4', size: '380 KB', modified: 'hace 1 sem', version: 5, tags: ['aprobado'], shared: ['u1'], status: 'publicado', pages: 9 },
-    { id: 'd12', name: 'Factura FE-2026-01842 — Klarva Labs', kind: 'pdf', folder: 'facturas', owner: 'u5', size: '210 KB', modified: 'hace 1 sem', version: 1, tags: [], shared: [], status: 'publicado', pages: 2 },
+    { id: 'd10', name: 'Memorando fiscal — Operaciones México', kind: 'pdf', folder: 'impuestos', owner: 'u5', size: '720 KB', modified: 'hace 6 d', version: 2, tags: ['confidencial', 'aprobado'], shared: ['u1'], status: 'aprobado', pages: 14 },
+    { id: 'd11', name: 'Contrato laboral — Plantilla 2026', kind: 'doc', folder: 'contratacion', owner: 'u4', size: '380 KB', modified: 'hace 1 sem', version: 5, tags: ['aprobado'], shared: ['u1'], status: 'aprobado', pages: 9 },
+    { id: 'd12', name: 'Factura FE-2026-01842 — Klarva Labs', kind: 'pdf', folder: 'facturas', owner: 'u5', size: '210 KB', modified: 'hace 1 sem', version: 1, tags: [], shared: [], status: 'aprobado', pages: 2 },
     { id: 'd13', name: 'Contrato SaaS — Bafora Consulting', kind: 'pdf', folder: 'clientes', owner: 'u6', size: '980 KB', modified: 'hace 9 d', version: 7, tags: ['externo', 'revision'], shared: ['u1', 'u3', 'u6'], status: 'pendiente-firma', pages: 22, starred: true },
     { id: 'd14', name: 'Auditoría de accesos — Plataforma', kind: 'sheet', folder: 'auditoria', owner: 'u2', size: '3.2 MB', modified: 'hace 11 d', version: 2, tags: ['confidencial'], shared: ['u1'], status: 'borrador', rows: 12090 },
   ],
@@ -405,9 +405,10 @@ function docKindFromType(documentTypeId?: string | null): DocKind {
 function statusFromWorkflow(stateCode?: string | null): DocumentItem['status'] {
   if (stateCode === 'borrador') return 'borrador'
   if (stateCode === 'en_revision') return 'revision'
+  if (stateCode === 'observado') return 'observado'
+  if (stateCode === 'aprobado') return 'aprobado'
   if (stateCode === 'pendiente_firma') return 'pendiente-firma'
-  if (stateCode === 'aprobado') return 'publicado'
-  if (stateCode === 'firmado') return 'firmado'
+  if (stateCode === 'rechazado') return 'rechazado'
   if (stateCode === 'archivado') return 'archivado'
   return 'borrador'
 }
@@ -715,12 +716,13 @@ function TagChip({ id, tags }: { id: string; tags: ApiTag[] }) {
 
 function StatusPill({ status }: { status: DocumentItem['status'] }) {
   const map = {
-    borrador: { label: 'Borrador', color: 'var(--fg-dim)' },
-    revision: { label: 'En revisión', color: 'oklch(0.72 0.13 255)' },
-    'pendiente-firma': { label: 'Pendiente firma', color: 'oklch(0.78 0.14 75)' },
-    publicado: { label: 'Publicado', color: 'oklch(0.75 0.14 155)' },
-    firmado: { label: 'Firmado', color: 'oklch(0.75 0.14 155)' },
-    archivado: { label: 'Archivado', color: 'var(--fg-dim)' },
+    borrador:          { label: 'Borrador',           color: 'var(--fg-dim)' },
+    revision:          { label: 'En revisión',        color: 'oklch(0.72 0.13 255)' },
+    observado:         { label: 'Observado',          color: 'oklch(0.78 0.14 75)' },
+    aprobado:          { label: 'Aprobado',           color: 'oklch(0.75 0.14 155)' },
+    'pendiente-firma': { label: 'Pendiente de firma', color: 'oklch(0.78 0.12 50)' },
+    rechazado:         { label: 'Rechazado',          color: 'oklch(0.7 0.17 25)' },
+    archivado:         { label: 'Archivado',          color: 'var(--fg-dim)' },
   } as const
 
   const item = map[status]
@@ -1937,7 +1939,7 @@ function FiltersRow({
   const pills: FilterPill[] = [
     { key: 'kind', label: 'Tipo', options: [['pdf', 'PDF'], ['doc', 'Documento'], ['sheet', 'Hoja'], ['slide', 'Slide'], ['image', 'Imagen']] },
     { key: 'owner', label: 'Autor', options: dashboardData.users.map((user) => [user.id, user.name]) },
-    { key: 'status', label: 'Estado', options: [['borrador', 'Borrador'], ['revision', 'En revisión'], ['pendiente-firma', 'Pendiente firma'], ['publicado', 'Publicado'], ['firmado', 'Firmado'], ['archivado', 'Archivado']] },
+    { key: 'status', label: 'Estado', options: [['borrador', 'Borrador'], ['revision', 'En revisión'], ['observado', 'Observado'], ['aprobado', 'Aprobado'], ['pendiente-firma', 'Pendiente de firma'], ['rechazado', 'Rechazado'], ['archivado', 'Archivado']] },
     { key: 'date', label: 'Fecha', options: [['hoy', 'Hoy'], ['semana', 'Últimos 7 días'], ['mes', 'Último mes'], ['ano', 'Este año']] },
   ] as const
 
@@ -2669,12 +2671,13 @@ function DetailDrawer({
 
   function workflowStateLabel(stateCode?: string | null) {
     const labels: Record<string, string> = {
-      borrador: 'Borrador',
-      en_revision: 'En revision',
+      borrador:        'Borrador',
+      en_revision:     'En revisión',
+      observado:       'Observado',
+      aprobado:        'Aprobado',
       pendiente_firma: 'Pendiente de firma',
-      aprobado: 'Aprobado',
-      firmado: 'Firmado',
-      archivado: 'Archivado',
+      rechazado:       'Rechazado',
+      archivado:       'Archivado',
     }
     return labels[stateCode ?? ''] ?? 'Borrador'
   }

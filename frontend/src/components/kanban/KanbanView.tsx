@@ -24,17 +24,17 @@ interface KanbanCol {
 }
 
 const KANBAN_COLS: KanbanCol[] = [
-  { id: 'borrador',      label: 'Borrador',      color: 'var(--fg-dim)',         bg: 'oklch(0.55 0 0 / 0.08)' },
-  { id: 'revision',      label: 'En revisión',   color: 'oklch(0.72 0.13 255)',  bg: 'oklch(0.35 0.08 255 / 0.12)' },
-  { id: 'observado',     label: 'Observado',     color: 'oklch(0.78 0.14 75)',   bg: 'oklch(0.55 0.1 75 / 0.1)' },
-  { id: 'aprobado',      label: 'Aprobado',      color: 'oklch(0.75 0.14 155)',  bg: 'oklch(0.45 0.1 155 / 0.1)' },
-  { id: 'rechazado',     label: 'Rechazado',     color: 'oklch(0.7 0.17 25)',    bg: 'oklch(0.5 0.1 25 / 0.1)' },
+  { id: 'borrador',        label: 'Borrador',           color: 'var(--fg-dim)',        bg: 'oklch(0.55 0 0 / 0.08)' },
+  { id: 'revision',        label: 'En revisión',        color: 'oklch(0.72 0.13 255)', bg: 'oklch(0.35 0.08 255 / 0.12)' },
+  { id: 'observado',       label: 'Observado',          color: 'oklch(0.78 0.14 75)',  bg: 'oklch(0.55 0.1 75 / 0.1)' },
+  { id: 'aprobado',        label: 'Aprobado',           color: 'oklch(0.75 0.14 155)', bg: 'oklch(0.45 0.1 155 / 0.1)' },
+  { id: 'pendiente-firma', label: 'Pendiente de firma', color: 'oklch(0.78 0.12 50)',  bg: 'oklch(0.55 0.1 50 / 0.1)' },
+  { id: 'rechazado',       label: 'Rechazado',          color: 'oklch(0.7 0.17 25)',   bg: 'oklch(0.5 0.1 25 / 0.1)' },
 ]
 
 function normalizeStatus(status: string): string {
-  if (status === 'publicado' || status === 'firmado') return 'aprobado'
-  if (status === 'pendiente-firma') return 'observado'
-  if (status === 'archivado') return 'borrador'
+  if (status === 'publicado') return 'aprobado'
+  if (status === 'firmado') return 'archivado'
   return status
 }
 
@@ -258,6 +258,7 @@ export default function KanbanView({ docs, tags, onOpen }: KanbanViewProps) {
     KANBAN_COLS.forEach((c) => { map[c.id] = [] })
     filtered.forEach((d) => {
       const colId = statuses[d.id] ?? normalizeStatus(d.status)
+      if (colId === 'archivado') return
       if (map[colId]) map[colId].push(d)
       else map['borrador'].push(d)
     })

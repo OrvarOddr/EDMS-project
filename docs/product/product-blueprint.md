@@ -291,12 +291,13 @@ Ejemplos:
 
 ### 8.1 Estados base
 
-Estados iniciales propuestos:
+Estados del ciclo de vida documental:
 
 - `Borrador`
 - `En revision`
 - `Observado`
 - `Aprobado`
+- `Pendiente de firma`
 - `Rechazado`
 - `Archivado`
 
@@ -312,19 +313,23 @@ Documento actualmente evaluado por uno o mas revisores.
 
 #### Observado
 
-Documento con correcciones requeridas.
+Documento con correcciones requeridas. El encargado debe responder o subir nueva version.
 
 #### Aprobado
 
-Documento validado y apto para uso formal.
+Documento validado y apto para uso formal. Pendiente de ser enviado a firma.
+
+#### Pendiente de firma
+
+Documento aprobado que espera la firma formal de los responsables. Estado previo al cierre definitivo.
 
 #### Rechazado
 
-Documento descartado o no conforme.
+Documento descartado o no conforme. Estado terminal.
 
 #### Archivado
 
-Documento finalizado, inactivo o cerrado.
+Documento firmado, finalizado e inactivo. Estado terminal.
 
 ### 8.3 Reglas de transicion
 
@@ -333,8 +338,9 @@ Documento finalizado, inactivo o cerrado.
 - `En revision -> Aprobado`: solo revisor o aprobador habilitado.
 - `En revision -> Rechazado`: solo roles habilitados y con motivo obligatorio.
 - `Observado -> En revision`: requiere nueva version o respuesta del encargado.
-- `Aprobado -> Archivado`: lo puede ejecutar encargado, coordinador o admin.
-- `Aprobado -> Borrador`: no permitido; debe generarse nueva version o nuevo documento.
+- `Aprobado -> Pendiente de firma`: coordinador o admin.
+- `Pendiente de firma -> Archivado`: encargado, coordinador o admin al confirmar firma.
+- Retroceder desde `Rechazado` o `Archivado` no esta permitido; debe generarse nuevo documento.
 
 ### 8.4 Vista kanban
 

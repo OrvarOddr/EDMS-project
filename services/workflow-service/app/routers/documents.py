@@ -18,6 +18,26 @@ public_router = APIRouter(prefix="/workflow/documents", tags=["workflow-document
 INITIAL_STATE = "borrador"
 OWNER_ROLE = "encargado"
 
+VALID_STATES: frozenset[str] = frozenset({
+    "borrador",
+    "en_revision",
+    "observado",
+    "aprobado",
+    "pendiente_firma",
+    "rechazado",
+    "archivado",
+})
+
+WORKFLOW_TRANSITIONS: dict[str, set[str]] = {
+    "borrador":        {"en_revision"},
+    "en_revision":     {"observado", "aprobado", "rechazado"},
+    "observado":       {"en_revision"},
+    "aprobado":        {"pendiente_firma"},
+    "pendiente_firma": {"archivado"},
+    "rechazado":       set(),
+    "archivado":       set(),
+}
+
 
 def _require_value(value: str, field_name: str) -> str:
     cleaned = value.strip()
