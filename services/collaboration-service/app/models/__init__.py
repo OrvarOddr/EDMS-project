@@ -1,1 +1,1 @@
-from app.models.comment import Comment
+from app.models.comment import Comment as Comment
