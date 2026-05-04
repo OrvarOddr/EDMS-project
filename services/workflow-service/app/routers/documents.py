@@ -30,10 +30,10 @@ VALID_STATES: frozenset[str] = frozenset({
 
 WORKFLOW_TRANSITIONS: dict[str, set[str]] = {
     "borrador":        {"en_revision"},
-    "en_revision":     {"observado", "aprobado", "rechazado"},
+    "en_revision":     {"observado", "pendiente_firma", "rechazado"},
     "observado":       {"en_revision"},
-    "aprobado":        {"pendiente_firma"},
-    "pendiente_firma": {"archivado"},
+    "pendiente_firma": {"aprobado", "rechazado"},
+    "aprobado":        {"archivado"},
     "rechazado":       set(),
     "archivado":       set(),
 }

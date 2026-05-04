@@ -335,11 +335,12 @@ Documento firmado, finalizado e inactivo. Estado terminal.
 
 - `Borrador -> En revision`: requiere archivo cargado y metadatos minimos completos.
 - `En revision -> Observado`: requiere comentario obligatorio.
-- `En revision -> Aprobado`: solo revisor o aprobador habilitado.
+- `En revision -> Pendiente de firma`: solo revisor o aprobador habilitado; el documento queda en espera de firma formal.
 - `En revision -> Rechazado`: solo roles habilitados y con motivo obligatorio.
 - `Observado -> En revision`: requiere nueva version o respuesta del encargado.
-- `Aprobado -> Pendiente de firma`: coordinador o admin.
-- `Pendiente de firma -> Archivado`: encargado, coordinador o admin al confirmar firma.
+- `Pendiente de firma -> Aprobado`: encargado, coordinador o admin al confirmar que se firmo.
+- `Pendiente de firma -> Rechazado`: si la firma es denegada.
+- `Aprobado -> Archivado`: encargado, coordinador o admin.
 - Retroceder desde `Rechazado` o `Archivado` no esta permitido; debe generarse nuevo documento.
 
 ### 8.4 Vista kanban
