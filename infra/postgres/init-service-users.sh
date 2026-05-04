@@ -48,6 +48,21 @@ GRANT ALL PRIVILEGES ON ALL TABLES IN SCHEMA $schema TO $role;
 GRANT ALL PRIVILEGES ON ALL SEQUENCES IN SCHEMA $schema TO $role;
 ALTER DEFAULT PRIVILEGES IN SCHEMA $schema GRANT ALL ON TABLES TO $role;
 ALTER DEFAULT PRIVILEGES IN SCHEMA $schema GRANT ALL ON SEQUENCES TO $role;
+
+DO \$\$
+DECLARE
+  r RECORD;
+BEGIN
+  FOR r IN SELECT tablename FROM pg_tables WHERE schemaname = '$schema'
+  LOOP
+    EXECUTE 'ALTER TABLE $schema.' || quote_ident(r.tablename) || ' OWNER TO $role';
+  END LOOP;
+  FOR r IN SELECT sequence_name FROM information_schema.sequences WHERE sequence_schema = '$schema'
+  LOOP
+    EXECUTE 'ALTER SEQUENCE $schema.' || quote_ident(r.sequence_name) || ' OWNER TO $role';
+  END LOOP;
+END
+\$\$;
 SQL
 }
 

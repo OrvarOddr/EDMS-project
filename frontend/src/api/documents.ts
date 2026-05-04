@@ -16,6 +16,7 @@ export interface DocumentItemResponse {
   metadata_activity?: DocumentActivityItem[]
   workflow_state_code?: string | null
   assignee_user_id?: string | null
+  current_file_mime_type?: string | null
 }
 
 export interface DocumentActivityItem {

@@ -418,7 +418,9 @@ function documentResponseToItem(document: DocumentItemResponse): DocumentItem {
   return {
     id: document.id,
     name: document.title,
-    kind: docKindFromType(document.document_type_id),
+    kind: document.current_file_mime_type
+      ? docKindFromMime(document.current_file_mime_type)
+      : docKindFromType(document.document_type_id),
     description: document.description ?? null,
     documentTypeId: document.document_type_id ?? null,
     confidentialityLevel: document.confidentiality_level,

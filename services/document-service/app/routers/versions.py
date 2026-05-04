@@ -44,7 +44,7 @@ def _to_response(version: DocumentVersion) -> DocumentVersionResponse:
     )
 
 
-def _to_document_response(document: Document, workflow: dict | None = None) -> DocumentResponse:
+def _to_document_response(document: Document, workflow: dict | None = None, current_mime_type: str | None = None) -> DocumentResponse:
     metadata = document.metadata_json if isinstance(document.metadata_json, dict) else {}
     activity = metadata.get("activity") if isinstance(metadata.get("activity"), list) else []
     return DocumentResponse(
@@ -63,6 +63,7 @@ def _to_document_response(document: Document, workflow: dict | None = None) -> D
         metadata_activity=activity,
         workflow_state_code=workflow.get("state_code") if workflow else None,
         assignee_user_id=workflow.get("assignee_user_id") if workflow else None,
+        current_file_mime_type=current_mime_type,
     )
 
 
@@ -252,6 +253,17 @@ def create_document(
     return _to_document_response(document, workflow)
 
 
+def _current_mime_map(db: Session, document_ids: list[str]) -> dict[str, str | None]:
+    if not document_ids:
+        return {}
+    rows = (
+        db.query(DocumentVersion.document_id, DocumentVersion.mime_type)
+        .filter(DocumentVersion.document_id.in_(document_ids), DocumentVersion.is_current.is_(True))
+        .all()
+    )
+    return {doc_id: mime for doc_id, mime in rows}
+
+
 @router.get("", response_model=list[DocumentResponse])
 def list_documents(
     x_user_id: str | None = Header(default=None, alias="X-User-Id"),
@@ -267,7 +279,8 @@ def list_documents(
         .order_by(Document.created_at.desc())
         .all()
     )
-    return [_to_document_response(document) for document in documents]
+    mime_map = _current_mime_map(db, [d.id for d in documents])
+    return [_to_document_response(document, current_mime_type=mime_map.get(document.id)) for document in documents]
 
 
 @router.get("/trash", response_model=list[DocumentResponse])
@@ -285,7 +298,8 @@ def list_trashed_documents(
         .order_by(Document.archived_at.desc())
         .all()
     )
-    return [_to_document_response(document) for document in documents]
+    mime_map = _current_mime_map(db, [d.id for d in documents])
+    return [_to_document_response(document, current_mime_type=mime_map.get(document.id)) for document in documents]
 
 
 @router.get("/{document_id}", response_model=DocumentDetailResponse)
@@ -475,6 +489,7 @@ def register_document_version(
         or 0
     ) + 1
 
+    file_meta = _fetch_file_metadata(body.file_id, actor_user_id) or {}
     version = DocumentVersion(
         document_id=document_id,
         version_number=next_number,
@@ -482,6 +497,8 @@ def register_document_version(
         uploaded_by_user_id=body.uploaded_by_user_id,
         version_comment=body.version_comment,
         checksum=body.checksum,
+        mime_type=file_meta.get("mime_type"),
+        original_filename=file_meta.get("original_filename"),
         is_current=True,
     )
     db.add(version)
@@ -528,6 +545,7 @@ def create_document_from_file(
         db.rollback()
         raise
 
+    file_meta = _fetch_file_metadata(body.file_id, actor_user_id) or {}
     version = DocumentVersion(
         document_id=document.id,
         version_number=1,
@@ -535,6 +553,8 @@ def create_document_from_file(
         uploaded_by_user_id=actor_user_id,
         checksum=body.checksum,
         version_comment="Documento creado desde archivo sin asignar",
+        mime_type=file_meta.get("mime_type"),
+        original_filename=file_meta.get("original_filename"),
         is_current=True,
     )
     db.add(version)
@@ -543,7 +563,7 @@ def create_document_from_file(
     db.refresh(version)
 
     return DocumentCreatedFromFileResponse(
-        document=_to_document_response(document, workflow),
+        document=_to_document_response(document, workflow, current_mime_type=file_meta.get("mime_type")),
         version=_to_response(version),
     )
 

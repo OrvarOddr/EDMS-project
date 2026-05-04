@@ -73,6 +73,7 @@ class DocumentResponse(BaseModel):
     metadata_activity: list[DocumentActivityResponse] = Field(default_factory=list)
     workflow_state_code: str | None = None
     assignee_user_id: str | None = None
+    current_file_mime_type: str | None = None
 
 
 class DocumentCreatedFromFileResponse(BaseModel):

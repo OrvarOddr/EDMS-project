@@ -11,6 +11,8 @@ from app.routers import tags
 async def lifespan(app: FastAPI):
     Base.metadata.create_all(bind=engine)
     with engine.begin() as conn:
+        conn.execute(text("ALTER TABLE documents.document_versions ADD COLUMN IF NOT EXISTS mime_type VARCHAR"))
+        conn.execute(text("ALTER TABLE documents.document_versions ADD COLUMN IF NOT EXISTS original_filename VARCHAR"))
         conn.execute(text(
             "CREATE UNIQUE INDEX IF NOT EXISTS uq_document_versions_document_number "
             "ON documents.document_versions (document_id, version_number)"

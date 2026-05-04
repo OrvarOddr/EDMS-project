@@ -19,6 +19,8 @@ class DocumentVersion(Base):
     uploaded_by_user_id = Column(String, nullable=False, index=True)
     version_comment = Column(Text, nullable=True)
     checksum = Column(String, nullable=True)
+    mime_type = Column(String, nullable=True)
+    original_filename = Column(String, nullable=True)
     is_current = Column(Boolean, nullable=False, default=True, index=True)
     created_at = Column(DateTime(timezone=True), nullable=False, default=utcnow)
 
