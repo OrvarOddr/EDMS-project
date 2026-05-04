@@ -47,7 +47,7 @@ import {
   deleteTag,
   type Tag as ApiTag,
 } from '../api/tags'
-import { getAssignmentCounts } from '../api/workflow'
+import { changeDocumentState, getAssignmentCounts } from '../api/workflow'
 
 type ViewMode = 'list' | 'grid'
 type DocKind = 'pdf' | 'doc' | 'sheet' | 'slide' | 'image' | 'sig'
@@ -6101,6 +6101,24 @@ export default function DashboardPage() {
     setOpenDocId(id)
   }
 
+  const KANBAN_COL_TO_STATE: Record<string, string> = {
+    borrador: 'borrador',
+    revision: 'en_revision',
+    observado: 'observado',
+    'pendiente-firma': 'pendiente_firma',
+    aprobado: 'aprobado',
+    rechazado: 'rechazado',
+  }
+
+  async function handleKanbanStateChange(docId: string, newColId: string) {
+    const newStateCode = KANBAN_COL_TO_STATE[newColId]
+    if (!newStateCode) throw new Error('Estado desconocido')
+    await changeDocumentState(docId, newStateCode)
+    setCreatedDocs((prev) => prev.map((d) =>
+      d.id === docId ? { ...d, status: statusFromWorkflow(newStateCode) } : d,
+    ))
+  }
+
   function openContextMenu(event: React.MouseEvent, docId: string) {
     setCtxMenu({ x: event.clientX, y: event.clientY, docId })
   }
@@ -6708,6 +6726,7 @@ export default function DashboardPage() {
             }))}
             tags={tags}
             onOpen={openDoc}
+            onStateChange={handleKanbanStateChange}
           />
         ) : showDashboard ? (
           <div style={{ flex: 1, overflow: 'auto' }}>
