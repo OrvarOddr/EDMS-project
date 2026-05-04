@@ -1,4 +1,4 @@
-import { useState, useMemo, useEffect } from 'react'
+import { useState, useMemo } from 'react'
 
 export interface KanbanDocItem {
   id: string
@@ -246,20 +246,8 @@ interface KanbanViewProps {
 export default function KanbanView({ docs, tags, onOpen, onStateChange }: KanbanViewProps) {
   const [dragging, setDragging] = useState<{ docId: string; fromCol: string } | null>(null)
   const [dragOverCol, setDragOverCol] = useState<string | null>(null)
-  const [statuses, setStatuses] = useState<Record<string, string>>(() => {
-    const map: Record<string, string> = {}
-    docs.forEach((d) => { map[d.id] = normalizeStatus(d.status) })
-    return map
-  })
+  const [overrides, setOverrides] = useState<Record<string, string>>({})
   const [filterKind, setFilterKind] = useState<string | null>(null)
-
-  useEffect(() => {
-    setStatuses((prev) => {
-      const next = { ...prev }
-      docs.forEach((d) => { next[d.id] = normalizeStatus(d.status) })
-      return next
-    })
-  }, [docs])
 
   const filtered = useMemo(() =>
     docs.filter((d) => !filterKind || d.kind === filterKind),
@@ -270,13 +258,13 @@ export default function KanbanView({ docs, tags, onOpen, onStateChange }: Kanban
     const map: Record<string, KanbanDocItem[]> = {}
     KANBAN_COLS.forEach((c) => { map[c.id] = [] })
     filtered.forEach((d) => {
-      const colId = statuses[d.id] ?? normalizeStatus(d.status)
+      const colId = overrides[d.id] ?? normalizeStatus(d.status)
       if (colId === 'archivado') return
       if (map[colId]) map[colId].push(d)
       else map['borrador'].push(d)
     })
     return map
-  }, [filtered, statuses])
+  }, [filtered, overrides])
 
   async function handleDrop(toCol: string) {
     if (!dragging || dragging.fromCol === toCol) {
@@ -287,12 +275,12 @@ export default function KanbanView({ docs, tags, onOpen, onStateChange }: Kanban
     const { docId, fromCol } = dragging
     setDragging(null)
     setDragOverCol(null)
-    setStatuses((prev) => ({ ...prev, [docId]: toCol }))
+    setOverrides((prev) => ({ ...prev, [docId]: toCol }))
     if (onStateChange) {
       try {
         await onStateChange(docId, toCol)
       } catch {
-        setStatuses((prev) => ({ ...prev, [docId]: fromCol }))
+        setOverrides((prev) => ({ ...prev, [docId]: fromCol }))
       }
     }
   }
