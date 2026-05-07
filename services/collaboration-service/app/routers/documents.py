@@ -34,17 +34,27 @@ def _extract_mentions(text: str) -> list[str]:
     return list(dict.fromkeys(re.findall(r'@([\w\-]+)', text)))
 
 
-def _assert_document_access(document_id: str, user_id: str) -> None:
+def _assert_document_permission(
+    document_id: str,
+    user_id: str,
+    permission: str,
+    version_id: str | None = None,
+) -> None:
     try:
         with httpx.Client(timeout=5.0) as client:
             response = client.get(
                 f"{settings.DOCUMENT_SERVICE_URL}/internal/documents/{document_id}/access",
                 headers={"X-User-Id": user_id},
+                params=(
+                    {"permission": permission, "version_id": version_id}
+                    if version_id
+                    else {"permission": permission}
+                ),
             )
     except httpx.HTTPError as exc:
         raise HTTPException(
             status_code=status.HTTP_502_BAD_GATEWAY,
-            detail="No se pudo validar acceso al documento",
+            detail="No se pudo validar permiso sobre el documento",
         ) from exc
 
     if response.status_code in {
@@ -52,11 +62,11 @@ def _assert_document_access(document_id: str, user_id: str) -> None:
         status.HTTP_403_FORBIDDEN,
         status.HTTP_404_NOT_FOUND,
     }:
-        raise HTTPException(status_code=response.status_code, detail="No puedes ver este documento")
+        raise HTTPException(status_code=response.status_code, detail="No tienes permiso sobre este documento")
     if response.status_code >= 400:
         raise HTTPException(
             status_code=status.HTTP_502_BAD_GATEWAY,
-            detail="document-service rechazo la validacion de acceso",
+            detail="document-service rechazo la validacion de permiso",
         )
 
 
@@ -89,14 +99,15 @@ def create_comment(
     if not text:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="El comentario no puede estar vacío")
 
-    _assert_document_access(document_id, x_user_id)
+    version_id = body.version_id.strip() if body.version_id and body.version_id.strip() else None
+    _assert_document_permission(document_id, x_user_id, permission="comment", version_id=version_id)
 
     mentions = _extract_mentions(text)
     comment = Comment(
         document_id=document_id,
         author_user_id=x_user_id,
         body=text,
-        version_id=body.version_id,
+        version_id=version_id,
         mentions=json.dumps(mentions) if mentions else None,
     )
     db.add(comment)
@@ -123,7 +134,7 @@ def get_document_timeline(
     document_id = document_id.strip()
     if not document_id:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Documento requerido")
-    _assert_document_access(document_id, x_user_id)
+    _assert_document_permission(document_id, x_user_id, permission="view")
 
     comments_rows = (
         db.query(Comment)

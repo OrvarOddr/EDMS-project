@@ -83,17 +83,25 @@ def _can_upload_version(document: Document, user_id: str) -> bool:
     return user_id in {document.owner_user_id, document.created_by_user_id}
 
 
-def _document_for_actor(db: Session, document_id: str, user_id: str) -> Document:
+def _has_document_permission(document: Document, user_id: str, permission: str) -> bool:
+    if permission == "comment":
+        return document.archived_at is None and _can_upload_version(document, user_id)
+    if permission in {"view", "download", "edit_metadata", "upload_version", "move_state"}:
+        return _can_upload_version(document, user_id)
+    raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Permiso documental no soportado")
+
+
+def _document_for_actor(db: Session, document_id: str, user_id: str, permission: str = "view") -> Document:
     document = db.query(Document).filter(Document.id == document_id).first()
     if not document:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Documento no encontrado")
-    if not _can_upload_version(document, user_id):
+    if not _has_document_permission(document, user_id, permission):
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="No puedes operar sobre este documento")
     return document
 
 
-def _document_exists_for_actor(db: Session, document_id: str, user_id: str) -> Document:
-    return _document_for_actor(db, document_id, user_id)
+def _document_exists_for_actor(db: Session, document_id: str, user_id: str, permission: str = "view") -> Document:
+    return _document_for_actor(db, document_id, user_id, permission=permission)
 
 
 def _clean_required(value: str, field_name: str) -> str:
@@ -605,12 +613,31 @@ def create_document_from_file(
 @internal_router.get("/{document_id}/access")
 def check_document_access(
     document_id: str,
+    permission: str = "view",
+    version_id: str | None = None,
     x_user_id: str | None = Header(default=None, alias="X-User-Id"),
     db: Session = Depends(get_db),
 ):
     actor_user_id = _require_user(x_user_id)
-    document = _document_exists_for_actor(db, document_id.strip(), actor_user_id)
-    return {"document_id": document.id, "can_access": True}
+    permission_code = permission.strip().lower()
+    document = _document_exists_for_actor(
+        db,
+        document_id.strip(),
+        actor_user_id,
+        permission=permission_code,
+    )
+    if version_id:
+        version = (
+            db.query(DocumentVersion)
+            .filter(
+                DocumentVersion.id == version_id.strip(),
+                DocumentVersion.document_id == document.id,
+            )
+            .first()
+        )
+        if not version:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Version no pertenece al documento")
+    return {"document_id": document.id, "permission": permission_code, "version_id": version_id, "can_access": True}
 
 
 @router.get("/{document_id}/versions", response_model=list[DocumentVersionResponse])
