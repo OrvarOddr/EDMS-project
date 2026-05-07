@@ -6976,7 +6976,14 @@ export default function DashboardPage() {
           setDocumentDetails((current) => {
             const existing = current[openDocId]
             if (!existing) return current
-            return { ...current, [openDocId]: { ...existing, comments: [item, ...existing.comments] } }
+            return {
+              ...current,
+              [openDocId]: {
+                ...existing,
+                comments: [item, ...existing.comments],
+                history: [item, ...existing.history.filter((historyItem) => historyItem.id !== item.id)],
+              },
+            }
           })
         }}
       />
