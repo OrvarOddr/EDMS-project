@@ -102,8 +102,10 @@ export interface UpdateDocumentMetadataPayload {
 export const createDocument = (payload: CreateDocumentPayload) =>
   client.post<DocumentItemResponse>('/documents', payload)
 
-export const listDocuments = () =>
-  client.get<DocumentItemResponse[]>('/documents')
+export const listDocuments = (query?: string) =>
+  client.get<DocumentItemResponse[]>('/documents', {
+    params: query?.trim() ? { q: query.trim() } : undefined,
+  })
 
 export const getDocumentDetail = (documentId: string) =>
   client.get<DocumentDetailResponse>(`/documents/${documentId}`)

@@ -3,8 +3,8 @@ import uuid
 from datetime import datetime, timezone
 
 import httpx
-from fastapi import APIRouter, Depends, Header, HTTPException, status
-from sqlalchemy import func
+from fastapi import APIRouter, Depends, Header, HTTPException, Query, status
+from sqlalchemy import func, or_
 from sqlalchemy.orm import Session
 
 from app.config import settings
@@ -288,21 +288,34 @@ def _current_mime_map(db: Session, document_ids: list[str]) -> dict[str, str | N
     return {doc_id: mime for doc_id, mime in rows}
 
 
+def _escape_like_query(value: str) -> str:
+    return value.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+
+
 @router.get("", response_model=list[DocumentResponse])
 def list_documents(
+    q: str | None = Query(default=None, max_length=100),
     x_user_id: str | None = Header(default=None, alias="X-User-Id"),
     db: Session = Depends(get_db),
 ):
     actor_user_id = _require_user(x_user_id)
-    documents = (
+    query = (
         db.query(Document)
         .filter(
             Document.archived_at.is_(None),
             (Document.owner_user_id == actor_user_id) | (Document.created_by_user_id == actor_user_id),
         )
-        .order_by(Document.created_at.desc())
-        .all()
     )
+    search = q.strip() if q else ""
+    if search:
+        pattern = f"%{_escape_like_query(search)}%"
+        query = query.filter(
+            or_(
+                Document.title.ilike(pattern, escape="\\"),
+                Document.code.ilike(pattern, escape="\\"),
+            )
+        )
+    documents = query.order_by(Document.created_at.desc()).all()
     ids = [d.id for d in documents]
     mime_map = _current_mime_map(db, ids)
     state_map = _fetch_batch_workflow_states(ids)

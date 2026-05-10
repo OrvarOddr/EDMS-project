@@ -92,6 +92,7 @@ interface KindItem {
 
 interface DocumentItem {
   id: string
+  code?: string
   name: string
   kind: DocKind
   description?: string | null
@@ -418,6 +419,7 @@ function statusFromWorkflow(stateCode?: string | null): DocumentItem['status'] {
 function documentResponseToItem(document: DocumentItemResponse): DocumentItem {
   return {
     id: document.id,
+    code: document.code,
     name: document.title,
     kind: document.current_file_mime_type
       ? docKindFromMime(document.current_file_mime_type)
@@ -783,20 +785,32 @@ function highlight(text: string, query: string) {
   )
 }
 
+function documentMatchesSearch(doc: DocumentItem, query: string) {
+  const normalized = query.trim().toLowerCase()
+  if (!normalized) return true
+  return doc.name.toLowerCase().includes(normalized) || (doc.code ?? '').toLowerCase().includes(normalized)
+}
+
 function SearchField({
   value,
   onChange,
   onSelectResult,
+  docs,
+  loading,
+  error,
 }: {
   value: string
   onChange: (value: string) => void
   onSelectResult: (docId: string) => void
+  docs: DocumentItem[]
+  loading?: boolean
+  error?: string | null
 }) {
   const [open, setOpen] = useState(false)
   const ref = useRef<HTMLDivElement | null>(null)
 
   const query = value.trim().toLowerCase()
-  const hits = query.length > 0 ? dashboardData.docs.filter((doc) => doc.name.toLowerCase().includes(query)).slice(0, 6) : []
+  const hits = query.length > 0 ? docs.filter((doc) => documentMatchesSearch(doc, query)).slice(0, 6) : []
   const folderHits =
     query.length > 0
       ? flattenFolders(dashboardData.folders)
@@ -906,9 +920,9 @@ function SearchField({
                 Búsquedas sugeridas
               </div>
               {[
-                { q: 'contratos vencidos', icon: <Icon.File size={13} /> },
-                { q: 'tag:confidencial', icon: <Icon.Tag size={13} /> },
-                { q: 'owner:Laura tipo:pdf', icon: <Icon.Users size={13} /> },
+                { q: 'contrato', icon: <Icon.File size={13} /> },
+                { q: 'DOC-', icon: <Icon.File size={13} /> },
+                { q: 'factura', icon: <Icon.Tag size={13} /> },
               ].map((item) => (
                 <button
                   key={item.q}
@@ -1005,8 +1019,26 @@ function SearchField({
                   }}
                 >
                   <KindBadge kind={doc.kind} small />
-                  <span style={{ flex: 1, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                    {highlight(doc.name, query)}
+                  <span style={{ flex: 1, minWidth: 0 }}>
+                    <span style={{ display: 'block', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                      {highlight(doc.name, query)}
+                    </span>
+                    {doc.code && (
+                      <span
+                        style={{
+                          display: 'block',
+                          marginTop: 2,
+                          fontSize: 10.5,
+                          color: 'var(--fg-dim)',
+                          fontFamily: "'JetBrains Mono', ui-monospace, monospace",
+                          whiteSpace: 'nowrap',
+                          overflow: 'hidden',
+                          textOverflow: 'ellipsis',
+                        }}
+                      >
+                        {highlight(doc.code, query)}
+                      </span>
+                    )}
                   </span>
                   <span style={{ fontSize: 11, color: 'var(--fg-dim)' }}>{doc.modified}</span>
                 </button>
@@ -1014,7 +1046,19 @@ function SearchField({
             </>
           )}
 
-          {query.length > 0 && hits.length === 0 && folderHits.length === 0 && (
+          {query.length > 0 && loading && hits.length === 0 && (
+            <div style={{ padding: '18px 14px', fontSize: 13, color: 'var(--fg-dim)', textAlign: 'center' }}>
+              Buscando documentos autorizados…
+            </div>
+          )}
+
+          {query.length > 0 && error && (
+            <div style={{ padding: '18px 14px', fontSize: 13, color: 'var(--danger)', textAlign: 'center' }}>
+              {error}
+            </div>
+          )}
+
+          {query.length > 0 && !loading && !error && hits.length === 0 && folderHits.length === 0 && (
             <div style={{ padding: '18px 14px', fontSize: 13, color: 'var(--fg-dim)', textAlign: 'center' }}>
               Sin resultados para “{query}”
             </div>
@@ -1274,6 +1318,9 @@ function Topbar({
   onCrumbClick,
   search,
   onSearch,
+  searchDocs,
+  searchLoading,
+  searchError,
   viewMode,
   onViewMode,
   onAction,
@@ -1289,6 +1336,9 @@ function Topbar({
   onCrumbClick: (crumb: { id: string; label: string }) => void
   search: string
   onSearch: (value: string) => void
+  searchDocs: DocumentItem[]
+  searchLoading: boolean
+  searchError: string | null
   viewMode: ViewMode
   onViewMode: (mode: ViewMode) => void
   onAction: (action: string) => void
@@ -1322,7 +1372,14 @@ function Topbar({
       </div>
 
       <div style={{ flex: 1, display: 'flex', justifyContent: 'center' }}>
-        <SearchField value={search} onChange={onSearch} onSelectResult={onSelectResult} />
+        <SearchField
+          value={search}
+          onChange={onSearch}
+          onSelectResult={onSelectResult}
+          docs={searchDocs}
+          loading={searchLoading}
+          error={searchError}
+        />
       </div>
 
       <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexShrink: 0 }}>
@@ -2077,6 +2134,8 @@ function ListView({
   onOpenDoc,
   onContextMenu,
   tags,
+  emptyTitle = 'Sin documentos',
+  emptySubtitle = 'Ajusta los filtros o arrastra archivos aquí para subirlos.',
 }: {
   docs: DocumentItem[]
   selected: Set<string>
@@ -2086,6 +2145,8 @@ function ListView({
   onOpenDoc: (docId: string) => void
   onContextMenu: (event: React.MouseEvent, docId: string) => void
   tags: ApiTag[]
+  emptyTitle?: string
+  emptySubtitle?: string
 }) {
   return (
     <div style={{ flex: 1, overflow: 'auto', padding: '0 8px' }}>
@@ -2151,17 +2212,37 @@ function ListView({
                     <KindBadge kind={doc.kind} />
                     {doc.starred && <Icon.Star size={12} style={{ color: 'oklch(0.8 0.14 75)', fill: 'oklch(0.8 0.14 75)' }} />}
                     {doc.locked && <Icon.Lock size={12} style={{ color: 'var(--fg-dim)' }} />}
-                    <span
-                      style={{
-                        color: 'var(--fg)',
-                        fontWeight: 500,
-                        whiteSpace: 'nowrap',
-                        overflow: 'hidden',
-                        textOverflow: 'ellipsis',
-                        maxWidth: 340,
-                      }}
-                    >
-                      {doc.name}
+                    <span style={{ minWidth: 0 }}>
+                      <span
+                        style={{
+                          display: 'block',
+                          color: 'var(--fg)',
+                          fontWeight: 500,
+                          whiteSpace: 'nowrap',
+                          overflow: 'hidden',
+                          textOverflow: 'ellipsis',
+                          maxWidth: 340,
+                        }}
+                      >
+                        {doc.name}
+                      </span>
+                      {doc.code && (
+                        <span
+                          style={{
+                            display: 'block',
+                            marginTop: 2,
+                            color: 'var(--fg-dim)',
+                            fontSize: 10.5,
+                            fontFamily: "'JetBrains Mono', ui-monospace, monospace",
+                            whiteSpace: 'nowrap',
+                            overflow: 'hidden',
+                            textOverflow: 'ellipsis',
+                            maxWidth: 340,
+                          }}
+                        >
+                          {doc.code}
+                        </span>
+                      )}
                     </span>
                   </div>
                 </td>
@@ -2230,8 +2311,8 @@ function ListView({
 
       {docs.length === 0 && (
         <div style={{ padding: '60px 20px', textAlign: 'center', color: 'var(--fg-dim)' }}>
-          <div style={{ fontSize: 14, marginBottom: 4 }}>Sin documentos</div>
-          <div style={{ fontSize: 12 }}>Ajusta los filtros o arrastra archivos aquí para subirlos.</div>
+          <div style={{ fontSize: 14, marginBottom: 4 }}>{emptyTitle}</div>
+          <div style={{ fontSize: 12 }}>{emptySubtitle}</div>
         </div>
       )}
     </div>
@@ -2244,12 +2325,16 @@ function GridView({
   onToggleSelect,
   onOpenDoc,
   onContextMenu,
+  emptyTitle = 'Sin documentos',
+  emptySubtitle = 'Ajusta los filtros o sube archivos para crear documentos.',
 }: {
   docs: DocumentItem[]
   selected: Set<string>
   onToggleSelect: (id: string) => void
   onOpenDoc: (docId: string) => void
   onContextMenu: (event: React.MouseEvent, docId: string) => void
+  emptyTitle?: string
+  emptySubtitle?: string
 }) {
   return (
     <div style={{ flex: 1, overflow: 'auto', padding: '16px 18px' }}>
@@ -2350,6 +2435,22 @@ function GridView({
               >
                 {doc.name}
               </div>
+              {doc.code && (
+                <div
+                  style={{
+                    marginTop: -2,
+                    marginBottom: 8,
+                    color: 'var(--fg-dim)',
+                    fontSize: 10.5,
+                    fontFamily: "'JetBrains Mono', ui-monospace, monospace",
+                    whiteSpace: 'nowrap',
+                    overflow: 'hidden',
+                    textOverflow: 'ellipsis',
+                  }}
+                >
+                  {doc.code}
+                </div>
+              )}
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: 11, color: 'var(--fg-dim)' }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
                   <OwnerAvatar userId={doc.owner} size={16} />
@@ -2361,6 +2462,12 @@ function GridView({
           )
         })}
       </div>
+      {docs.length === 0 && (
+        <div style={{ padding: '44px 20px', textAlign: 'center', color: 'var(--fg-dim)' }}>
+          <div style={{ fontSize: 14, marginBottom: 4 }}>{emptyTitle}</div>
+          <div style={{ fontSize: 12 }}>{emptySubtitle}</div>
+        </div>
+      )}
     </div>
   )
 }
@@ -5974,6 +6081,9 @@ export default function DashboardPage() {
   const [selectedFolder, setSelectedFolder] = useState('root')
   const [selectedTag, setSelectedTag] = useState<string | null>(null)
   const [search, setSearch] = useState('')
+  const [searchResults, setSearchResults] = useState<DocumentItem[] | null>(null)
+  const [searchLoading, setSearchLoading] = useState(false)
+  const [searchError, setSearchError] = useState<string | null>(null)
   const [viewMode, setViewMode] = useState<ViewMode>('list')
   const [filters, setFilters] = useState<FiltersState>(initialFilters)
   const [selected, setSelected] = useState<Set<string>>(new Set())
@@ -6017,6 +6127,12 @@ export default function DashboardPage() {
   const currentUserEmail = user?.email ?? 'laura@nimbera.com'
   const firstName = currentUserLabel.split(' ')[0]
   const allDocs = useMemo(() => [...createdDocs, ...dashboardData.docs], [createdDocs])
+  const searchQuery = search.trim()
+  const searchActive = searchQuery.length > 0
+  const searchDocs = useMemo(
+    () => (searchActive ? (searchResults ?? []) : allDocs),
+    [allDocs, searchActive, searchResults],
+  )
   const editingMetadataDoc = useMemo(
     () => createdDocs.find((doc) => doc.id === editingMetadataDocId) ?? null,
     [createdDocs, editingMetadataDocId],
@@ -6086,6 +6202,46 @@ export default function DashboardPage() {
   }, [])
 
   useEffect(() => {
+    const query = search.trim()
+    if (!query) {
+      let mounted = true
+      queueMicrotask(() => {
+        if (!mounted) return
+        setSearchResults(null)
+        setSearchError(null)
+        setSearchLoading(false)
+      })
+      return () => {
+        mounted = false
+      }
+    }
+
+    let mounted = true
+    const handle = window.setTimeout(() => {
+      setSearchLoading(true)
+      setSearchError(null)
+      listDocuments(query)
+        .then((response) => {
+          if (!mounted) return
+          setSearchResults(response.data.map(documentResponseToItem))
+        })
+        .catch((err) => {
+          if (!mounted) return
+          setSearchResults([])
+          setSearchError(getApiErrorMessage(err, 'No se pudo buscar documentos'))
+        })
+        .finally(() => {
+          if (mounted) setSearchLoading(false)
+        })
+    }, 300)
+
+    return () => {
+      mounted = false
+      window.clearTimeout(handle)
+    }
+  }, [search])
+
+  useEffect(() => {
     const backendDoc = openDocId ? createdDocs.some((doc) => doc.id === openDocId) : false
     if (!openDocId || !backendDoc) {
       return
@@ -6117,27 +6273,25 @@ export default function DashboardPage() {
   }, [createdDocs, documentDetails, openDocId])
 
   const visibleDocs = useMemo(() => {
-    let list = allDocs
+    let list = searchActive ? searchDocs : allDocs
 
-    if (selectedView === 'favoritos') list = list.filter((doc) => doc.starred)
-    else if (selectedView === 'compartidos') list = list.filter((doc) => doc.shared.length > 0 && doc.owner !== 'u1')
-    else if (selectedView === 'aprobaciones') list = list.filter((doc) => doc.status === 'pendiente-firma' || doc.status === 'revision')
-    else if (selectedView === 'archivos-sin-asignar') list = []
-    else if (selectedView === 'papelera') list = []
-    else if (selectedView === 'recientes') list = [...list].sort((a, b) => a.modified.localeCompare(b.modified))
-    else if (selectedView === 'carpeta' && selectedFolder !== 'root') list = list.filter((doc) => doc.folder === selectedFolder)
+    if (!searchActive) {
+      if (selectedView === 'favoritos') list = list.filter((doc) => doc.starred)
+      else if (selectedView === 'compartidos') list = list.filter((doc) => doc.shared.length > 0 && doc.owner !== 'u1')
+      else if (selectedView === 'aprobaciones') list = list.filter((doc) => doc.status === 'pendiente-firma' || doc.status === 'revision')
+      else if (selectedView === 'archivos-sin-asignar') list = []
+      else if (selectedView === 'papelera') list = []
+      else if (selectedView === 'recientes') list = [...list].sort((a, b) => a.modified.localeCompare(b.modified))
+      else if (selectedView === 'carpeta' && selectedFolder !== 'root') list = list.filter((doc) => doc.folder === selectedFolder)
+    }
 
     if (selectedTag) list = list.filter((doc) => doc.tags.includes(selectedTag))
     if (filters.kind) list = list.filter((doc) => doc.kind === filters.kind)
     if (filters.owner) list = list.filter((doc) => doc.owner === filters.owner)
     if (filters.status) list = list.filter((doc) => doc.status === filters.status)
-    if (search.trim()) {
-      const query = search.trim().toLowerCase()
-      list = list.filter((doc) => doc.name.toLowerCase().includes(query))
-    }
 
     return list
-  }, [allDocs, selectedView, selectedFolder, selectedTag, filters, search])
+  }, [allDocs, searchActive, searchDocs, selectedView, selectedFolder, selectedTag, filters])
 
   const breadcrumb = useMemo(() => {
     if (selectedView === 'inicio') return [{ id: 'inicio', label: 'Inicio' }]
@@ -6736,7 +6890,13 @@ export default function DashboardPage() {
             }
           }}
           search={search}
-          onSearch={setSearch}
+          onSearch={(value) => {
+            setSearch(value)
+            setSelected(new Set())
+          }}
+          searchDocs={searchDocs}
+          searchLoading={searchActive && (searchLoading || searchResults === null)}
+          searchError={searchError}
           viewMode={viewMode}
           onViewMode={setViewMode}
           onAction={handleAction}
@@ -6752,7 +6912,7 @@ export default function DashboardPage() {
         <div style={{ padding: '18px 18px 8px', display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between', gap: 16 }}>
           <div>
             <h1 style={{ fontSize: 22, fontWeight: 600, margin: '0 0 2px', letterSpacing: '-0.01em' }}>
-              {showDashboard ? `Buenos días, ${firstName}` : breadcrumb[breadcrumb.length - 1]?.label}
+              {searchActive ? 'Resultados de búsqueda' : showDashboard ? `Buenos días, ${firstName}` : breadcrumb[breadcrumb.length - 1]?.label}
             </h1>
             <div style={{ fontSize: 12.5, color: 'var(--fg-muted)' }}>
               {showDashboard
@@ -6763,6 +6923,10 @@ export default function DashboardPage() {
                   ? `${unassignedFiles.length} archivo${unassignedFiles.length === 1 ? '' : 's'} pendiente${unassignedFiles.length === 1 ? '' : 's'} por convertir en documento`
                   : selectedView === 'papelera'
                     ? `${trashedFiles.length + trashedDocs.length} elemento${trashedFiles.length + trashedDocs.length === 1 ? '' : 's'} en papelera`
+                  : searchActive
+                    ? searchLoading || searchResults === null
+                      ? `Buscando “${searchQuery}”…`
+                      : `${visibleDocs.length} resultado${visibleDocs.length === 1 ? '' : 's'} para “${searchQuery}”`
                   : `${visibleDocs.length} documentos${selectedTag ? ` · etiqueta "${findTag(tags, selectedTag)?.label}"` : ''}`}
             </div>
           </div>
@@ -6893,7 +7057,7 @@ export default function DashboardPage() {
           </div>
         ) : (
           <>
-            {selectedView === 'archivos-sin-asignar' ? (
+            {selectedView === 'archivos-sin-asignar' && !searchActive ? (
               <UnassignedFilesPanel
                 files={unassignedFiles}
                 loading={loadingFileLists}
@@ -6907,7 +7071,7 @@ export default function DashboardPage() {
             ) : (
               <FiltersRow filters={filters} onFilters={setFilters} onClear={() => setFilters(initialFilters)} />
             )}
-            {selectedView === 'archivos-sin-asignar' ? null : selectedView === 'papelera' ? (
+            {selectedView === 'archivos-sin-asignar' && !searchActive ? null : selectedView === 'papelera' && !searchActive ? (
               <TrashedFilesPanel
                 files={trashedFiles}
                 documents={trashedDocs}
@@ -6938,6 +7102,12 @@ export default function DashboardPage() {
                 onOpenDoc={openDoc}
                 onContextMenu={openContextMenu}
                 tags={tags}
+                emptyTitle={searchActive ? `Sin resultados para “${searchQuery}”` : undefined}
+                emptySubtitle={
+                  searchActive
+                    ? (searchLoading || searchResults === null ? 'Buscando documentos autorizados…' : searchError ?? 'Prueba con otro título o código interno.')
+                    : undefined
+                }
               />
             ) : (
               <GridView
@@ -6946,6 +7116,12 @@ export default function DashboardPage() {
                 onToggleSelect={toggleSelect}
                 onOpenDoc={openDoc}
                 onContextMenu={openContextMenu}
+                emptyTitle={searchActive ? `Sin resultados para “${searchQuery}”` : undefined}
+                emptySubtitle={
+                  searchActive
+                    ? (searchLoading || searchResults === null ? 'Buscando documentos autorizados…' : searchError ?? 'Prueba con otro título o código interno.')
+                    : undefined
+                }
               />
             )}
           </>
