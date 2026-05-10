@@ -843,7 +843,7 @@ function SearchField({
   }, [])
 
   return (
-    <div ref={ref} style={{ position: 'relative', flex: 1, maxWidth: 560 }}>
+    <div ref={ref} style={{ position: 'relative', flex: 1, maxWidth: 560, zIndex: open ? 1000 : 1 }}>
       <div
         style={{
           display: 'flex',
@@ -900,9 +900,10 @@ function SearchField({
             border: '1px solid var(--border)',
             borderRadius: 9,
             boxShadow: 'var(--shadow)',
-            zIndex: 50,
-            maxHeight: 400,
+            zIndex: 1000,
+            maxHeight: 'min(520px, calc(100vh - 140px))',
             overflow: 'auto',
+            overscrollBehavior: 'contain',
           }}
         >
           {query.length === 0 && (
@@ -1361,6 +1362,9 @@ function Topbar({
         background: 'var(--bg-elev)',
         flexShrink: 0,
         height: 52,
+        position: 'relative',
+        zIndex: 100,
+        overflow: 'visible',
       }}
     >
       <div style={{ display: 'flex', alignItems: 'center', gap: 2, flexShrink: 0 }}>
