@@ -812,7 +812,7 @@ function SearchField({
   const query = value.trim().toLowerCase()
   const hits = query.length > 0 ? docs.filter((doc) => documentMatchesSearch(doc, query)).slice(0, 6) : []
   const folderHits =
-    query.length > 0
+    query.length > 0 && hits.length === 0
       ? flattenFolders(dashboardData.folders)
           .filter((folder) => folder.name.toLowerCase().includes(query) && folder.id !== 'root')
           .slice(0, 3)
@@ -959,7 +959,7 @@ function SearchField({
                   fontWeight: 600,
                 }}
               >
-                Carpetas
+                Carpetas sin documentos coincidentes
               </div>
               {folderHits.map((folder) => (
                 <button
@@ -998,7 +998,7 @@ function SearchField({
                   fontWeight: 600,
                 }}
               >
-                Documentos
+                Documentos encontrados
               </div>
               {hits.map((doc) => (
                 <button
