@@ -1,6 +1,6 @@
 import re
 import uuid
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 import httpx
 from fastapi import APIRouter, Depends, Header, HTTPException, Query, status
@@ -63,6 +63,7 @@ def _to_document_response(document: Document, workflow: dict | None = None, curr
         metadata_activity=activity,
         workflow_state_code=workflow.get("state_code") if workflow else None,
         assignee_user_id=workflow.get("assignee_user_id") if workflow else None,
+        assigned_user_ids=workflow.get("assigned_user_ids", []) if workflow else [],
         current_file_mime_type=current_mime_type,
     )
 
@@ -181,6 +182,23 @@ def _fetch_batch_workflow_states(document_ids: list[str]) -> dict[str, str]:
         return {}
 
 
+def _fetch_batch_workflow_summaries(document_ids: list[str]) -> dict[str, dict]:
+    if not document_ids:
+        return {}
+    try:
+        with httpx.Client(timeout=5.0) as client:
+            response = client.post(
+                f"{settings.WORKFLOW_SERVICE_URL}/internal/workflow/documents/batch-summaries",
+                json={"document_ids": document_ids},
+            )
+        if response.status_code >= 400:
+            return {}
+        summaries = response.json().get("summaries", {})
+        return summaries if isinstance(summaries, dict) else {}
+    except httpx.HTTPError:
+        return {}
+
+
 def _fetch_file_metadata(file_id: str, actor_user_id: str) -> dict | None:
     try:
         with httpx.Client(timeout=5.0) as client:
@@ -292,13 +310,47 @@ def _escape_like_query(value: str) -> str:
     return value.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
 
 
+def _clean_optional(value: str | None) -> str | None:
+    cleaned = value.strip() if value else ""
+    return cleaned or None
+
+
+def _modified_after_filter(value: str | None) -> datetime | None:
+    cleaned = _clean_optional(value)
+    if not cleaned:
+        return None
+
+    now = datetime.now(timezone.utc)
+    if cleaned == "hoy":
+        return now.replace(hour=0, minute=0, second=0, microsecond=0)
+    if cleaned == "semana":
+        return now - timedelta(days=7)
+    if cleaned == "mes":
+        return now - timedelta(days=30)
+    if cleaned == "ano":
+        return now.replace(month=1, day=1, hour=0, minute=0, second=0, microsecond=0)
+
+    raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="Filtro de fecha invalido")
+
+
 @router.get("", response_model=list[DocumentResponse])
 def list_documents(
     q: str | None = Query(default=None, max_length=100),
+    document_type_id: str | None = Query(default=None, max_length=80),
+    state_code: str | None = Query(default=None, max_length=40),
+    assignee_user_id: str | None = Query(default=None, max_length=80),
+    assigned_user_id: str | None = Query(default=None, max_length=80),
+    date: str | None = Query(default=None, max_length=20),
     x_user_id: str | None = Header(default=None, alias="X-User-Id"),
     db: Session = Depends(get_db),
 ):
     actor_user_id = _require_user(x_user_id)
+    type_filter = _clean_optional(document_type_id)
+    state_filter = _clean_optional(state_code)
+    assignee_filter = _clean_optional(assignee_user_id)
+    assigned_filter = _clean_optional(assigned_user_id)
+    modified_after = _modified_after_filter(date)
+
     query = (
         db.query(Document)
         .filter(
@@ -315,14 +367,35 @@ def list_documents(
                 Document.code.ilike(pattern, escape="\\"),
             )
         )
+    if type_filter:
+        query = query.filter(Document.document_type_id == type_filter)
+    if modified_after:
+        query = query.filter(Document.updated_at >= modified_after)
+
     documents = query.order_by(Document.created_at.desc()).all()
     ids = [d.id for d in documents]
+    workflow_filters_active = any([state_filter, assignee_filter, assigned_filter])
+    summary_map = _fetch_batch_workflow_summaries(ids)
+    if workflow_filters_active:
+        filtered_documents: list[Document] = []
+        for document in documents:
+            summary = summary_map.get(document.id, {})
+            assigned_user_ids = summary.get("assigned_user_ids") if isinstance(summary.get("assigned_user_ids"), list) else []
+            if state_filter and summary.get("state_code") != state_filter:
+                continue
+            if assignee_filter and summary.get("assignee_user_id") != assignee_filter:
+                continue
+            if assigned_filter and assigned_filter not in assigned_user_ids:
+                continue
+            filtered_documents.append(document)
+        documents = filtered_documents
+        ids = [d.id for d in documents]
+
     mime_map = _current_mime_map(db, ids)
-    state_map = _fetch_batch_workflow_states(ids)
     return [
         _to_document_response(
             document,
-            workflow={"state_code": state_map.get(document.id)} if state_map.get(document.id) else None,
+            workflow=summary_map.get(document.id),
             current_mime_type=mime_map.get(document.id),
         )
         for document in documents

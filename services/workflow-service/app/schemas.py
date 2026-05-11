@@ -45,6 +45,16 @@ class BatchStatesResponse(BaseModel):
     states: dict[str, str]
 
 
+class BatchWorkflowSummary(BaseModel):
+    state_code: str | None = None
+    assignee_user_id: str | None = None
+    assigned_user_ids: list[str] = Field(default_factory=list)
+
+
+class BatchWorkflowSummariesResponse(BaseModel):
+    summaries: dict[str, BatchWorkflowSummary]
+
+
 class ChangeDocumentStateRequest(BaseModel):
     new_state_code: str
     comment: str | None = None
