@@ -1061,7 +1061,7 @@ function SearchField({
 
           {query.length > 0 && !loading && !error && hits.length === 0 && folderHits.length === 0 && (
             <div style={{ padding: '18px 14px', fontSize: 13, color: 'var(--fg-dim)', textAlign: 'center' }}>
-              Sin resultados para “{query}”
+              {`Sin resultados para "${query}"`}
             </div>
           )}
         </div>
