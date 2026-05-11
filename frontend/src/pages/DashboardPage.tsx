@@ -139,6 +139,7 @@ interface ActivityItem {
 interface FiltersState {
   kind: string | null
   owner: string | null
+  assignee: string | null
   status: string | null
   date: string | null
 }
@@ -307,6 +308,7 @@ const dashboardData: DashboardData = {
 const initialFilters: FiltersState = {
   kind: null,
   owner: null,
+  assignee: null,
   status: null,
   date: null,
 }
@@ -1996,18 +1998,21 @@ function Sidebar({
 
 function FiltersRow({
   filters,
+  userOptions,
   onFilters,
   onClear,
 }: {
   filters: FiltersState
+  userOptions: [string, string][]
   onFilters: (filters: FiltersState) => void
   onClear: () => void
 }) {
   const [openKey, setOpenKey] = useState<string | null>(null)
 
   const pills: FilterPill[] = [
-    { key: 'kind', label: 'Tipo', options: [['pdf', 'PDF'], ['doc', 'Documento'], ['sheet', 'Hoja'], ['slide', 'Slide'], ['image', 'Imagen']] },
-    { key: 'owner', label: 'Autor', options: dashboardData.users.map((user) => [user.id, user.name]) },
+    { key: 'kind', label: 'Tipo documental', options: [['pdf', 'PDF'], ['doc', 'Documento'], ['sheet', 'Hoja'], ['slide', 'Slide'], ['image', 'Imagen']] },
+    { key: 'owner', label: 'Encargado', options: userOptions },
+    { key: 'assignee', label: 'Asignado', options: userOptions },
     { key: 'status', label: 'Estado', options: [['borrador', 'Borrador'], ['revision', 'En revisión'], ['observado', 'Observado'], ['aprobado', 'Aprobado'], ['pendiente-firma', 'Pendiente de firma'], ['rechazado', 'Rechazado'], ['archivado', 'Archivado']] },
     { key: 'date', label: 'Fecha', options: [['hoy', 'Hoy'], ['semana', 'Últimos 7 días'], ['mes', 'Último mes'], ['ano', 'Este año']] },
   ] as const
@@ -2023,6 +2028,8 @@ function FiltersRow({
         padding: '10px 18px',
         borderBottom: '1px solid var(--border)',
         flexWrap: 'wrap',
+        position: 'relative',
+        zIndex: 80,
       }}
     >
       <span style={{ display: 'flex', alignItems: 'center', gap: 5, color: 'var(--fg-dim)', fontSize: 12, marginRight: 4 }}>
@@ -2059,7 +2066,7 @@ function FiltersRow({
                   position: 'absolute',
                   top: 'calc(100% + 4px)',
                   left: 0,
-                  zIndex: 20,
+                  zIndex: 1200,
                   background: 'var(--bg-elev)',
                   border: '1px solid var(--border)',
                   borderRadius: 8,
@@ -2153,10 +2160,10 @@ function ListView({
   emptySubtitle?: string
 }) {
   return (
-    <div style={{ flex: 1, overflow: 'auto', padding: '0 8px' }}>
+    <div style={{ flex: 1, overflow: 'auto', padding: '0 8px', position: 'relative', zIndex: 0 }}>
       <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
         <thead>
-          <tr style={{ position: 'sticky', top: 0, background: 'var(--bg)', zIndex: 2 }}>
+          <tr style={{ position: 'sticky', top: 0, background: 'var(--bg)', zIndex: 1 }}>
             <th style={{ width: 36, padding: '10px 4px 10px 10px', textAlign: 'left' }}>
               <Checkbox checked={allSelected} onChange={onSelectAll} indeterminate={selected.size > 0 && !allSelected} />
             </th>
@@ -6109,6 +6116,7 @@ export default function DashboardPage() {
   const [selectedTrashFileIds, setSelectedTrashFileIds] = useState<Set<string>>(new Set())
   const [createdDocs, setCreatedDocs] = useState<DocumentItem[]>([])
   const [assignmentCounts, setAssignmentCounts] = useState<Record<string, number>>({})
+  const [workspaceUsers, setWorkspaceUsers] = useState<UserMe[]>([])
   const [workspaceUserCount, setWorkspaceUserCount] = useState<number | null>(null)
   const [documentDetails, setDocumentDetails] = useState<Record<string, DocumentDetailResponse>>({})
   const [detailLoadingDocId, setDetailLoadingDocId] = useState<string | null>(null)
@@ -6126,9 +6134,9 @@ export default function DashboardPage() {
 
   const currentUserLabel = user
     ? userLabelFromAuth(user.first_name, user.last_name, user.email)
-    : 'Laura Ibáñez'
-  const currentUserInitials = user ? initialsFromLabel(currentUserLabel) : 'LI'
-  const currentUserEmail = user?.email ?? 'laura@nimbera.com'
+    : 'Usuario actual'
+  const currentUserInitials = user ? initialsFromLabel(currentUserLabel) : 'UA'
+  const currentUserEmail = user?.email ?? ''
   const firstName = currentUserLabel.split(' ')[0]
   const allDocs = useMemo(() => [...createdDocs, ...dashboardData.docs], [createdDocs])
   const searchQuery = search.trim()
@@ -6145,6 +6153,23 @@ export default function DashboardPage() {
     () => unassignedFiles.find((file) => file.id === selectedUnassignedFileId) ?? null,
     [selectedUnassignedFileId, unassignedFiles],
   )
+  const filterUserOptions = useMemo<[string, string][]>(() => {
+    const seen = new Set<string>()
+    const options: [string, string][] = []
+
+    if (user) {
+      options.push([user.id, currentUserLabel])
+      seen.add(user.id)
+    }
+
+    workspaceUsers.forEach((item) => {
+      if (seen.has(item.id)) return
+      options.push([item.id, userLabelFromAuth(item.first_name, item.last_name, item.email)])
+      seen.add(item.id)
+    })
+
+    return options
+  }, [currentUserLabel, user, workspaceUsers])
 
   useEffect(() => {
     document.documentElement.setAttribute('data-theme', tweaks.theme)
@@ -6186,7 +6211,11 @@ export default function DashboardPage() {
       .catch(() => {})
 
     listUsers()
-      .then((response) => { if (mounted) setWorkspaceUserCount(response.data.length) })
+      .then((response) => {
+        if (!mounted) return
+        setWorkspaceUsers(response.data)
+        setWorkspaceUserCount(response.data.length)
+      })
       .catch(() => {})
 
     fetchStorageSummaryGb()
@@ -6292,6 +6321,8 @@ export default function DashboardPage() {
     if (selectedTag) list = list.filter((doc) => doc.tags.includes(selectedTag))
     if (filters.kind) list = list.filter((doc) => doc.kind === filters.kind)
     if (filters.owner) list = list.filter((doc) => doc.owner === filters.owner)
+    const assigneeFilter = filters.assignee
+    if (assigneeFilter) list = list.filter((doc) => doc.owner === assigneeFilter || doc.shared.includes(assigneeFilter))
     if (filters.status) list = list.filter((doc) => doc.status === filters.status)
 
     return list
@@ -6319,6 +6350,7 @@ export default function DashboardPage() {
     search.trim() === '' &&
     !filters.kind &&
     !filters.owner &&
+    !filters.assignee &&
     !filters.status &&
     !filters.date &&
     !selectedTag
@@ -7073,7 +7105,12 @@ export default function DashboardPage() {
                 onAssignDocument={handleAssignFileToDocument}
               />
             ) : (
-              <FiltersRow filters={filters} onFilters={setFilters} onClear={() => setFilters(initialFilters)} />
+              <FiltersRow
+                filters={filters}
+                userOptions={filterUserOptions}
+                onFilters={setFilters}
+                onClear={() => setFilters(initialFilters)}
+              />
             )}
             {selectedView === 'archivos-sin-asignar' && !searchActive ? null : selectedView === 'papelera' && !searchActive ? (
               <TrashedFilesPanel
