@@ -43,10 +43,13 @@ import {
   type StoredFileItem,
 } from '../api/files'
 import {
+  assignTagToDocument,
   listTags,
   createTag,
   updateTag,
   deleteTag,
+  getDocumentTags,
+  removeTagFromDocument,
   type Tag as ApiTag,
 } from '../api/tags'
 import { changeDocumentState, getAssignmentCounts } from '../api/workflow'
@@ -510,6 +513,19 @@ function documentResponseToItem(document: DocumentItemResponse): DocumentItem {
     shared: assignedUserIds.filter((userId) => userId !== document.owner_user_id),
     status: statusFromWorkflow(document.workflow_state_code),
   }
+}
+
+async function withDocumentTags(docs: DocumentItem[]) {
+  const entries = await Promise.all(docs.map(async (doc) => {
+    try {
+      const response = await getDocumentTags(doc.id)
+      return [doc.id, response.data.map((tag) => tag.id)] as const
+    } catch {
+      return [doc.id, doc.tags] as const
+    }
+  }))
+  const tagsByDocument = new Map(entries)
+  return docs.map((doc) => ({ ...doc, tags: tagsByDocument.get(doc.id) ?? doc.tags }))
 }
 
 function fileKindLabel(mimeType: string) {
@@ -6156,6 +6172,123 @@ function Toast({ toast, onClose }: { toast: string | null; onClose: () => void }
   )
 }
 
+function DocumentTagAssignmentModal({
+  count,
+  tags,
+  selectedTagIds,
+  saving,
+  bulkMode,
+  onToggleTag,
+  onCreateTag,
+  onClose,
+  onSave,
+}: {
+  count: number
+  tags: ApiTag[]
+  selectedTagIds: Set<string>
+  saving: boolean
+  bulkMode: boolean
+  onToggleTag: (tagId: string) => void
+  onCreateTag: () => void
+  onClose: () => void
+  onSave: () => void
+}) {
+  return (
+    <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.55)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000 }}>
+      <div style={{ background: 'var(--bg-elev)', border: '1px solid var(--border-strong)', borderRadius: 12, width: 380, boxShadow: 'var(--shadow)', overflow: 'hidden' }}>
+        <div style={{ padding: '18px 20px', borderBottom: '1px solid var(--border)' }}>
+          <h3 style={{ margin: 0, fontSize: 15 }}>{count === 1 ? 'Etiquetar documento' : `Etiquetar ${count} documentos`}</h3>
+          <p style={{ margin: '6px 0 0', color: 'var(--fg-muted)', fontSize: 12.5 }}>
+            {bulkMode
+              ? 'Las etiquetas seleccionadas se agregan a todos los documentos sin quitar las que ya tengan.'
+              : 'Selecciona las etiquetas que debe tener este documento.'}
+          </p>
+        </div>
+
+        <div style={{ padding: 16, display: 'flex', flexDirection: 'column', gap: 8, maxHeight: 340, overflowY: 'auto' }}>
+          {tags.length === 0 ? (
+            <div style={{ border: '1px dashed var(--border-strong)', borderRadius: 10, padding: 14, color: 'var(--fg-muted)', fontSize: 12.5 }}>
+              Aun no hay etiquetas creadas. Crea una para poder asignarla al documento.
+            </div>
+          ) : tags.map((tag) => {
+            const checked = selectedTagIds.has(tag.id)
+            return (
+              <button
+                key={tag.id}
+                type="button"
+                onClick={() => onToggleTag(tag.id)}
+                className="edms-nav-item"
+                style={{
+                  width: '100%',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 10,
+                  padding: '9px 10px',
+                  borderRadius: 9,
+                  border: `1px solid ${checked ? tag.color : 'var(--border)'}`,
+                  background: checked ? `color-mix(in oklch, ${tag.color} 12%, var(--bg-active))` : 'var(--bg-elev-2)',
+                  color: 'var(--fg)',
+                  cursor: 'pointer',
+                  textAlign: 'left',
+                }}
+              >
+                <span
+                  style={{
+                    width: 18,
+                    height: 18,
+                    borderRadius: 5,
+                    border: `1.4px solid ${checked ? tag.color : 'var(--border-strong)'}`,
+                    background: checked ? tag.color : 'transparent',
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    flexShrink: 0,
+                  }}
+                >
+                  {checked && <Icon.Check size={11} stroke={3} style={{ color: '#0e0f12' }} />}
+                </span>
+                <span style={{ width: 8, height: 8, borderRadius: 4, background: tag.color, flexShrink: 0 }} />
+                <span style={{ fontSize: 13, fontWeight: 500 }}>{tag.label}</span>
+              </button>
+            )
+          })}
+        </div>
+
+        <div style={{ padding: 16, borderTop: '1px solid var(--border)', display: 'flex', justifyContent: 'space-between', gap: 8 }}>
+          <button
+            type="button"
+            onClick={onCreateTag}
+            className="edms-nav-item"
+            style={{ padding: '7px 12px', borderRadius: 7, border: '1px solid var(--border)', background: 'transparent', color: 'var(--fg)', fontSize: 13, cursor: 'pointer' }}
+          >
+            Nueva etiqueta
+          </button>
+          <div style={{ display: 'flex', gap: 8 }}>
+            <button
+              type="button"
+              onClick={onClose}
+              disabled={saving}
+              className="edms-nav-item"
+              style={{ padding: '7px 14px', borderRadius: 7, border: '1px solid var(--border)', background: 'transparent', color: 'var(--fg)', fontSize: 13, cursor: saving ? 'not-allowed' : 'pointer', opacity: saving ? 0.6 : 1 }}
+            >
+              Cancelar
+            </button>
+            <button
+              type="button"
+              onClick={onSave}
+              disabled={saving}
+              className="edms-button-primary"
+              style={{ padding: '7px 14px', borderRadius: 7, border: 0, background: 'var(--accent)', color: 'var(--accent-fg)', fontSize: 13, cursor: saving ? 'not-allowed' : 'pointer', opacity: saving ? 0.65 : 1 }}
+            >
+              {saving ? 'Guardando...' : 'Guardar'}
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 export default function DashboardPage() {
   const { user, logout } = useAuth()
   const [tweaks, setTweaks] = useState(initialTweaks)
@@ -6201,6 +6334,9 @@ export default function DashboardPage() {
   const [tagModalOpen, setTagModalOpen] = useState(false)
   const [editingTag, setEditingTag] = useState<ApiTag | null>(null)
   const [tagForm, setTagForm] = useState({ label: '', color: '#6366f1' })
+  const [tagAssignmentDocIds, setTagAssignmentDocIds] = useState<string[]>([])
+  const [tagAssignmentSelected, setTagAssignmentSelected] = useState<Set<string>>(new Set())
+  const [savingTagAssignment, setSavingTagAssignment] = useState(false)
   const dragCounter = useRef(0)
 
   const currentUserLabel = user
@@ -6279,9 +6415,9 @@ export default function DashboardPage() {
       })
 
     Promise.all([listDocuments(), listTrashedDocuments()])
-      .then(([activeResponse, trashResponse]) => {
+      .then(async ([activeResponse, trashResponse]) => {
+        const docs = await withDocumentTags(activeResponse.data.map(documentResponseToItem))
         if (!mounted) return
-        const docs = activeResponse.data.map(documentResponseToItem)
         setCreatedDocs(docs)
         setTrashedDocs(trashResponse.data.map(documentResponseToItem))
         const ids = docs.map((d) => d.id)
@@ -6334,9 +6470,10 @@ export default function DashboardPage() {
       setSearchLoading(true)
       setSearchError(null)
       listDocuments(documentListParams)
-        .then((response) => {
+        .then(async (response) => {
+          const docs = await withDocumentTags(response.data.map(documentResponseToItem))
           if (!mounted) return
-          setSearchResults(response.data.map(documentResponseToItem))
+          setSearchResults(docs)
         })
         .catch((err) => {
           if (!mounted) return
@@ -6459,6 +6596,110 @@ export default function DashboardPage() {
 
   function clearSelection() {
     setSelected(new Set())
+  }
+
+  function updateDocumentTagsInState(tagsByDocument: Map<string, string[]>) {
+    const applyTags = (doc: DocumentItem) => {
+      const tagIds = tagsByDocument.get(doc.id)
+      return tagIds ? { ...doc, tags: tagIds } : doc
+    }
+
+    setCreatedDocs((current) => current.map(applyTags))
+    setSearchResults((current) => current ? current.map(applyTags) : current)
+  }
+
+  function openTagAssignment(docIds: string[]) {
+    const uniqueDocIds = Array.from(new Set(docIds)).filter(Boolean)
+    const backendDocIds = uniqueDocIds.filter((docId) => createdDocs.some((doc) => doc.id === docId))
+
+    if (backendDocIds.length === 0) {
+      setToast('Solo los documentos reales del sistema pueden recibir etiquetas')
+      return
+    }
+
+    if (backendDocIds.length < uniqueDocIds.length) {
+      setToast('Se ignoraron documentos de ejemplo que no existen en backend')
+    }
+
+    const selectedDocs = backendDocIds
+      .map((docId) => allDocs.find((doc) => doc.id === docId))
+      .filter((doc): doc is DocumentItem => Boolean(doc))
+
+    const commonTagIds = new Set<string>()
+    const [firstDoc, ...restDocs] = selectedDocs
+    firstDoc?.tags.forEach((tagId) => {
+      if (restDocs.every((doc) => doc.tags.includes(tagId))) commonTagIds.add(tagId)
+    })
+
+    setTagAssignmentDocIds(backendDocIds)
+    setTagAssignmentSelected(commonTagIds)
+  }
+
+  function closeTagAssignment() {
+    if (savingTagAssignment) return
+    setTagAssignmentDocIds([])
+    setTagAssignmentSelected(new Set())
+  }
+
+  function toggleTagAssignment(tagId: string) {
+    setTagAssignmentSelected((current) => {
+      const next = new Set(current)
+      if (next.has(tagId)) next.delete(tagId)
+      else next.add(tagId)
+      return next
+    })
+  }
+
+  async function saveTagAssignment() {
+    const targetDocIds = tagAssignmentDocIds.filter((docId) => createdDocs.some((doc) => doc.id === docId))
+    if (targetDocIds.length === 0) {
+      setToast('No hay documentos validos para etiquetar')
+      closeTagAssignment()
+      return
+    }
+
+    const docsById = new Map(allDocs.map((doc) => [doc.id, doc]))
+    const selectedTagIds = Array.from(tagAssignmentSelected)
+    const bulkMode = targetDocIds.length > 1
+    const nextTagsByDocument = new Map<string, string[]>()
+    const operations: Array<Promise<unknown>> = []
+
+    targetDocIds.forEach((docId) => {
+      const currentTags = new Set(docsById.get(docId)?.tags ?? [])
+      const nextTags = bulkMode ? new Set([...currentTags, ...selectedTagIds]) : new Set(selectedTagIds)
+
+      Array.from(nextTags)
+        .filter((tagId) => !currentTags.has(tagId))
+        .forEach((tagId) => operations.push(assignTagToDocument(docId, tagId)))
+
+      if (!bulkMode) {
+        Array.from(currentTags)
+          .filter((tagId) => !nextTags.has(tagId))
+          .forEach((tagId) => operations.push(removeTagFromDocument(docId, tagId)))
+      }
+
+      nextTagsByDocument.set(docId, Array.from(nextTags))
+    })
+
+    setSavingTagAssignment(true)
+    try {
+      await Promise.all(operations)
+      updateDocumentTagsInState(nextTagsByDocument)
+      setDocumentDetails((current) => {
+        const next = { ...current }
+        targetDocIds.forEach((docId) => {
+          delete next[docId]
+        })
+        return next
+      })
+      setTagAssignmentDocIds([])
+      setTagAssignmentSelected(new Set())
+      setToast(targetDocIds.length === 1 ? 'Etiquetas del documento actualizadas' : 'Etiquetas agregadas a los documentos')
+    } catch (err) {
+      setToast(getApiErrorMessage(err, 'No se pudieron actualizar las etiquetas'))
+    } finally {
+      setSavingTagAssignment(false)
+    }
   }
 
   function clearTrashSelection() {
@@ -6867,13 +7108,18 @@ export default function DashboardPage() {
       return
     }
 
+    if (action === 'tag' && docId) {
+      openTagAssignment([docId])
+      return
+    }
+
     const messages: Record<string, string> = {
       download: 'Descarga iniciada',
       share: 'Enlace copiado al portapapeles',
       sign: 'Solicitud de firma enviada',
       trash: 'Movido a papelera',
       move: 'Selecciona destino…',
-      tag: 'Etiquetas actualizadas',
+      tag: 'Selecciona uno o mas documentos para etiquetar',
       star: 'Añadido a favoritos',
       rename: 'Renombrar — modo edición',
       open: 'Abriendo documento…',
@@ -7268,6 +7514,11 @@ export default function DashboardPage() {
           count={selected.size}
           onClear={clearSelection}
           onAction={(action) => {
+            if (action === 'tag') {
+              openTagAssignment(Array.from(selected))
+              clearSelection()
+              return
+            }
             handleAction(action)
             clearSelection()
           }}
@@ -7313,6 +7564,24 @@ export default function DashboardPage() {
       <NotifPopover open={notifOpen} onClose={() => setNotifOpen(false)} />
       <DropZoneOverlay active={dragging} />
 
+      {tagAssignmentDocIds.length > 0 && (
+        <DocumentTagAssignmentModal
+          count={tagAssignmentDocIds.length}
+          tags={tags}
+          selectedTagIds={tagAssignmentSelected}
+          saving={savingTagAssignment}
+          bulkMode={tagAssignmentDocIds.length > 1}
+          onToggleTag={toggleTagAssignment}
+          onClose={closeTagAssignment}
+          onSave={() => { void saveTagAssignment() }}
+          onCreateTag={() => {
+            setEditingTag(null)
+            setTagForm({ label: '', color: '#6366f1' })
+            setTagModalOpen(true)
+          }}
+        />
+      )}
+
       {tagModalOpen && (
         <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000 }}>
           <div style={{ background: 'var(--bg-elev)', borderRadius: 12, padding: 24, width: 320, display: 'flex', flexDirection: 'column', gap: 16 }}>
@@ -7352,6 +7621,9 @@ export default function DashboardPage() {
                   } else {
                     const res = await createTag(tagForm.label.trim(), tagForm.color)
                     setTags((prev) => [...prev, res.data])
+                    if (tagAssignmentDocIds.length > 0) {
+                      setTagAssignmentSelected((current) => new Set(current).add(res.data.id))
+                    }
                   }
                   setTagModalOpen(false)
                 }}
