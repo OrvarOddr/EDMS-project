@@ -10,6 +10,8 @@ from app.schemas import (
     AssignmentCountsResponse,
     BatchStatesRequest,
     BatchStatesResponse,
+    BatchWorkflowSummariesResponse,
+    BatchWorkflowSummary,
     BootstrapDocumentWorkflowRequest,
     BootstrapDocumentWorkflowResponse,
     ChangeDocumentStateRequest,
@@ -175,6 +177,48 @@ def get_batch_document_states(
         .all()
     )
     return BatchStatesResponse(states={doc_id: state for doc_id, state in rows})
+
+
+@router.post("/batch-summaries", response_model=BatchWorkflowSummariesResponse)
+def get_batch_document_summaries(
+    body: BatchStatesRequest,
+    db: Session = Depends(get_db),
+):
+    if not body.document_ids:
+        return BatchWorkflowSummariesResponse(summaries={})
+
+    summaries = {
+        document_id: BatchWorkflowSummary()
+        for document_id in body.document_ids
+    }
+    state_rows = (
+        db.query(DocumentState.document_id, DocumentState.state_code)
+        .filter(
+            DocumentState.document_id.in_(body.document_ids),
+            DocumentState.is_current.is_(True),
+        )
+        .all()
+    )
+    for document_id, state_code in state_rows:
+        summaries.setdefault(document_id, BatchWorkflowSummary()).state_code = state_code
+
+    assignments = (
+        db.query(DocumentAssignment)
+        .filter(
+            DocumentAssignment.document_id.in_(body.document_ids),
+            DocumentAssignment.is_active.is_(True),
+        )
+        .order_by(DocumentAssignment.assigned_at.asc())
+        .all()
+    )
+    for assignment in assignments:
+        summary = summaries.setdefault(assignment.document_id, BatchWorkflowSummary())
+        if assignment.user_id not in summary.assigned_user_ids:
+            summary.assigned_user_ids.append(assignment.user_id)
+        if assignment.role_code == OWNER_ROLE and summary.assignee_user_id is None:
+            summary.assignee_user_id = assignment.user_id
+
+    return BatchWorkflowSummariesResponse(summaries=summaries)
 
 
 @public_router.get("/{document_id}", response_model=DocumentWorkflowDetailResponse)

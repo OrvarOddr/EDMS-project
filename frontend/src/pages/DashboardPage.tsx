@@ -24,6 +24,7 @@ import {
   type DocumentDetailResponse,
   type DocumentDetailTimelineItem,
   type DocumentItemResponse,
+  type ListDocumentsParams,
 } from '../api/documents'
 import {
   assignFileToDocument,
@@ -99,6 +100,10 @@ interface DocumentItem {
   documentTypeId?: string | null
   confidentialityLevel?: string
   metadataActivity?: DocumentActivityItem[]
+  assignee?: string | null
+  assignedUserIds?: string[]
+  createdAt?: string
+  updatedAt?: string
   folder: string
   owner: string
   size: string
@@ -137,9 +142,9 @@ interface ActivityItem {
 }
 
 interface FiltersState {
-  kind: string | null
-  owner: string | null
+  documentType: string | null
   assignee: string | null
+  assigned: string | null
   status: string | null
   date: string | null
 }
@@ -306,12 +311,40 @@ const dashboardData: DashboardData = {
 }
 
 const initialFilters: FiltersState = {
-  kind: null,
-  owner: null,
+  documentType: null,
   assignee: null,
+  assigned: null,
   status: null,
   date: null,
 }
+
+const DOCUMENT_TYPE_FILTER_OPTIONS: [string, string][] = [
+  ['contrato', 'Contrato'],
+  ['informe', 'Informe'],
+  ['acta', 'Acta'],
+  ['politica', 'Política'],
+  ['memorando', 'Memorando'],
+  ['planilla', 'Planilla'],
+  ['factura', 'Factura'],
+  ['presentacion', 'Presentación'],
+]
+
+const STATUS_FILTER_OPTIONS: [DocumentItem['status'], string][] = [
+  ['borrador', 'Borrador'],
+  ['revision', 'En revisión'],
+  ['observado', 'Observado'],
+  ['aprobado', 'Aprobado'],
+  ['pendiente-firma', 'Pendiente de firma'],
+  ['rechazado', 'Rechazado'],
+  ['archivado', 'Archivado'],
+]
+
+const DATE_FILTER_OPTIONS: [string, string][] = [
+  ['hoy', 'Hoy'],
+  ['semana', 'Últimos 7 días'],
+  ['mes', 'Último mes'],
+  ['ano', 'Este año'],
+]
 
 const initialTweaks = {
   theme: 'dark',
@@ -418,7 +451,41 @@ function statusFromWorkflow(stateCode?: string | null): DocumentItem['status'] {
   return 'borrador'
 }
 
+function statusToWorkflow(statusValue?: string | null) {
+  if (statusValue === 'revision') return 'en_revision'
+  if (statusValue === 'pendiente-firma') return 'pendiente_firma'
+  return statusValue ?? undefined
+}
+
+function documentMatchesDateFilter(doc: DocumentItem, value: string | null) {
+  if (!value) return true
+  const rawDate = doc.updatedAt ?? doc.createdAt
+  if (!rawDate) return true
+  const date = new Date(rawDate)
+  if (Number.isNaN(date.getTime())) return true
+
+  const now = new Date()
+  let threshold: Date
+  if (value === 'hoy') {
+    threshold = new Date(now)
+    threshold.setHours(0, 0, 0, 0)
+  } else if (value === 'semana') {
+    threshold = new Date(now)
+    threshold.setDate(now.getDate() - 7)
+  } else if (value === 'mes') {
+    threshold = new Date(now)
+    threshold.setDate(now.getDate() - 30)
+  } else if (value === 'ano') {
+    threshold = new Date(now.getFullYear(), 0, 1)
+  } else {
+    return true
+  }
+
+  return date >= threshold
+}
+
 function documentResponseToItem(document: DocumentItemResponse): DocumentItem {
+  const assignedUserIds = document.assigned_user_ids ?? []
   return {
     id: document.id,
     code: document.code,
@@ -430,13 +497,17 @@ function documentResponseToItem(document: DocumentItemResponse): DocumentItem {
     documentTypeId: document.document_type_id ?? null,
     confidentialityLevel: document.confidentiality_level,
     metadataActivity: document.metadata_activity ?? [],
+    assignee: document.assignee_user_id ?? document.owner_user_id,
+    assignedUserIds,
+    createdAt: document.created_at,
+    updatedAt: document.updated_at,
     folder: document.expedient_id || 'root',
     owner: document.owner_user_id,
     size: 'Sin archivo',
-    modified: formatDocumentDate(document.archived_at ?? document.created_at),
+    modified: formatDocumentDate(document.archived_at ?? document.updated_at ?? document.created_at),
     version: 0,
     tags: [],
-    shared: [],
+    shared: assignedUserIds.filter((userId) => userId !== document.owner_user_id),
     status: statusFromWorkflow(document.workflow_state_code),
   }
 }
@@ -2010,11 +2081,11 @@ function FiltersRow({
   const [openKey, setOpenKey] = useState<string | null>(null)
 
   const pills: FilterPill[] = [
-    { key: 'kind', label: 'Tipo documental', options: [['pdf', 'PDF'], ['doc', 'Documento'], ['sheet', 'Hoja'], ['slide', 'Slide'], ['image', 'Imagen']] },
-    { key: 'owner', label: 'Encargado', options: userOptions },
-    { key: 'assignee', label: 'Asignado', options: userOptions },
-    { key: 'status', label: 'Estado', options: [['borrador', 'Borrador'], ['revision', 'En revisión'], ['observado', 'Observado'], ['aprobado', 'Aprobado'], ['pendiente-firma', 'Pendiente de firma'], ['rechazado', 'Rechazado'], ['archivado', 'Archivado']] },
-    { key: 'date', label: 'Fecha', options: [['hoy', 'Hoy'], ['semana', 'Últimos 7 días'], ['mes', 'Último mes'], ['ano', 'Este año']] },
+    { key: 'documentType', label: 'Tipo documental', options: DOCUMENT_TYPE_FILTER_OPTIONS },
+    { key: 'status', label: 'Estado', options: STATUS_FILTER_OPTIONS },
+    { key: 'assignee', label: 'Encargado', options: userOptions },
+    { key: 'assigned', label: 'Asignado', options: userOptions },
+    { key: 'date', label: 'Fecha', options: DATE_FILTER_OPTIONS },
   ] as const
 
   const active = Object.entries(filters).filter(([, value]) => value)
@@ -6141,9 +6212,19 @@ export default function DashboardPage() {
   const allDocs = useMemo(() => [...createdDocs, ...dashboardData.docs], [createdDocs])
   const searchQuery = search.trim()
   const searchActive = searchQuery.length > 0
+  const filtersActive = useMemo(() => Object.values(filters).some(Boolean), [filters])
+  const serverListActive = searchActive || filtersActive
+  const documentListParams = useMemo<ListDocumentsParams>(() => ({
+    q: searchQuery,
+    document_type_id: filters.documentType ?? undefined,
+    state_code: statusToWorkflow(filters.status),
+    assignee_user_id: filters.assignee ?? undefined,
+    assigned_user_id: filters.assigned ?? undefined,
+    date: filters.date ?? undefined,
+  }), [filters.assignee, filters.assigned, filters.date, filters.documentType, filters.status, searchQuery])
   const searchDocs = useMemo(
-    () => (searchActive ? (searchResults ?? []) : allDocs),
-    [allDocs, searchActive, searchResults],
+    () => (serverListActive ? (searchResults ?? []) : allDocs),
+    [allDocs, searchResults, serverListActive],
   )
   const editingMetadataDoc = useMemo(
     () => createdDocs.find((doc) => doc.id === editingMetadataDocId) ?? null,
@@ -6235,8 +6316,7 @@ export default function DashboardPage() {
   }, [])
 
   useEffect(() => {
-    const query = search.trim()
-    if (!query) {
+    if (!serverListActive) {
       let mounted = true
       queueMicrotask(() => {
         if (!mounted) return
@@ -6253,7 +6333,7 @@ export default function DashboardPage() {
     const handle = window.setTimeout(() => {
       setSearchLoading(true)
       setSearchError(null)
-      listDocuments(query)
+      listDocuments(documentListParams)
         .then((response) => {
           if (!mounted) return
           setSearchResults(response.data.map(documentResponseToItem))
@@ -6272,7 +6352,7 @@ export default function DashboardPage() {
       mounted = false
       window.clearTimeout(handle)
     }
-  }, [search])
+  }, [documentListParams, serverListActive])
 
   useEffect(() => {
     const backendDoc = openDocId ? createdDocs.some((doc) => doc.id === openDocId) : false
@@ -6306,9 +6386,9 @@ export default function DashboardPage() {
   }, [createdDocs, documentDetails, openDocId])
 
   const visibleDocs = useMemo(() => {
-    let list = searchActive ? searchDocs : allDocs
+    let list = serverListActive ? searchDocs : allDocs
 
-    if (!searchActive) {
+    if (!serverListActive) {
       if (selectedView === 'favoritos') list = list.filter((doc) => doc.starred)
       else if (selectedView === 'compartidos') list = list.filter((doc) => doc.shared.length > 0 && doc.owner !== 'u1')
       else if (selectedView === 'aprobaciones') list = list.filter((doc) => doc.status === 'pendiente-firma' || doc.status === 'revision')
@@ -6319,14 +6399,20 @@ export default function DashboardPage() {
     }
 
     if (selectedTag) list = list.filter((doc) => doc.tags.includes(selectedTag))
-    if (filters.kind) list = list.filter((doc) => doc.kind === filters.kind)
-    if (filters.owner) list = list.filter((doc) => doc.owner === filters.owner)
-    const assigneeFilter = filters.assignee
-    if (assigneeFilter) list = list.filter((doc) => doc.owner === assigneeFilter || doc.shared.includes(assigneeFilter))
+    if (filters.documentType) list = list.filter((doc) => doc.documentTypeId === filters.documentType)
     if (filters.status) list = list.filter((doc) => doc.status === filters.status)
+    if (filters.assignee) list = list.filter((doc) => (doc.assignee ?? doc.owner) === filters.assignee)
+    if (filters.assigned) {
+      list = list.filter((doc) => (
+        doc.owner === filters.assigned ||
+        doc.shared.includes(filters.assigned as string) ||
+        Boolean(doc.assignedUserIds?.includes(filters.assigned as string))
+      ))
+    }
+    if (filters.date) list = list.filter((doc) => documentMatchesDateFilter(doc, filters.date))
 
     return list
-  }, [allDocs, searchActive, searchDocs, selectedView, selectedFolder, selectedTag, filters])
+  }, [allDocs, serverListActive, searchDocs, selectedView, selectedFolder, selectedTag, filters])
 
   const breadcrumb = useMemo(() => {
     if (selectedView === 'inicio') return [{ id: 'inicio', label: 'Inicio' }]
@@ -6348,13 +6434,13 @@ export default function DashboardPage() {
   const showDashboard =
     selectedView === 'inicio' &&
     search.trim() === '' &&
-    !filters.kind &&
-    !filters.owner &&
-    !filters.assignee &&
-    !filters.status &&
-    !filters.date &&
+    !filtersActive &&
     !selectedTag
   const showKanban = selectedView === 'kanban'
+  const kanbanDocs = useMemo(
+    () => visibleDocs.filter((doc) => createdDocs.some((createdDoc) => createdDoc.id === doc.id)),
+    [createdDocs, visibleDocs],
+  )
 
   function toggleSelect(id: string) {
     const next = new Set(selected)
@@ -6954,7 +7040,7 @@ export default function DashboardPage() {
               {showDashboard
                 ? 'Tienes 3 documentos que requieren tu firma hoy.'
                 : showKanban
-                  ? `${createdDocs.length} documento${createdDocs.length !== 1 ? 's' : ''} en el pipeline · arrastra para cambiar estado`
+                  ? `${kanbanDocs.length} documento${kanbanDocs.length !== 1 ? 's' : ''} en el pipeline · arrastra para cambiar estado`
                 : selectedView === 'archivos-sin-asignar'
                   ? `${unassignedFiles.length} archivo${unassignedFiles.length === 1 ? '' : 's'} pendiente${unassignedFiles.length === 1 ? '' : 's'} por convertir en documento`
                   : selectedView === 'papelera'
@@ -6963,6 +7049,8 @@ export default function DashboardPage() {
                     ? searchLoading || searchResults === null
                       ? `Buscando “${searchQuery}”…`
                       : `${visibleDocs.length} resultado${visibleDocs.length === 1 ? '' : 's'} para “${searchQuery}”`
+                  : filtersActive
+                    ? `${visibleDocs.length} documento${visibleDocs.length === 1 ? '' : 's'} con filtros activos`
                   : `${visibleDocs.length} documentos${selectedTag ? ` · etiqueta "${findTag(tags, selectedTag)?.label}"` : ''}`}
             </div>
           </div>
@@ -7006,21 +7094,29 @@ export default function DashboardPage() {
         </div>
 
         {showKanban ? (
-          <KanbanView
-            docs={createdDocs.map((doc) => ({
-              id: doc.id,
-              name: doc.name,
-              kind: doc.kind,
-              status: doc.status,
-              owner: doc.owner,
-              version: doc.version,
-              tags: doc.tags,
-              assignedCount: assignmentCounts[doc.id] ?? 0,
-            }))}
-            tags={tags}
-            onOpen={openDoc}
-            onStateChange={handleKanbanStateChange}
-          />
+          <>
+            <FiltersRow
+              filters={filters}
+              userOptions={filterUserOptions}
+              onFilters={setFilters}
+              onClear={() => setFilters(initialFilters)}
+            />
+            <KanbanView
+              docs={kanbanDocs.map((doc) => ({
+                id: doc.id,
+                name: doc.name,
+                kind: doc.kind,
+                status: doc.status,
+                owner: doc.owner,
+                version: doc.version,
+                tags: doc.tags,
+                assignedCount: assignmentCounts[doc.id] ?? 0,
+              }))}
+              tags={tags}
+              onOpen={openDoc}
+              onStateChange={handleKanbanStateChange}
+            />
+          </>
         ) : showDashboard ? (
           <div style={{ flex: 1, overflow: 'auto' }}>
             <OverviewCards storage={storage} />
@@ -7143,9 +7239,9 @@ export default function DashboardPage() {
                 onOpenDoc={openDoc}
                 onContextMenu={openContextMenu}
                 tags={tags}
-                emptyTitle={searchActive ? `Sin resultados para “${searchQuery}”` : undefined}
+                emptyTitle={serverListActive ? (searchActive ? `Sin resultados para “${searchQuery}”` : 'Sin documentos para esos filtros') : undefined}
                 emptySubtitle={
-                  searchActive
+                  serverListActive
                     ? (searchLoading || searchResults === null ? 'Buscando documentos autorizados…' : searchError ?? 'Prueba con otro título o código interno.')
                     : undefined
                 }
@@ -7157,9 +7253,9 @@ export default function DashboardPage() {
                 onToggleSelect={toggleSelect}
                 onOpenDoc={openDoc}
                 onContextMenu={openContextMenu}
-                emptyTitle={searchActive ? `Sin resultados para “${searchQuery}”` : undefined}
+                emptyTitle={serverListActive ? (searchActive ? `Sin resultados para “${searchQuery}”` : 'Sin documentos para esos filtros') : undefined}
                 emptySubtitle={
-                  searchActive
+                  serverListActive
                     ? (searchLoading || searchResults === null ? 'Buscando documentos autorizados…' : searchError ?? 'Prueba con otro título o código interno.')
                     : undefined
                 }
