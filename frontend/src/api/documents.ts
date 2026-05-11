@@ -16,6 +16,7 @@ export interface DocumentItemResponse {
   metadata_activity?: DocumentActivityItem[]
   workflow_state_code?: string | null
   assignee_user_id?: string | null
+  assigned_user_ids?: string[]
   current_file_mime_type?: string | null
 }
 
@@ -99,13 +100,30 @@ export interface UpdateDocumentMetadataPayload {
   confidentiality_level: string
 }
 
+export interface ListDocumentsParams {
+  q?: string
+  document_type_id?: string
+  state_code?: string
+  assignee_user_id?: string
+  assigned_user_id?: string
+  date?: string
+}
+
 export const createDocument = (payload: CreateDocumentPayload) =>
   client.post<DocumentItemResponse>('/documents', payload)
 
-export const listDocuments = (query?: string) =>
-  client.get<DocumentItemResponse[]>('/documents', {
-    params: query?.trim() ? { q: query.trim() } : undefined,
+export const listDocuments = (params?: string | ListDocumentsParams) => {
+  const requestParams = typeof params === 'string' ? { q: params } : (params ?? {})
+  const cleanedParams = Object.fromEntries(
+    Object.entries(requestParams)
+      .map(([key, value]) => [key, typeof value === 'string' ? value.trim() : value])
+      .filter(([, value]) => Boolean(value)),
+  )
+
+  return client.get<DocumentItemResponse[]>('/documents', {
+    params: Object.keys(cleanedParams).length > 0 ? cleanedParams : undefined,
   })
+}
 
 export const getDocumentDetail = (documentId: string) =>
   client.get<DocumentDetailResponse>(`/documents/${documentId}`)
