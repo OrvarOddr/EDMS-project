@@ -6540,11 +6540,7 @@ export default function DashboardPage() {
     if (filters.status) list = list.filter((doc) => doc.status === filters.status)
     if (filters.assignee) list = list.filter((doc) => (doc.assignee ?? doc.owner) === filters.assignee)
     if (filters.assigned) {
-      list = list.filter((doc) => (
-        doc.owner === filters.assigned ||
-        doc.shared.includes(filters.assigned as string) ||
-        Boolean(doc.assignedUserIds?.includes(filters.assigned as string))
-      ))
+      list = list.filter((doc) => Boolean(doc.assignedUserIds?.includes(filters.assigned as string)))
     }
     if (filters.date) list = list.filter((doc) => documentMatchesDateFilter(doc, filters.date))
 

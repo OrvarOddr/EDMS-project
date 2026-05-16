@@ -56,6 +56,23 @@ jobs:
         run: npm run lint
         working-directory: frontend
 
+  test-document-service:
+    name: Test document-service
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Instalar dependencias
+        run: pip install -r requirements.txt pytest
+        working-directory: services/document-service
+      - name: Tests
+        run: PYTHONPATH=. pytest -q
+        env:
+          DATABASE_URL: sqlite+pysqlite:///:memory:
+        working-directory: services/document-service
+
   build-frontend:
     name: Build frontend
     runs-on: ubuntu-latest

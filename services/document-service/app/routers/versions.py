@@ -84,10 +84,25 @@ def _can_upload_version(document: Document, user_id: str) -> bool:
     return user_id in {document.owner_user_id, document.created_by_user_id}
 
 
-def _has_document_permission(document: Document, user_id: str, permission: str) -> bool:
-    if permission == "comment":
-        return document.archived_at is None and _can_upload_version(document, user_id)
-    if permission in {"view", "download", "edit_metadata", "upload_version", "move_state"}:
+def _workflow_assigned_user_ids(workflow: dict | None) -> list[str]:
+    if not workflow:
+        return []
+    assigned = workflow.get("assigned_user_ids")
+    return [str(user_id) for user_id in assigned] if isinstance(assigned, list) else []
+
+
+def _can_view_document(document: Document, user_id: str, workflow: dict | None = None) -> bool:
+    if _can_upload_version(document, user_id):
+        return True
+    if workflow and workflow.get("assignee_user_id") == user_id:
+        return True
+    return user_id in _workflow_assigned_user_ids(workflow)
+
+
+def _has_document_permission(document: Document, user_id: str, permission: str, workflow: dict | None = None) -> bool:
+    if permission in {"view", "download", "comment"}:
+        return document.archived_at is None and _can_view_document(document, user_id, workflow)
+    if permission in {"edit_metadata", "upload_version", "move_state", "move_to_trash", "restore", "delete"}:
         return _can_upload_version(document, user_id)
     raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Permiso documental no soportado")
 
@@ -96,7 +111,10 @@ def _document_for_actor(db: Session, document_id: str, user_id: str, permission:
     document = db.query(Document).filter(Document.id == document_id).first()
     if not document:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Documento no encontrado")
-    if not _has_document_permission(document, user_id, permission):
+    workflow = None
+    if permission in {"view", "download", "comment"}:
+        workflow = _fetch_batch_workflow_summaries([document.id]).get(document.id, {})
+    if not _has_document_permission(document, user_id, permission, workflow):
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="No puedes operar sobre este documento")
     return document
 
@@ -333,6 +351,43 @@ def _modified_after_filter(value: str | None) -> datetime | None:
     raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="Filtro de fecha invalido")
 
 
+def _matches_workflow_filters(
+    workflow: dict | None,
+    state_filter: str | None = None,
+    assignee_filter: str | None = None,
+    assigned_filter: str | None = None,
+) -> bool:
+    if not any([state_filter, assignee_filter, assigned_filter]):
+        return True
+    workflow = workflow or {}
+    if state_filter and workflow.get("state_code") != state_filter:
+        return False
+    if assignee_filter and workflow.get("assignee_user_id") != assignee_filter:
+        return False
+    if assigned_filter and assigned_filter not in _workflow_assigned_user_ids(workflow):
+        return False
+    return True
+
+
+def _filter_visible_documents(
+    documents: list[Document],
+    workflow_map: dict[str, dict],
+    actor_user_id: str,
+    state_filter: str | None = None,
+    assignee_filter: str | None = None,
+    assigned_filter: str | None = None,
+) -> list[Document]:
+    visible_documents: list[Document] = []
+    for document in documents:
+        workflow = workflow_map.get(document.id, {})
+        if not _can_view_document(document, actor_user_id, workflow):
+            continue
+        if not _matches_workflow_filters(workflow, state_filter, assignee_filter, assigned_filter):
+            continue
+        visible_documents.append(document)
+    return visible_documents
+
+
 @router.get("", response_model=list[DocumentResponse])
 def list_documents(
     q: str | None = Query(default=None, max_length=100),
@@ -353,10 +408,7 @@ def list_documents(
 
     query = (
         db.query(Document)
-        .filter(
-            Document.archived_at.is_(None),
-            (Document.owner_user_id == actor_user_id) | (Document.created_by_user_id == actor_user_id),
-        )
+        .filter(Document.archived_at.is_(None))
     )
     search = q.strip() if q else ""
     if search:
@@ -374,22 +426,16 @@ def list_documents(
 
     documents = query.order_by(Document.created_at.desc()).all()
     ids = [d.id for d in documents]
-    workflow_filters_active = any([state_filter, assignee_filter, assigned_filter])
     summary_map = _fetch_batch_workflow_summaries(ids)
-    if workflow_filters_active:
-        filtered_documents: list[Document] = []
-        for document in documents:
-            summary = summary_map.get(document.id, {})
-            assigned_user_ids = summary.get("assigned_user_ids") if isinstance(summary.get("assigned_user_ids"), list) else []
-            if state_filter and summary.get("state_code") != state_filter:
-                continue
-            if assignee_filter and summary.get("assignee_user_id") != assignee_filter:
-                continue
-            if assigned_filter and assigned_filter not in assigned_user_ids:
-                continue
-            filtered_documents.append(document)
-        documents = filtered_documents
-        ids = [d.id for d in documents]
+    documents = _filter_visible_documents(
+        documents,
+        summary_map,
+        actor_user_id,
+        state_filter=state_filter,
+        assignee_filter=assignee_filter,
+        assigned_filter=assigned_filter,
+    )
+    ids = [d.id for d in documents]
 
     mime_map = _current_mime_map(db, ids)
     return [
@@ -500,7 +546,7 @@ def update_document_metadata(
     db: Session = Depends(get_db),
 ):
     actor_user_id = _require_user(x_user_id)
-    document = _document_for_actor(db, document_id.strip(), actor_user_id)
+    document = _document_for_actor(db, document_id.strip(), actor_user_id, permission="edit_metadata")
     if document.archived_at is not None:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="No puedes editar un documento en papelera")
 
@@ -543,7 +589,7 @@ def move_document_to_trash(
     db: Session = Depends(get_db),
 ):
     actor_user_id = _require_user(x_user_id)
-    document = _document_for_actor(db, document_id.strip(), actor_user_id)
+    document = _document_for_actor(db, document_id.strip(), actor_user_id, permission="move_to_trash")
     if document.archived_at is None:
         document.archived_at = datetime.now(timezone.utc)
         db.commit()
@@ -558,7 +604,7 @@ def restore_document_from_trash(
     db: Session = Depends(get_db),
 ):
     actor_user_id = _require_user(x_user_id)
-    document = _document_for_actor(db, document_id.strip(), actor_user_id)
+    document = _document_for_actor(db, document_id.strip(), actor_user_id, permission="restore")
     if document.archived_at is not None:
         document.archived_at = None
         db.commit()
@@ -573,7 +619,7 @@ def delete_trashed_document(
     db: Session = Depends(get_db),
 ):
     actor_user_id = _require_user(x_user_id)
-    document = _document_for_actor(db, document_id.strip(), actor_user_id)
+    document = _document_for_actor(db, document_id.strip(), actor_user_id, permission="delete")
     if document.archived_at is None:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Envia el documento a papelera antes de eliminarlo")
 
