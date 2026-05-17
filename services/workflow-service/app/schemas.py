@@ -68,6 +68,18 @@ class ChangeDocumentStateResponse(BaseModel):
     changed_at: str
 
 
+class AssignDocumentAssigneeRequest(BaseModel):
+    user_id: str
+
+
+class AssignDocumentAssigneeResponse(BaseModel):
+    document_id: str
+    previous_assignee_user_id: str | None
+    assignee_user_id: str
+    assigned_by_user_id: str
+    assigned_at: str
+
+
 class WorkflowHistoryItem(BaseModel):
     id: str
     actor_user_id: str

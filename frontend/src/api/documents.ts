@@ -73,6 +73,7 @@ export interface DocumentDetailPermissions {
   can_move_to_trash: boolean
   can_download_file: boolean
   can_comment: boolean
+  can_assign_assignee: boolean
 }
 
 export interface DocumentDetailResponse {

@@ -9,6 +9,8 @@ export interface KanbanDocItem {
   version: number
   tags: string[]
   assignedCount?: number
+  assigneeLabel?: string
+  assigneeInitials?: string
 }
 
 export interface KanbanTagItem {
@@ -133,17 +135,25 @@ function KanbanCard({ doc, tags, isDragging, onOpen, onDragStart, onDragEnd }: K
 
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-          <span style={{
-            width: 20, height: 20, borderRadius: 10,
-            background: 'var(--bg-active)',
-            display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
-            color: 'var(--fg-muted)', fontSize: 8, fontWeight: 700,
-            border: '1.5px solid var(--bg-elev)',
-            flexShrink: 0,
-          }}>{ownerInitials(doc.owner)}</span>
+          <span
+            title={doc.assigneeLabel ? `Encargado: ${doc.assigneeLabel}` : undefined}
+            style={{
+              width: 20, height: 20, borderRadius: 10,
+              background: 'var(--bg-active)',
+              display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+              color: 'var(--fg-muted)', fontSize: 8, fontWeight: 700,
+              border: '1.5px solid var(--bg-elev)',
+              flexShrink: 0,
+            }}
+          >{doc.assigneeInitials ?? ownerInitials(doc.owner)}</span>
+          {doc.assigneeLabel && (
+            <span style={{ fontSize: 10.5, color: 'var(--fg-dim)', maxWidth: 90, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+              {doc.assigneeLabel}
+            </span>
+          )}
           {doc.assignedCount !== undefined && doc.assignedCount > 0 && (
             <span style={{ fontSize: 10.5, color: 'var(--fg-dim)' }}>
-              +{doc.assignedCount} asignado{doc.assignedCount !== 1 ? 's' : ''}
+              +{doc.assignedCount}
             </span>
           )}
         </div>

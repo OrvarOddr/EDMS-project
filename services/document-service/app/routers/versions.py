@@ -102,8 +102,17 @@ def _can_view_document(document: Document, user_id: str, workflow: dict | None =
 def _has_document_permission(document: Document, user_id: str, permission: str, workflow: dict | None = None) -> bool:
     if permission in {"view", "download", "comment"}:
         return document.archived_at is None and _can_view_document(document, user_id, workflow)
-    if permission in {"edit_metadata", "upload_version", "move_state", "move_to_trash", "restore", "delete"}:
+    if permission in {
+        "edit_metadata",
+        "upload_version",
+        "move_state",
+        "move_to_trash",
+        "restore",
+        "delete",
+    }:
         return _can_upload_version(document, user_id)
+    if permission == "assign_assignee":
+        return document.archived_at is None and _can_upload_version(document, user_id)
     raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Permiso documental no soportado")
 
 
@@ -182,6 +191,18 @@ def _fetch_workflow_detail(document_id: str, actor_user_id: str) -> dict | None:
         return response.json()
     except httpx.HTTPError:
         return None
+
+
+def _fetch_workflow_history(document_id: str) -> list[dict]:
+    try:
+        with httpx.Client(timeout=5.0) as client:
+            response = client.get(f"{settings.WORKFLOW_SERVICE_URL}/internal/workflow/documents/{document_id}/history")
+        if response.status_code >= 400:
+            return []
+        history = response.json()
+        return history if isinstance(history, list) else []
+    except httpx.HTTPError:
+        return []
 
 
 def _fetch_batch_workflow_states(document_ids: list[str]) -> dict[str, str]:
@@ -514,8 +535,10 @@ def get_document_detail(
     collaboration = _fetch_collaboration_timeline(document.id, actor_user_id)
     comments = collaboration.get("comments") if isinstance(collaboration.get("comments"), list) else []
     collaboration_history = collaboration.get("history") if isinstance(collaboration.get("history"), list) else []
+    workflow_history = _fetch_workflow_history(document.id)
     history_items = [
         *[DocumentDetailTimelineItemResponse(**item) for item in collaboration_history if isinstance(item, dict)],
+        *[DocumentDetailTimelineItemResponse(**item) for item in workflow_history if isinstance(item, dict)],
         *_metadata_history(document),
         *_version_history(versions),
     ]
@@ -534,6 +557,7 @@ def get_document_detail(
             can_move_to_trash=can_operate,
             can_download_file=document.archived_at is None,
             can_comment=document.archived_at is None,
+            can_assign_assignee=can_operate,
         ),
     )
 

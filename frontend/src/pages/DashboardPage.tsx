@@ -1,4 +1,5 @@
 import {
+  useCallback,
   useEffect,
   useMemo,
   useRef,
@@ -52,7 +53,13 @@ import {
   removeTagFromDocument,
   type Tag as ApiTag,
 } from '../api/tags'
-import { changeDocumentState, getAssignmentCounts } from '../api/workflow'
+import { assignDocumentAssignee, changeDocumentState, getAssignmentCounts } from '../api/workflow'
+import {
+  getNotifications,
+  markAllNotificationsRead,
+  markNotificationRead,
+  type NotificationItem,
+} from '../api/notifications'
 
 type ViewMode = 'list' | 'grid'
 type DocKind = 'pdf' | 'doc' | 'sheet' | 'slide' | 'image' | 'sig'
@@ -2798,6 +2805,8 @@ function DetailDrawer({
   error,
   currentUserId,
   currentUserLabel,
+  assigneeOptions,
+  onAssignAssignee,
   onCommentPosted,
 }: {
   doc: DocumentItem | null
@@ -2809,6 +2818,8 @@ function DetailDrawer({
   error: string | null
   currentUserId?: string | null
   currentUserLabel: string
+  assigneeOptions: [string, string][]
+  onAssignAssignee?: (docId: string, userId: string) => Promise<void>
   onCommentPosted?: (item: DocumentDetailTimelineItem) => void
 }) {
   const [preview, setPreview] = useState<{
@@ -2820,6 +2831,10 @@ function DetailDrawer({
   const [commentText, setCommentText] = useState('')
   const [commentSending, setCommentSending] = useState(false)
   const [showFullTimeline, setShowFullTimeline] = useState(false)
+  const [editingAssignee, setEditingAssignee] = useState(false)
+  const [assigneeDraft, setAssigneeDraft] = useState('')
+  const [assigneeSaving, setAssigneeSaving] = useState(false)
+  const [assigneeError, setAssigneeError] = useState<string | null>(null)
   const currentFile = detail?.files.find((file) => file.is_current) ?? detail?.files[0] ?? null
 
   useEffect(() => {
@@ -2866,6 +2881,7 @@ function DetailDrawer({
   const workflow = detail?.workflow
   const permissions = detail?.permissions
   const canEditMetadata = permissions?.can_edit_metadata ?? true
+  const canAssignAssignee = permissions?.can_assign_assignee ?? canEditMetadata
   const canDownloadFile = Boolean(currentFile) && (permissions?.can_download_file ?? true)
   const assignments = workflow?.assignments ?? []
   const assigneeId = workflow?.assignee_user_id ?? doc.owner
@@ -2918,12 +2934,16 @@ function DetailDrawer({
       }
       return `Estado cambiado a: ${stateLabels[item.body] ?? item.body}`
     }
+    if (item.action === 'assignee_changed' && item.body) {
+      return `Encargado asignado: ${userLabel(item.body)}`
+    }
     if (item.body) return item.body
     const labels: Record<string, string> = {
       metadata_updated: 'Metadata actualizada',
       version_uploaded: 'Nueva version registrada',
       comment: 'Comentario agregado',
       state_change: 'Estado cambiado',
+      assignee_changed: 'Encargado actualizado',
     }
     return labels[item.action] ?? item.action
   }
@@ -2966,6 +2986,92 @@ function DetailDrawer({
       setDownloadingFileId(null)
     }
   }
+
+  async function handleSaveAssignee() {
+    if (!doc || !onAssignAssignee) return
+    const nextAssignee = assigneeDraft.trim()
+    if (!nextAssignee || nextAssignee === assigneeId) {
+      setEditingAssignee(false)
+      setAssigneeError(null)
+      return
+    }
+
+    setAssigneeSaving(true)
+    setAssigneeError(null)
+    try {
+      await onAssignAssignee(doc.id, nextAssignee)
+      setEditingAssignee(false)
+    } catch (err) {
+      setAssigneeError(getApiErrorMessage(err, 'No se pudo asignar encargado'))
+    } finally {
+      setAssigneeSaving(false)
+    }
+  }
+
+  const assigneeField = editingAssignee ? (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+      <select
+        value={assigneeDraft}
+        onChange={(event) => setAssigneeDraft(event.target.value)}
+        disabled={assigneeSaving}
+        style={{
+          width: '100%',
+          minWidth: 0,
+          borderRadius: 6,
+          border: '1px solid var(--border)',
+          background: 'var(--bg-elev-2)',
+          color: 'var(--fg)',
+          padding: '6px 8px',
+          fontSize: 12,
+          outline: 'none',
+        }}
+      >
+        <option value="">Selecciona encargado</option>
+        {assigneeOptions.map(([value, label]) => (
+          <option key={value} value={value}>{label}</option>
+        ))}
+      </select>
+      <div style={{ display: 'flex', gap: 6 }}>
+        <button
+          className="edms-button edms-button-primary"
+          onClick={handleSaveAssignee}
+          disabled={assigneeSaving || !assigneeDraft}
+          style={{ ...btnStylePrimary, padding: '5px 8px', fontSize: 11.5 }}
+        >
+          {assigneeSaving ? 'Guardando' : 'Guardar'}
+        </button>
+        <button
+          className="edms-button"
+          onClick={() => {
+            setEditingAssignee(false)
+            setAssigneeError(null)
+          }}
+          disabled={assigneeSaving}
+          style={{ ...btnStyleGhost, padding: '5px 8px', fontSize: 11.5 }}
+        >
+          Cancelar
+        </button>
+      </div>
+      {assigneeError && <span style={{ color: 'var(--danger)', fontSize: 11 }}>{assigneeError}</span>}
+    </div>
+  ) : (
+    <span style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
+      <span>{userLabel(assigneeId)}</span>
+      {canAssignAssignee && onAssignAssignee && assigneeOptions.length > 0 && (
+        <button
+          className="edms-button"
+          onClick={() => {
+            setAssigneeDraft(assigneeId ?? '')
+            setAssigneeError(null)
+            setEditingAssignee(true)
+          }}
+          style={{ ...btnStyleGhost, padding: '4px 7px', fontSize: 11 }}
+        >
+          Cambiar
+        </button>
+      )}
+    </span>
+  )
 
   return (
     <aside
@@ -3115,7 +3221,7 @@ function DetailDrawer({
           <div style={{ display: 'flex', flexDirection: 'column', gap: 0 }}>
             {[
               ['Autor', <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}><OwnerAvatar userId={doc.owner} size={18} /><span>{owner?.name ?? userLabel(doc.owner)}</span></div>],
-              ['Encargado', userLabel(assigneeId)],
+              ['Encargado', assigneeField],
               ['Estado workflow', workflowStateLabel(workflow?.state_code ?? detail?.document.workflow_state_code)],
               ['Carpeta', <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5 }}><Icon.Folder size={12} style={{ color: 'var(--fg-dim)' }} />{doc.folder}</span>],
               ['Tipo documental', doc.documentTypeId ?? kind.label],
@@ -3641,15 +3747,36 @@ function ContextMenu({
   )
 }
 
-function NotifPopover({ open, onClose }: { open: boolean; onClose: () => void }) {
+function notifTimeAgo(iso: string): string {
+  const then = new Date(iso).getTime()
+  if (Number.isNaN(then)) return ''
+  const diff = Math.max(0, Date.now() - then)
+  const min = Math.floor(diff / 60000)
+  if (min < 1) return 'ahora'
+  if (min < 60) return `${min} min`
+  const hrs = Math.floor(min / 60)
+  if (hrs < 24) return `${hrs} h`
+  const days = Math.floor(hrs / 24)
+  if (days === 1) return 'ayer'
+  return `${days} d`
+}
+
+function NotifPopover({
+  open,
+  onClose,
+  items,
+  onMarkRead,
+  onMarkAllRead,
+}: {
+  open: boolean
+  onClose: () => void
+  items: NotificationItem[]
+  onMarkRead: (id: string) => void
+  onMarkAllRead: () => void
+}) {
   if (!open) return null
 
-  const items = [
-    { icon: <Icon.Signature size={13} style={{ color: 'var(--warn)' }} />, title: 'Firma pendiente — Contrato Acme', desc: 'Vence hoy a las 18:00', at: '8 min' },
-    { icon: <Icon.Users size={13} style={{ color: 'var(--accent)' }} />, title: 'Bafora Consulting te compartió un documento', desc: 'Contrato SaaS — Bafora Consulting', at: '2 h' },
-    { icon: <Icon.Check size={13} style={{ color: 'var(--ok)' }} />, title: 'Política de datos aprobada', desc: 'Laura I. aprobó la versión final', at: 'ayer' },
-    { icon: <Icon.Branch size={13} style={{ color: 'var(--fg-muted)' }} />, title: 'Nueva versión en PRD búsqueda', desc: 'Pablo Q. subió v4', at: 'ayer' },
-  ]
+  const hasUnread = items.some((item) => !item.is_read)
 
   return (
     <>
@@ -3670,30 +3797,47 @@ function NotifPopover({ open, onClose }: { open: boolean; onClose: () => void })
       >
         <div style={{ padding: '10px 14px', borderBottom: '1px solid var(--border)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
           <span style={{ fontSize: 13, fontWeight: 600 }}>Notificaciones</span>
-          <button style={{ fontSize: 11, color: 'var(--fg-muted)' }}>Marcar todo leído</button>
-        </div>
-        {items.map((item) => (
-          <div
-            key={item.title}
-            className="edms-nav-item"
-            style={{
-              padding: '10px 14px',
-              borderBottom: item !== items[items.length - 1] ? '1px solid var(--border)' : 'none',
-              display: 'flex',
-              gap: 10,
-              cursor: 'pointer',
-            }}
+          <button
+            onClick={onMarkAllRead}
+            disabled={!hasUnread}
+            style={{ fontSize: 11, color: hasUnread ? 'var(--accent)' : 'var(--fg-dim)', cursor: hasUnread ? 'pointer' : 'default' }}
           >
-            <div style={{ width: 24, height: 24, borderRadius: 12, background: 'var(--bg-elev-2)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-              {item.icon}
-            </div>
-            <div style={{ flex: 1, minWidth: 0 }}>
-              <div style={{ fontSize: 12.5, color: 'var(--fg)', fontWeight: 500, marginBottom: 2 }}>{item.title}</div>
-              <div style={{ fontSize: 11.5, color: 'var(--fg-muted)' }}>{item.desc}</div>
-            </div>
-            <span style={{ fontSize: 10.5, color: 'var(--fg-dim)', flexShrink: 0 }}>{item.at}</span>
+            Marcar todo leído
+          </button>
+        </div>
+        {items.length === 0 && (
+          <div style={{ padding: '20px 14px', fontSize: 12, color: 'var(--fg-muted)', textAlign: 'center' }}>
+            No tienes notificaciones
           </div>
-        ))}
+        )}
+        <div style={{ maxHeight: 380, overflowY: 'auto' }}>
+          {items.map((item, index) => (
+            <div
+              key={item.id}
+              className="edms-nav-item"
+              onClick={() => !item.is_read && onMarkRead(item.id)}
+              style={{
+                padding: '10px 14px',
+                borderBottom: index !== items.length - 1 ? '1px solid var(--border)' : 'none',
+                display: 'flex',
+                gap: 10,
+                cursor: 'pointer',
+                background: item.is_read ? 'transparent' : 'color-mix(in oklch, var(--accent) 7%, transparent)',
+              }}
+            >
+              <div style={{ width: 24, height: 24, borderRadius: 12, background: 'var(--bg-elev-2)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                <Icon.Users size={13} style={{ color: 'var(--accent)' }} />
+              </div>
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ fontSize: 12.5, color: 'var(--fg)', fontWeight: item.is_read ? 400 : 600, marginBottom: 2 }}>{item.title}</div>
+                {item.body && (
+                  <div style={{ fontSize: 11.5, color: 'var(--fg-muted)' }}>{item.body}</div>
+                )}
+              </div>
+              <span style={{ fontSize: 10.5, color: 'var(--fg-dim)', flexShrink: 0 }}>{notifTimeAgo(item.created_at)}</span>
+            </div>
+          ))}
+        </div>
       </div>
     </>
   )
@@ -6305,6 +6449,8 @@ export default function DashboardPage() {
   const [openDocId, setOpenDocId] = useState<string | null>(null)
   const [ctxMenu, setCtxMenu] = useState<ContextMenuState | null>(null)
   const [notifOpen, setNotifOpen] = useState(false)
+  const [notifications, setNotifications] = useState<NotificationItem[]>([])
+  const [notifUnread, setNotifUnread] = useState(0)
   const [teamModalOpen, setTeamModalOpen] = useState(false)
   const [createDocumentModalOpen, setCreateDocumentModalOpen] = useState(false)
   const [editingMetadataDocId, setEditingMetadataDocId] = useState<string | null>(null)
@@ -6387,6 +6533,70 @@ export default function DashboardPage() {
 
     return options
   }, [currentUserLabel, user, workspaceUsers])
+
+  function labelForUserId(userId?: string | null) {
+    if (!userId) return 'Sin asignar'
+    const option = filterUserOptions.find(([id]) => id === userId)
+    if (option) return option[1]
+    const sampleUser = findUserById(userId)
+    if (sampleUser) return sampleUser.name
+    return `Usuario ${userId.slice(0, 8)}`
+  }
+
+  function initialsForUserId(userId?: string | null) {
+    return initialsFromLabel(labelForUserId(userId))
+  }
+
+  const refreshNotifications = useCallback(async () => {
+    try {
+      const data = await getNotifications()
+      setNotifications(data.items)
+      setNotifUnread(data.unread_count)
+    } catch {
+      /* notificaciones no disponibles: se reintenta en el próximo ciclo */
+    }
+  }, [])
+
+  useEffect(() => {
+    const initialTimer = window.setTimeout(() => {
+      void refreshNotifications()
+    }, 0)
+    const timer = window.setInterval(refreshNotifications, 60000)
+    return () => {
+      window.clearTimeout(initialTimer)
+      window.clearInterval(timer)
+    }
+  }, [refreshNotifications])
+
+  useEffect(() => {
+    if (!notifOpen) return
+    const timer = window.setTimeout(() => {
+      void refreshNotifications()
+    }, 0)
+    return () => window.clearTimeout(timer)
+  }, [notifOpen, refreshNotifications])
+
+  async function handleMarkNotificationRead(id: string) {
+    setNotifications((current) =>
+      current.map((n) => (n.id === id ? { ...n, is_read: true } : n)),
+    )
+    setNotifUnread((current) => Math.max(0, current - 1))
+    try {
+      await markNotificationRead(id)
+    } catch {
+      refreshNotifications()
+    }
+  }
+
+  async function handleMarkAllNotificationsRead() {
+    setNotifications((current) => current.map((n) => ({ ...n, is_read: true })))
+    setNotifUnread(0)
+    try {
+      await markAllNotificationsRead()
+    } catch {
+      refreshNotifications()
+    }
+  }
 
   useEffect(() => {
     document.documentElement.setAttribute('data-theme', tweaks.theme)
@@ -7070,6 +7280,40 @@ export default function DashboardPage() {
     )
   }
 
+  async function handleAssignAssignee(documentId: string, userId: string) {
+    const assignment = await assignDocumentAssignee(documentId, userId)
+    const detailResponse = await getDocumentDetail(documentId)
+    const detailData = detailResponse.data
+    const updatedDocument = detailData.document
+    const assignedUserIds = updatedDocument.assigned_user_ids ?? [assignment.assignee_user_id]
+
+    setDocumentDetails((current) => ({ ...current, [documentId]: detailData }))
+
+    const updateDoc = (doc: DocumentItem) => doc.id === documentId
+      ? {
+          ...doc,
+          assignee: assignment.assignee_user_id,
+          assignedUserIds,
+          shared: assignedUserIds.filter((assignedId) => assignedId !== doc.owner),
+          status: statusFromWorkflow(updatedDocument.workflow_state_code),
+          modified: 'ahora',
+          updatedAt: updatedDocument.updated_at,
+        }
+      : doc
+
+    setCreatedDocs((current) => current.map(updateDoc))
+    setSearchResults((current) => current ? current.map(updateDoc) : current)
+
+    try {
+      const counts = await getAssignmentCounts([documentId])
+      setAssignmentCounts((current) => ({ ...current, ...counts }))
+    } catch {
+      setAssignmentCounts((current) => ({ ...current, [documentId]: assignedUserIds.length }))
+    }
+
+    setToast(`Encargado actualizado: ${labelForUserId(assignment.assignee_user_id)}`)
+  }
+
   async function handleAction(action: string, docId?: string) {
     if (action === 'team') {
       if (!user?.is_superuser) {
@@ -7266,7 +7510,7 @@ export default function DashboardPage() {
           onAction={handleAction}
           onSelectResult={openDoc}
           onOpenNotifs={() => setNotifOpen(true)}
-          notifCount={4}
+          notifCount={notifUnread}
           userLabel={currentUserLabel}
           userInitials={currentUserInitials}
           userEmail={currentUserEmail}
@@ -7353,6 +7597,8 @@ export default function DashboardPage() {
                 version: doc.version,
                 tags: doc.tags,
                 assignedCount: assignmentCounts[doc.id] ?? 0,
+                assigneeLabel: labelForUserId(doc.assignee ?? doc.owner),
+                assigneeInitials: initialsForUserId(doc.assignee ?? doc.owner),
               }))}
               tags={tags}
               onOpen={openDoc}
@@ -7531,6 +7777,8 @@ export default function DashboardPage() {
         error={openDocId && isOpenDocFromBackend ? detailError : null}
         currentUserId={user?.id}
         currentUserLabel={currentUserLabel}
+        assigneeOptions={filterUserOptions}
+        onAssignAssignee={handleAssignAssignee}
         onCommentPosted={(item) => {
           if (!openDocId) return
           setDocumentDetails((current) => {
@@ -7557,7 +7805,13 @@ export default function DashboardPage() {
         onAssignDocument={handleAssignFileToDocument}
       />
       <ContextMenu ctx={ctxMenu} onClose={() => setCtxMenu(null)} onAction={handleAction} />
-      <NotifPopover open={notifOpen} onClose={() => setNotifOpen(false)} />
+      <NotifPopover
+        open={notifOpen}
+        onClose={() => setNotifOpen(false)}
+        items={notifications}
+        onMarkRead={handleMarkNotificationRead}
+        onMarkAllRead={handleMarkAllNotificationsRead}
+      />
       <DropZoneOverlay active={dragging} />
 
       {tagAssignmentDocIds.length > 0 && (
