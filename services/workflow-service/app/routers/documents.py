@@ -109,7 +109,7 @@ def _assert_document_permission(document_id: str, user_id: str, permission: str)
         )
 
 
-def _notify_new_assignee(document_id: str, recipient_user_id: str, actor_user_id: str) -> None:
+def _notify_new_assignee(document_id: str, recipient_user_id: str, actor_user_id: str, assignment_id: str | None = None) -> None:
     """Best-effort: no debe bloquear la asignación si collaboration-service falla."""
     try:
         with httpx.Client(timeout=5.0) as client:
@@ -119,6 +119,7 @@ def _notify_new_assignee(document_id: str, recipient_user_id: str, actor_user_id
                     "recipient_user_id": recipient_user_id,
                     "actor_user_id": actor_user_id,
                     "document_id": document_id,
+                    "source_id": assignment_id,
                     "type": "asignacion_encargado",
                     "title": "Te asignaron como encargado de un documento",
                     "body": f"Ahora eres el encargado del documento {document_id}.",
@@ -173,6 +174,33 @@ def get_document_workflow_history(
     return sorted(history, key=lambda item: item.created_at, reverse=True)
 
 
+@router.get("/{document_id}/assignments", response_model=list[DocumentAssignmentResponse])
+def get_document_active_assignments(
+    document_id: str,
+    db: Session = Depends(get_db),
+):
+    document_id = _require_value(document_id, "Documento")
+    rows = (
+        db.query(DocumentAssignment)
+        .filter(
+            DocumentAssignment.document_id == document_id,
+            DocumentAssignment.is_active.is_(True),
+        )
+        .order_by(DocumentAssignment.assigned_at.asc())
+        .all()
+    )
+    return [
+        DocumentAssignmentResponse(
+            id=row.id,
+            user_id=row.user_id,
+            role_code=row.role_code,
+            assigned_by_user_id=row.assigned_by_user_id,
+            assigned_at=row.assigned_at.isoformat(),
+        )
+        for row in rows
+    ]
+
+
 @router.post("/bootstrap", response_model=BootstrapDocumentWorkflowResponse, status_code=status.HTTP_201_CREATED)
 def bootstrap_document_workflow(
     body: BootstrapDocumentWorkflowRequest,
@@ -224,8 +252,9 @@ def bootstrap_document_workflow(
     db.add(state)
     db.add(assignment)
     db.commit()
+    db.refresh(assignment)
     if assignee_id != creator_id:
-        _notify_new_assignee(document_id, assignee_id, creator_id)
+        _notify_new_assignee(document_id, assignee_id, creator_id, assignment.id)
 
     return BootstrapDocumentWorkflowResponse(
         document_id=document_id,
@@ -417,7 +446,7 @@ def assign_document_assignee(
     db.refresh(assignment)
 
     if new_assignee_id != x_user_id:
-        _notify_new_assignee(document_id, new_assignee_id, x_user_id)
+        _notify_new_assignee(document_id, new_assignee_id, x_user_id, assignment.id)
 
     return AssignDocumentAssigneeResponse(
         document_id=document_id,

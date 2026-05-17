@@ -7,7 +7,7 @@ from sqlalchemy.orm import Session
 
 from app.config import settings
 from app.database import get_db
-from app.models import Comment
+from app.models import Comment, Notification
 
 router = APIRouter(prefix="/collaboration/documents", tags=["collaboration-documents"])
 
@@ -28,10 +28,11 @@ class DocumentTimelineResponse(BaseModel):
 class CreateCommentRequest(BaseModel):
     body: str
     version_id: str | None = None
+    mentioned_user_ids: list[str] = Field(default_factory=list)
 
 
 def _extract_mentions(text: str) -> list[str]:
-    return list(dict.fromkeys(re.findall(r'@([\w\-]+)', text)))
+    return list(dict.fromkeys(re.findall(r'@([\w.\-]+)', text)))
 
 
 def _assert_document_permission(
@@ -83,6 +84,60 @@ def _fetch_workflow_history(document_id: str) -> list[TimelineItemResponse]:
         return []
 
 
+def _fetch_active_assignment_user_ids(document_id: str) -> list[str]:
+    try:
+        with httpx.Client(timeout=5.0) as client:
+            response = client.get(
+                f"{settings.WORKFLOW_SERVICE_URL}/internal/workflow/documents/{document_id}/assignments",
+            )
+        if response.status_code >= 400:
+            return []
+        user_ids: list[str] = []
+        for item in response.json():
+            user_id = str(item.get("user_id", "")).strip()
+            if user_id and user_id not in user_ids:
+                user_ids.append(user_id)
+        return user_ids
+    except httpx.HTTPError:
+        return []
+
+
+def _create_notification(
+    db: Session,
+    *,
+    recipient_user_id: str,
+    notif_type: str,
+    title: str,
+    actor_user_id: str,
+    document_id: str,
+    source_id: str,
+    body: str | None = None,
+) -> None:
+    duplicate = (
+        db.query(Notification)
+        .filter(
+            Notification.recipient_user_id == recipient_user_id,
+            Notification.type == notif_type,
+            Notification.source_id == source_id,
+        )
+        .first()
+    )
+    if duplicate:
+        return
+
+    db.add(
+        Notification(
+            recipient_user_id=recipient_user_id,
+            actor_user_id=actor_user_id,
+            document_id=document_id,
+            source_id=source_id,
+            type=notif_type,
+            title=title,
+            body=body,
+        )
+    )
+
+
 @router.post("/{document_id}/comments", response_model=TimelineItemResponse, status_code=status.HTTP_201_CREATED)
 def create_comment(
     document_id: str,
@@ -102,17 +157,52 @@ def create_comment(
     version_id = body.version_id.strip() if body.version_id and body.version_id.strip() else None
     _assert_document_permission(document_id, x_user_id, permission="comment", version_id=version_id)
 
-    mentions = _extract_mentions(text)
+    raw_mentions = _extract_mentions(text)
+    mentioned_user_ids = [
+        user_id.strip()
+        for user_id in body.mentioned_user_ids
+        if user_id.strip() and user_id.strip() != x_user_id
+    ]
+    mentioned_user_ids = list(dict.fromkeys(mentioned_user_ids))
     comment = Comment(
         document_id=document_id,
         author_user_id=x_user_id,
         body=text,
         version_id=version_id,
-        mentions=json.dumps(mentions) if mentions else None,
+        mentions=json.dumps(raw_mentions) if raw_mentions else None,
     )
     db.add(comment)
     db.commit()
     db.refresh(comment)
+
+    active_assignment_user_ids = _fetch_active_assignment_user_ids(document_id)
+    mentioned_set = set(mentioned_user_ids)
+    for recipient_user_id in active_assignment_user_ids:
+        if recipient_user_id == x_user_id or recipient_user_id in mentioned_set:
+            continue
+        _create_notification(
+            db,
+            recipient_user_id=recipient_user_id,
+            notif_type="nuevo_comentario",
+            title="Nuevo comentario en un documento asignado",
+            actor_user_id=x_user_id,
+            document_id=document_id,
+            source_id=comment.id,
+            body=text[:240],
+        )
+
+    for recipient_user_id in mentioned_user_ids:
+        _create_notification(
+            db,
+            recipient_user_id=recipient_user_id,
+            notif_type="mencion",
+            title="Te mencionaron en un comentario",
+            actor_user_id=x_user_id,
+            document_id=document_id,
+            source_id=comment.id,
+            body=text[:240],
+        )
+    db.commit()
 
     return TimelineItemResponse(
         id=comment.id,

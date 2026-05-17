@@ -17,6 +17,7 @@ class CreateNotificationRequest(BaseModel):
     title: str
     actor_user_id: str | None = None
     document_id: str | None = None
+    source_id: str | None = None
     body: str | None = None
 
 
@@ -25,6 +26,7 @@ class NotificationResponse(BaseModel):
     recipient_user_id: str
     actor_user_id: str | None = None
     document_id: str | None = None
+    source_id: str | None = None
     type: str
     title: str
     body: str | None = None
@@ -44,6 +46,7 @@ def _serialize(notification: Notification) -> NotificationResponse:
         recipient_user_id=notification.recipient_user_id,
         actor_user_id=notification.actor_user_id,
         document_id=notification.document_id,
+        source_id=notification.source_id,
         type=notification.type,
         title=notification.title,
         body=notification.body,
@@ -64,10 +67,25 @@ def create_notification(body: CreateNotificationRequest, db: Session = Depends(g
             detail="recipient_user_id, type y title son requeridos",
         )
 
+    source_id = body.source_id.strip() if body.source_id and body.source_id.strip() else None
+    if source_id:
+        duplicate = (
+            db.query(Notification)
+            .filter(
+                Notification.recipient_user_id == recipient,
+                Notification.type == notif_type,
+                Notification.source_id == source_id,
+            )
+            .first()
+        )
+        if duplicate:
+            return _serialize(duplicate)
+
     notification = Notification(
         recipient_user_id=recipient,
         actor_user_id=body.actor_user_id,
         document_id=body.document_id,
+        source_id=source_id,
         type=notif_type,
         title=title,
         body=body.body,

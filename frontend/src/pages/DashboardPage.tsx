@@ -370,6 +370,14 @@ function userLabelFromAuth(firstName: string, lastName: string, email: string) {
   return email.split('@')[0]
 }
 
+function normalizeMentionToken(value: string) {
+  return value
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .replace(/[^a-z0-9_-]+/g, '')
+}
+
 function initialsFromLabel(label: string) {
   const parts = label
     .split(/\s+/)
@@ -682,6 +690,8 @@ const Icon = {
   Scan: (props: Partial<Parameters<typeof Ic>[0]>) => <Ic {...props} d="M3 7V5a2 2 0 0 1 2-2h2M17 3h2a2 2 0 0 1 2 2v2M21 17v2a2 2 0 0 1-2 2h-2M7 21H5a2 2 0 0 1-2-2v-2M7 12h10" />,
   Signature: (props: Partial<Parameters<typeof Ic>[0]>) => <Ic {...props} d="M3 17s3-6 6-6 4 4 7 4 5-3 5-3M4 21h16" />,
   Bell: (props: Partial<Parameters<typeof Ic>[0]>) => <Ic {...props} d="M18 8a6 6 0 0 0-12 0c0 7-3 9-3 9h18s-3-2-3-9M13.7 21a2 2 0 0 1-3.4 0" />,
+  Comment: (props: Partial<Parameters<typeof Ic>[0]>) => <Ic {...props} d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />,
+  AtSign: (props: Partial<Parameters<typeof Ic>[0]>) => <Ic {...props} d="M16 12a4 4 0 1 1-8 0 4 4 0 0 1 8 0zM16 12v1.5a2.5 2.5 0 0 0 5 0V12a9 9 0 1 0-5.4 8.2" />,
   Panel: (props: Partial<Parameters<typeof Ic>[0]>) => <Ic {...props} d="M3 5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5zM10 3v18" />,
   Close: (props: Partial<Parameters<typeof Ic>[0]>) => <Ic {...props} d="M18 6L6 18M6 6l12 12" />,
   Eye: (props: Partial<Parameters<typeof Ic>[0]>) => <Ic {...props} d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8S1 12 1 12zM12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6z" />,
@@ -2949,7 +2959,7 @@ function DetailDrawer({
   }
 
   function renderCommentBody(text: string) {
-    const parts = text.split(/(@[\w-]+)/g)
+    const parts = text.split(/(@[\w.-]+)/g)
     return parts.map((part, i) =>
       part.startsWith('@')
         ? <span key={i} style={{ color: 'var(--accent)', fontWeight: 500 }}>{part}</span>
@@ -2957,11 +2967,34 @@ function DetailDrawer({
     )
   }
 
+  function resolveMentionedUserIds(text: string) {
+    const tokens = Array.from(text.matchAll(/@([\w.-]+)/g), (match) => normalizeMentionToken(match[1]))
+    if (tokens.length === 0) return []
+    const tokenSet = new Set(tokens)
+    const mentioned = new Set<string>()
+
+    assigneeOptions.forEach(([userId, label]) => {
+      const candidates = [
+        userId,
+        label,
+        label.replace(/\s+/g, '.'),
+        label.replace(/\s+/g, '-'),
+      ].map(normalizeMentionToken)
+
+      if (candidates.some((candidate) => tokenSet.has(candidate))) {
+        mentioned.add(userId)
+      }
+    })
+
+    return Array.from(mentioned)
+  }
+
   async function handleSubmitComment() {
     if (!doc || !commentText.trim()) return
     setCommentSending(true)
     try {
-      const { data } = await createComment(doc.id, commentText.trim(), currentFile?.id ?? null)
+      const text = commentText.trim()
+      const { data } = await createComment(doc.id, text, currentFile?.id ?? null, resolveMentionedUserIds(text))
       setCommentText('')
       onCommentPosted?.(data)
     } finally {
@@ -3761,22 +3794,38 @@ function notifTimeAgo(iso: string): string {
   return `${days} d`
 }
 
+function notifIcon(type: string) {
+  if (type === 'nuevo_comentario') return <Icon.Comment size={13} style={{ color: 'var(--accent)' }} />
+  if (type === 'mencion') return <Icon.AtSign size={13} style={{ color: 'var(--accent)' }} />
+  return <Icon.Users size={13} style={{ color: 'var(--accent)' }} />
+}
+
 function NotifPopover({
   open,
   onClose,
   items,
   onMarkRead,
   onMarkAllRead,
+  onOpenDoc,
 }: {
   open: boolean
   onClose: () => void
   items: NotificationItem[]
   onMarkRead: (id: string) => void
   onMarkAllRead: () => void
+  onOpenDoc: (id: string) => void
 }) {
   if (!open) return null
 
   const hasUnread = items.some((item) => !item.is_read)
+
+  function handleItemClick(item: NotificationItem) {
+    if (!item.is_read) onMarkRead(item.id)
+    if (item.document_id) {
+      onOpenDoc(item.document_id)
+      onClose()
+    }
+  }
 
   return (
     <>
@@ -3815,7 +3864,7 @@ function NotifPopover({
             <div
               key={item.id}
               className="edms-nav-item"
-              onClick={() => !item.is_read && onMarkRead(item.id)}
+              onClick={() => handleItemClick(item)}
               style={{
                 padding: '10px 14px',
                 borderBottom: index !== items.length - 1 ? '1px solid var(--border)' : 'none',
@@ -3826,12 +3875,12 @@ function NotifPopover({
               }}
             >
               <div style={{ width: 24, height: 24, borderRadius: 12, background: 'var(--bg-elev-2)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-                <Icon.Users size={13} style={{ color: 'var(--accent)' }} />
+                {notifIcon(item.type)}
               </div>
               <div style={{ flex: 1, minWidth: 0 }}>
                 <div style={{ fontSize: 12.5, color: 'var(--fg)', fontWeight: item.is_read ? 400 : 600, marginBottom: 2 }}>{item.title}</div>
                 {item.body && (
-                  <div style={{ fontSize: 11.5, color: 'var(--fg-muted)' }}>{item.body}</div>
+                  <div style={{ fontSize: 11.5, color: 'var(--fg-muted)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{item.body}</div>
                 )}
               </div>
               <span style={{ fontSize: 10.5, color: 'var(--fg-dim)', flexShrink: 0 }}>{notifTimeAgo(item.created_at)}</span>
@@ -7883,6 +7932,7 @@ export default function DashboardPage() {
         items={notifications}
         onMarkRead={handleMarkNotificationRead}
         onMarkAllRead={handleMarkAllNotificationsRead}
+        onOpenDoc={openDoc}
       />
       <DropZoneOverlay active={dragging} />
 

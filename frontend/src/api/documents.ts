@@ -145,5 +145,14 @@ export const restoreDocumentFromTrash = (documentId: string) =>
 export const permanentlyDeleteDocument = (documentId: string) =>
   client.delete<{ deleted_count: number }>(`/documents/${documentId}`)
 
-export const createComment = (documentId: string, body: string, versionId?: string | null) =>
-  client.post<DocumentDetailTimelineItem>(`/collaboration/documents/${documentId}/comments`, { body, version_id: versionId ?? null })
+export const createComment = (
+  documentId: string,
+  body: string,
+  versionId?: string | null,
+  mentionedUserIds: string[] = [],
+) =>
+  client.post<DocumentDetailTimelineItem>(`/collaboration/documents/${documentId}/comments`, {
+    body,
+    version_id: versionId ?? null,
+    mentioned_user_ids: mentionedUserIds,
+  })
