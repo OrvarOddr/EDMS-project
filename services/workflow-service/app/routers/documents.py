@@ -1,3 +1,5 @@
+from datetime import datetime, timezone
+
 import httpx
 from fastapi import APIRouter, Depends, Header, HTTPException, status
 from sqlalchemy.orm import Session
@@ -8,6 +10,8 @@ from app.models import DocumentAssignment, DocumentState
 from app.schemas import (
     AssignmentCountsRequest,
     AssignmentCountsResponse,
+    AssignDocumentAssigneeRequest,
+    AssignDocumentAssigneeResponse,
     BatchStatesRequest,
     BatchStatesResponse,
     BatchWorkflowSummariesResponse,
@@ -76,6 +80,15 @@ def _assert_document_access(document_id: str, user_id: str) -> None:
             status_code=status.HTTP_502_BAD_GATEWAY,
             detail="document-service rechazo la validacion de acceso",
         )
+
+
+def _has_global_assignment_privilege(roles_header: str | None) -> bool:
+    roles = {
+        role.strip().lower()
+        for role in (roles_header or "").split(",")
+        if role.strip()
+    }
+    return bool(roles & {"admin", "coordinador"})
 
 
 @router.get("/{document_id}/history", response_model=list[WorkflowHistoryItem])
@@ -289,6 +302,85 @@ def get_assignment_counts(
         counts[document_id] = counts.get(document_id, 0) + 1
 
     return AssignmentCountsResponse(counts=counts)
+
+
+@public_router.patch("/{document_id}/assignee", response_model=AssignDocumentAssigneeResponse)
+def assign_document_assignee(
+    document_id: str,
+    body: AssignDocumentAssigneeRequest,
+    x_user_id: str | None = Header(default=None, alias="X-User-Id"),
+    x_user_roles: str | None = Header(default=None, alias="X-User-Roles"),
+    db: Session = Depends(get_db),
+):
+    if not x_user_id:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Usuario autenticado requerido")
+
+    document_id = _require_value(document_id, "Documento")
+    assignee_user_id = _require_value(body.user_id, "Encargado")
+    _assert_document_access(document_id, x_user_id)
+
+    actor_assignment = (
+        db.query(DocumentAssignment)
+        .filter(
+            DocumentAssignment.document_id == document_id,
+            DocumentAssignment.user_id == x_user_id,
+            DocumentAssignment.is_active.is_(True),
+        )
+        .first()
+    )
+    if not actor_assignment and not _has_global_assignment_privilege(x_user_roles):
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="No puedes asignar encargado")
+
+    current_owner = (
+        db.query(DocumentAssignment)
+        .filter(
+            DocumentAssignment.document_id == document_id,
+            DocumentAssignment.role_code == OWNER_ROLE,
+            DocumentAssignment.is_active.is_(True),
+        )
+        .first()
+    )
+    if current_owner and current_owner.user_id == assignee_user_id:
+        return AssignDocumentAssigneeResponse(
+            document_id=document_id,
+            previous_assignee_user_id=current_owner.user_id,
+            assignee_user_id=current_owner.user_id,
+            assigned_by_user_id=x_user_id,
+            assigned_at=current_owner.assigned_at.isoformat(),
+        )
+
+    previous_assignee_user_id = current_owner.user_id if current_owner else None
+    now = datetime.now(timezone.utc)
+    active_owner_assignments = (
+        db.query(DocumentAssignment)
+        .filter(
+            DocumentAssignment.document_id == document_id,
+            DocumentAssignment.role_code == OWNER_ROLE,
+            DocumentAssignment.is_active.is_(True),
+        )
+        .all()
+    )
+    for assignment in active_owner_assignments:
+        assignment.is_active = False
+        assignment.revoked_at = now
+
+    new_assignment = DocumentAssignment(
+        document_id=document_id,
+        user_id=assignee_user_id,
+        role_code=OWNER_ROLE,
+        assigned_by_user_id=x_user_id,
+    )
+    db.add(new_assignment)
+    db.commit()
+    db.refresh(new_assignment)
+
+    return AssignDocumentAssigneeResponse(
+        document_id=document_id,
+        previous_assignee_user_id=previous_assignee_user_id,
+        assignee_user_id=new_assignment.user_id,
+        assigned_by_user_id=x_user_id,
+        assigned_at=new_assignment.assigned_at.isoformat(),
+    )
 
 
 @public_router.patch("/{document_id}/state", response_model=ChangeDocumentStateResponse)

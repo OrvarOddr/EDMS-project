@@ -17,6 +17,25 @@ export interface ChangeStateResponse {
   changed_at: string
 }
 
+export interface AssignAssigneeResponse {
+  document_id: string
+  previous_assignee_user_id: string | null
+  assignee_user_id: string
+  assigned_by_user_id: string
+  assigned_at: string
+}
+
+export async function assignDocumentAssignee(
+  documentId: string,
+  userId: string,
+): Promise<AssignAssigneeResponse> {
+  const { data } = await client.patch<AssignAssigneeResponse>(
+    `/workflow/documents/${documentId}/assignee`,
+    { user_id: userId },
+  )
+  return data
+}
+
 export async function changeDocumentState(
   documentId: string,
   newStateCode: string,
