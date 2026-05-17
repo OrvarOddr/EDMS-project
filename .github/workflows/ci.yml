@@ -79,7 +79,7 @@ jobs:
         with:
           python-version: "3.12"
       - name: Instalar dependencias
-        run: pip install -r requirements.txt pytest
+        run: pip install -r requirements.txt -r requirements-dev.txt
         working-directory: services/document-service
       - name: Tests
         run: PYTHONPATH=. pytest -q
@@ -179,6 +179,52 @@ jobs:
         env:
           DATABASE_URL: "postgresql+psycopg2://postgres:postgres@localhost:5432/collaboration_service_test"
         working-directory: services/collaboration-service
+
+  test-file-service:
+    name: Test file-service
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_DB: file_service_test
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+        ports:
+          - "5432:5432"
+        options: >-
+          --health-cmd "pg_isready -U postgres -d file_service_test"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Instalar dependencias
+        run: pip install -r requirements.txt -r requirements-dev.txt
+        working-directory: services/file-service
+      - name: Tests
+        run: PYTHONPATH=. pytest -q
+        env:
+          DATABASE_URL: "postgresql+psycopg2://postgres:postgres@localhost:5432/file_service_test"
+        working-directory: services/file-service
+
+  test-api-gateway:
+    name: Test api-gateway
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Instalar dependencias
+        run: pip install -r requirements.txt -r requirements-dev.txt
+        working-directory: services/api-gateway
+      - name: Tests
+        run: PYTHONPATH=. pytest -q
+        working-directory: services/api-gateway
 
   build-frontend:
     name: Build frontend
