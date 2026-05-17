@@ -180,6 +180,7 @@ def bootstrap_document_workflow(
 ):
     document_id = _require_value(body.document_id, "Documento")
     creator_id = _require_value(body.created_by_user_id, "Creador")
+    assignee_id = _require_value(body.assignee_user_id, "Encargado") if body.assignee_user_id else creator_id
 
     existing_state = (
         db.query(DocumentState)
@@ -216,13 +217,15 @@ def bootstrap_document_workflow(
     )
     assignment = DocumentAssignment(
         document_id=document_id,
-        user_id=creator_id,
+        user_id=assignee_id,
         role_code=OWNER_ROLE,
         assigned_by_user_id=creator_id,
     )
     db.add(state)
     db.add(assignment)
     db.commit()
+    if assignee_id != creator_id:
+        _notify_new_assignee(document_id, assignee_id, creator_id)
 
     return BootstrapDocumentWorkflowResponse(
         document_id=document_id,

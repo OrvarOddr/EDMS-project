@@ -7,6 +7,7 @@ class CreateDocumentRequest(BaseModel):
     description: str
     expedient_id: str | None = None
     confidentiality_level: str = "publico_interno"
+    assignee_user_id: str | None = None
 
 
 class UpdateDocumentMetadataRequest(BaseModel):

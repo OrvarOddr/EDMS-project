@@ -4170,17 +4170,20 @@ function UploadFileModal({
 function CreateDocumentModal({
   initialUnassignedFile,
   unassignedFiles,
+  assigneeOptions,
   onClose,
   onCreated,
 }: {
   initialUnassignedFile?: StoredFileItem | null
   unassignedFiles: StoredFileItem[]
+  assigneeOptions: [string, string][]
   onClose: () => void
   onCreated: (document: DocumentItemResponse, attachment?: DocumentAttachmentResult) => void
 }) {
   const [title, setTitle] = useState(() => initialUnassignedFile ? titleFromFilename(initialUnassignedFile.original_filename) : '')
   const [documentTypeId, setDocumentTypeId] = useState('contrato')
   const [confidentialityLevel, setConfidentialityLevel] = useState('publico_interno')
+  const [assigneeUserId, setAssigneeUserId] = useState(() => assigneeOptions[0]?.[0] ?? '')
   const [description, setDescription] = useState('')
   const [expedientId, setExpedientId] = useState('')
   const [attachmentMode, setAttachmentMode] = useState<'none' | 'existing' | 'upload'>(() => initialUnassignedFile ? 'existing' : 'none')
@@ -4221,6 +4224,7 @@ function CreateDocumentModal({
         description: description.trim(),
         expedient_id: expedientId.trim() || null,
         confidentiality_level: confidentialityLevel,
+        assignee_user_id: assigneeUserId.trim() || assigneeOptions[0]?.[0] || null,
       })
       const attachment: DocumentAttachmentResult = {}
       if (attachmentMode === 'existing') {
@@ -4358,6 +4362,34 @@ function CreateDocumentModal({
                 </select>
               </label>
             </div>
+
+            <label style={{ display: 'grid', gap: 6 }}>
+              <span style={{ color: 'var(--fg-muted)', fontSize: 12 }}>Encargado inicial</span>
+              <select
+                value={assigneeUserId || assigneeOptions[0]?.[0] || ''}
+                disabled={submitting || assigneeOptions.length === 0}
+                onChange={(event) => setAssigneeUserId(event.target.value)}
+                style={{
+                  border: '1px solid var(--border)',
+                  borderRadius: 8,
+                  background: 'var(--bg-elev-2)',
+                  color: 'var(--fg)',
+                  padding: '10px 11px',
+                  fontSize: 13,
+                  outline: 'none',
+                }}
+              >
+                {assigneeOptions.length === 0 ? (
+                  <option value="">Sin usuarios disponibles</option>
+                ) : (
+                  assigneeOptions.map(([value, label]) => (
+                    <option key={value} value={value}>
+                      {label}
+                    </option>
+                  ))
+                )}
+              </select>
+            </label>
 
             <label style={{ display: 'grid', gap: 6 }}>
               <span style={{ color: 'var(--fg-muted)', fontSize: 12 }}>Expediente opcional</span>
@@ -4517,7 +4549,7 @@ function CreateDocumentModal({
                 lineHeight: 1.45,
               }}
             >
-              Al crear, el sistema registra tu usuario como creador y deja el documento en estado Borrador con encargado inicial igual al creador.
+              Al crear, el sistema registra tu usuario como creador, deja el documento en estado Borrador y asigna el encargado inicial que selecciones.
             </div>
 
             {error && (
@@ -7899,6 +7931,7 @@ export default function DashboardPage() {
         <CreateDocumentModal
           initialUnassignedFile={createDocumentInitialFile}
           unassignedFiles={unassignedFiles}
+          assigneeOptions={filterUserOptions}
           onClose={() => {
             setCreateDocumentModalOpen(false)
             setCreateDocumentInitialFile(null)

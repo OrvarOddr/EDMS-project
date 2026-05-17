@@ -155,15 +155,19 @@ def _record_metadata_activity(document: Document, actor_user_id: str, changed_fi
     document.metadata_json = metadata
 
 
-def _bootstrap_workflow(document_id: str, actor_user_id: str) -> dict:
+def _bootstrap_workflow(document_id: str, actor_user_id: str, assignee_user_id: str | None = None) -> dict:
+    payload = {
+        "document_id": document_id,
+        "created_by_user_id": actor_user_id,
+    }
+    if assignee_user_id:
+        payload["assignee_user_id"] = assignee_user_id
+
     try:
         with httpx.Client(timeout=5.0) as client:
             response = client.post(
                 f"{settings.WORKFLOW_SERVICE_URL}/internal/workflow/documents/bootstrap",
-                json={
-                    "document_id": document_id,
-                    "created_by_user_id": actor_user_id,
-                },
+                json=payload,
             )
     except httpx.HTTPError as exc:
         raise HTTPException(
@@ -308,6 +312,7 @@ def create_document(
     description = _clean_required(body.description, "Descripcion")
     document_type_id = _clean_required(body.document_type_id, "Tipo documental")
     expedient_id = body.expedient_id.strip() if body.expedient_id else None
+    assignee_user_id = body.assignee_user_id.strip() if body.assignee_user_id else None
 
     document = Document(
         code=_document_code(title),
@@ -324,7 +329,7 @@ def create_document(
     db.flush()
 
     try:
-        workflow = _bootstrap_workflow(document.id, actor_user_id)
+        workflow = _bootstrap_workflow(document.id, actor_user_id, assignee_user_id)
     except HTTPException:
         db.rollback()
         raise
