@@ -87,6 +87,37 @@ jobs:
           DATABASE_URL: "postgresql+psycopg2://postgres:postgres@localhost:5432/document_service_test"
         working-directory: services/document-service
 
+  test-auth-service:
+    name: Test auth-service
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_DB: auth_service_test
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+        ports:
+          - "5432:5432"
+        options: >-
+          --health-cmd "pg_isready -U postgres -d auth_service_test"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Instalar dependencias
+        run: pip install -r requirements.txt -r requirements-dev.txt
+        working-directory: services/auth-service
+      - name: Tests
+        run: PYTHONPATH=. pytest -q
+        env:
+          DATABASE_URL: "postgresql+psycopg2://postgres:postgres@localhost:5432/auth_service_test"
+        working-directory: services/auth-service
+
   build-frontend:
     name: Build frontend
     runs-on: ubuntu-latest
