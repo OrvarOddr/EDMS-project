@@ -1,4 +1,5 @@
 import hashlib
+import uuid
 from datetime import datetime, timedelta, timezone
 from jose import jwt, JWTError
 from passlib.context import CryptContext
@@ -28,6 +29,7 @@ def _base_claims(user_id: str, expire: datetime, token_type: str) -> dict:
         "iss": settings.JWT_ISSUER,
         "aud": settings.JWT_AUDIENCE,
         "type": token_type,
+        "jti": str(uuid.uuid4()),
     }
 
 
