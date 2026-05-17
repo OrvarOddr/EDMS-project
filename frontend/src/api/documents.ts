@@ -64,6 +64,7 @@ export interface DocumentDetailTimelineItem {
   actor_user_id?: string | null
   action: string
   body?: string | null
+  note?: string | null
   created_at: string
 }
 

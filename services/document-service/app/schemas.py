@@ -114,6 +114,7 @@ class DocumentDetailTimelineItemResponse(BaseModel):
     actor_user_id: str | None = None
     action: str
     body: str | None = None
+    note: str | None = None
     created_at: str
 
 

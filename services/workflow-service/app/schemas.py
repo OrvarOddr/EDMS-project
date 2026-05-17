@@ -86,4 +86,5 @@ class WorkflowHistoryItem(BaseModel):
     actor_user_id: str
     action: str
     body: str | None = None
+    note: str | None = None
     created_at: str

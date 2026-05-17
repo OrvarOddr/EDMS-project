@@ -1,7 +1,7 @@
 import uuid
 from datetime import datetime, timezone
 
-from sqlalchemy import Boolean, Column, DateTime, String
+from sqlalchemy import Boolean, Column, DateTime, String, Text
 
 from app.database import Base
 
@@ -18,6 +18,7 @@ class DocumentState(Base):
     document_id = Column(String, nullable=False, index=True)
     state_code = Column(String, nullable=False, index=True)
     changed_by_user_id = Column(String, nullable=False, index=True)
+    comment = Column(Text, nullable=True)
     is_current = Column(Boolean, nullable=False, default=True, index=True)
     created_at = Column(DateTime(timezone=True), nullable=False, default=utcnow)
 

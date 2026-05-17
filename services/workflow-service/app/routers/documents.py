@@ -48,6 +48,20 @@ WORKFLOW_TRANSITIONS: dict[str, set[str]] = {
     for state in _KANBAN_STATES
 } | {"archivado": set()}
 
+# Estados a los que solo se puede pasar adjuntando un comentario obligatorio
+# (US-015: el comentario de observación es obligatorio).
+STATES_REQUIRING_COMMENT: frozenset[str] = frozenset({"observado", "rechazado"})
+
+_STATE_LABELS: dict[str, str] = {
+    "borrador": "Borrador",
+    "en_revision": "En revisión",
+    "observado": "Observado",
+    "aprobado": "Aprobado",
+    "pendiente_firma": "Pendiente de firma",
+    "rechazado": "Rechazado",
+    "archivado": "Archivado",
+}
+
 
 def _require_value(value: str, field_name: str) -> str:
     cleaned = value.strip()
@@ -129,6 +143,39 @@ def _notify_new_assignee(document_id: str, recipient_user_id: str, actor_user_id
         pass
 
 
+def _notify_state_change(
+    document_id: str,
+    recipient_user_ids: list[str],
+    actor_user_id: str,
+    new_state_code: str,
+    state_record_id: str,
+    comment: str | None,
+) -> None:
+    """Best-effort: notifica a los asignados activos del documento sobre el cambio de estado."""
+    state_label = _STATE_LABELS.get(new_state_code, new_state_code)
+    title = f"Documento movido a {state_label}"
+    body = comment.strip() if comment and comment.strip() else f"El documento cambió de estado a {state_label}."
+    for recipient_user_id in recipient_user_ids:
+        if recipient_user_id == actor_user_id:
+            continue
+        try:
+            with httpx.Client(timeout=5.0) as client:
+                client.post(
+                    f"{settings.COLLABORATION_SERVICE_URL}/internal/collaboration/notifications",
+                    json={
+                        "recipient_user_id": recipient_user_id,
+                        "actor_user_id": actor_user_id,
+                        "document_id": document_id,
+                        "source_id": state_record_id,
+                        "type": "cambio_estado",
+                        "title": title,
+                        "body": body,
+                    },
+                )
+        except httpx.HTTPError:
+            pass
+
+
 @router.get("/{document_id}/history", response_model=list[WorkflowHistoryItem])
 def get_document_workflow_history(
     document_id: str,
@@ -157,6 +204,7 @@ def get_document_workflow_history(
             actor_user_id=row.changed_by_user_id,
             action="state_change",
             body=row.state_code,
+            note=row.comment,
             created_at=row.created_at.isoformat(),
         )
         for row in state_rows
@@ -500,6 +548,13 @@ def change_document_state(
     if not has_assignment:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="No tienes asignación activa en este documento")
 
+    comment = body.comment.strip() if body.comment and body.comment.strip() else None
+    if new_state in STATES_REQUIRING_COMMENT and not comment:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=f"Se requiere un comentario para mover el documento a {_STATE_LABELS.get(new_state, new_state)}",
+        )
+
     previous_code = current_state.state_code
     current_state.is_current = False
 
@@ -507,11 +562,30 @@ def change_document_state(
         document_id=document_id,
         state_code=new_state,
         changed_by_user_id=x_user_id,
+        comment=comment,
         is_current=True,
     )
     db.add(new_state_record)
     db.commit()
     db.refresh(new_state_record)
+
+    active_assignee_ids = [
+        row.user_id
+        for row in db.query(DocumentAssignment)
+        .filter(
+            DocumentAssignment.document_id == document_id,
+            DocumentAssignment.is_active.is_(True),
+        )
+        .all()
+    ]
+    _notify_state_change(
+        document_id=document_id,
+        recipient_user_ids=active_assignee_ids,
+        actor_user_id=x_user_id,
+        new_state_code=new_state,
+        state_record_id=new_state_record.id,
+        comment=comment,
+    )
 
     return ChangeDocumentStateResponse(
         document_id=document_id,
