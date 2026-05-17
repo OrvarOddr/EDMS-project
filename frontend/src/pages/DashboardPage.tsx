@@ -2942,7 +2942,8 @@ function DetailDrawer({
         borrador: 'Borrador', en_revision: 'En revisión', observado: 'Observado',
         aprobado: 'Aprobado', pendiente_firma: 'Pendiente de firma', rechazado: 'Rechazado', archivado: 'Archivado',
       }
-      return `Estado cambiado a: ${stateLabels[item.body] ?? item.body}`
+      const base = `Estado cambiado a: ${stateLabels[item.body] ?? item.body}`
+      return item.note ? `${base} — “${item.note}”` : base
     }
     if (item.action === 'assignee_changed' && item.body) {
       return `Encargado asignado: ${userLabel(item.body)}`
@@ -6435,6 +6436,80 @@ function Toast({ toast, onClose }: { toast: string | null; onClose: () => void }
   )
 }
 
+function StateChangeCommentModal({
+  stateLabel,
+  onConfirm,
+  onCancel,
+}: {
+  stateLabel: string
+  onConfirm: (comment: string) => void
+  onCancel: () => void
+}) {
+  const [comment, setComment] = useState('')
+  const trimmed = comment.trim()
+
+  return (
+    <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.55)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000 }}>
+      <div style={{ background: 'var(--bg-elev)', border: '1px solid var(--border-strong)', borderRadius: 12, width: 420, boxShadow: 'var(--shadow)', overflow: 'hidden' }}>
+        <div style={{ padding: '18px 20px', borderBottom: '1px solid var(--border)' }}>
+          <h3 style={{ margin: 0, fontSize: 15 }}>Mover a {stateLabel}</h3>
+          <p style={{ margin: '6px 0 0', color: 'var(--fg-muted)', fontSize: 12.5 }}>
+            Esta transición requiere un comentario obligatorio explicando el motivo.
+          </p>
+        </div>
+        <div style={{ padding: 16 }}>
+          <textarea
+            autoFocus
+            value={comment}
+            onChange={(e) => setComment(e.target.value)}
+            placeholder="Describe el motivo del cambio…"
+            rows={4}
+            style={{
+              width: '100%',
+              resize: 'vertical',
+              padding: '10px 12px',
+              borderRadius: 8,
+              border: '1px solid var(--border-strong)',
+              background: 'var(--bg-elev-2)',
+              color: 'var(--fg)',
+              fontSize: 13,
+              fontFamily: 'inherit',
+              boxSizing: 'border-box',
+            }}
+          />
+        </div>
+        <div style={{ padding: 16, borderTop: '1px solid var(--border)', display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
+          <button
+            type="button"
+            onClick={onCancel}
+            className="edms-nav-item"
+            style={{ padding: '7px 14px', borderRadius: 7, border: '1px solid var(--border)', background: 'transparent', color: 'var(--fg)', fontSize: 13, cursor: 'pointer' }}
+          >
+            Cancelar
+          </button>
+          <button
+            type="button"
+            disabled={!trimmed}
+            onClick={() => onConfirm(trimmed)}
+            style={{
+              padding: '7px 14px',
+              borderRadius: 7,
+              border: '1px solid var(--accent)',
+              background: trimmed ? 'var(--accent)' : 'var(--bg-elev-2)',
+              color: trimmed ? 'var(--accent-fg)' : 'var(--fg-dim)',
+              fontSize: 13,
+              cursor: trimmed ? 'pointer' : 'default',
+              fontWeight: 500,
+            }}
+          >
+            Confirmar cambio
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 function DocumentTagAssignmentModal({
   count,
   tags,
@@ -6568,6 +6643,11 @@ export default function DashboardPage() {
   const [openDocId, setOpenDocId] = useState<string | null>(null)
   const [ctxMenu, setCtxMenu] = useState<ContextMenuState | null>(null)
   const [notifOpen, setNotifOpen] = useState(false)
+  const [stateCommentPrompt, setStateCommentPrompt] = useState<{
+    stateLabel: string
+    resolve: (comment: string) => void
+    reject: () => void
+  } | null>(null)
   const [notifications, setNotifications] = useState<NotificationItem[]>([])
   const [notifUnread, setNotifUnread] = useState(0)
   const [teamModalOpen, setTeamModalOpen] = useState(false)
@@ -7045,13 +7125,49 @@ export default function DashboardPage() {
     rechazado: 'rechazado',
   }
 
+  const STATES_REQUIRING_COMMENT = new Set(['observado', 'rechazado'])
+  const STATE_LABELS: Record<string, string> = {
+    borrador: 'Borrador',
+    en_revision: 'En revisión',
+    observado: 'Observado',
+    pendiente_firma: 'Pendiente de firma',
+    aprobado: 'Aprobado',
+    rechazado: 'Rechazado',
+  }
+
+  function requestStateComment(stateCode: string): Promise<string> {
+    return new Promise((resolve, reject) => {
+      setStateCommentPrompt({
+        stateLabel: STATE_LABELS[stateCode] ?? stateCode,
+        resolve: (comment) => {
+          setStateCommentPrompt(null)
+          resolve(comment)
+        },
+        reject: () => {
+          setStateCommentPrompt(null)
+          reject(new Error('Cambio de estado cancelado'))
+        },
+      })
+    })
+  }
+
   async function handleKanbanStateChange(docId: string, newColId: string) {
     const newStateCode = KANBAN_COL_TO_STATE[newColId]
     if (!newStateCode) throw new Error('Estado desconocido')
-    await changeDocumentState(docId, newStateCode)
+    let comment: string | undefined
+    if (STATES_REQUIRING_COMMENT.has(newStateCode)) {
+      comment = await requestStateComment(newStateCode)
+    }
+    await changeDocumentState(docId, newStateCode, comment)
     setCreatedDocs((prev) => prev.map((d) =>
       d.id === docId ? { ...d, status: statusFromWorkflow(newStateCode) } : d,
     ))
+    setDocumentDetails((current) => {
+      if (!current[docId]) return current
+      const next = { ...current }
+      delete next[docId]
+      return next
+    })
   }
 
   function openContextMenu(event: React.MouseEvent, docId: string) {
@@ -7935,6 +8051,14 @@ export default function DashboardPage() {
         onOpenDoc={openDoc}
       />
       <DropZoneOverlay active={dragging} />
+
+      {stateCommentPrompt && (
+        <StateChangeCommentModal
+          stateLabel={stateCommentPrompt.stateLabel}
+          onConfirm={stateCommentPrompt.resolve}
+          onCancel={stateCommentPrompt.reject}
+        />
+      )}
 
       {tagAssignmentDocIds.length > 0 && (
         <DocumentTagAssignmentModal
