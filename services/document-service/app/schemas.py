@@ -7,6 +7,7 @@ class CreateDocumentRequest(BaseModel):
     description: str
     expedient_id: str | None = None
     confidentiality_level: str = "publico_interno"
+    assignee_user_id: str | None = None
 
 
 class UpdateDocumentMetadataRequest(BaseModel):
@@ -122,6 +123,7 @@ class DocumentDetailPermissionsResponse(BaseModel):
     can_move_to_trash: bool
     can_download_file: bool
     can_comment: bool
+    can_assign_assignee: bool
 
 
 class DocumentDetailResponse(BaseModel):

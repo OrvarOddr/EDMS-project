@@ -73,6 +73,7 @@ export interface DocumentDetailPermissions {
   can_move_to_trash: boolean
   can_download_file: boolean
   can_comment: boolean
+  can_assign_assignee: boolean
 }
 
 export interface DocumentDetailResponse {
@@ -90,6 +91,7 @@ export interface CreateDocumentPayload {
   description: string
   expedient_id?: string | null
   confidentiality_level: string
+  assignee_user_id?: string | null
 }
 
 export interface UpdateDocumentMetadataPayload {

@@ -4,6 +4,7 @@ from pydantic import BaseModel, Field
 class BootstrapDocumentWorkflowRequest(BaseModel):
     document_id: str
     created_by_user_id: str
+    assignee_user_id: str | None = None
 
 
 class BootstrapDocumentWorkflowResponse(BaseModel):

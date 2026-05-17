@@ -82,13 +82,50 @@ def _assert_document_access(document_id: str, user_id: str) -> None:
         )
 
 
-def _has_global_assignment_privilege(roles_header: str | None) -> bool:
-    roles = {
-        role.strip().lower()
-        for role in (roles_header or "").split(",")
-        if role.strip()
-    }
-    return bool(roles & {"admin", "coordinador"})
+def _assert_document_permission(document_id: str, user_id: str, permission: str) -> None:
+    try:
+        with httpx.Client(timeout=5.0) as client:
+            response = client.get(
+                f"{settings.DOCUMENT_SERVICE_URL}/internal/documents/{document_id}/access",
+                headers={"X-User-Id": user_id},
+                params={"permission": permission},
+            )
+    except httpx.HTTPError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail="No se pudo validar permiso sobre el documento",
+        ) from exc
+
+    if response.status_code in {
+        status.HTTP_401_UNAUTHORIZED,
+        status.HTTP_403_FORBIDDEN,
+        status.HTTP_404_NOT_FOUND,
+    }:
+        raise HTTPException(status_code=response.status_code, detail="No tienes permiso sobre este documento")
+    if response.status_code >= 400:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail="document-service rechazo la validacion de permiso",
+        )
+
+
+def _notify_new_assignee(document_id: str, recipient_user_id: str, actor_user_id: str) -> None:
+    """Best-effort: no debe bloquear la asignación si collaboration-service falla."""
+    try:
+        with httpx.Client(timeout=5.0) as client:
+            client.post(
+                f"{settings.COLLABORATION_SERVICE_URL}/internal/collaboration/notifications",
+                json={
+                    "recipient_user_id": recipient_user_id,
+                    "actor_user_id": actor_user_id,
+                    "document_id": document_id,
+                    "type": "asignacion_encargado",
+                    "title": "Te asignaron como encargado de un documento",
+                    "body": f"Ahora eres el encargado del documento {document_id}.",
+                },
+            )
+    except httpx.HTTPError:
+        pass
 
 
 @router.get("/{document_id}/history", response_model=list[WorkflowHistoryItem])
@@ -97,13 +134,23 @@ def get_document_workflow_history(
     db: Session = Depends(get_db),
 ):
     document_id = _require_value(document_id, "Documento")
-    rows = (
+    state_rows = (
         db.query(DocumentState)
         .filter(DocumentState.document_id == document_id)
         .order_by(DocumentState.created_at.desc())
         .all()
     )
-    return [
+    assignment_rows = (
+        db.query(DocumentAssignment)
+        .filter(
+            DocumentAssignment.document_id == document_id,
+            DocumentAssignment.role_code == OWNER_ROLE,
+        )
+        .order_by(DocumentAssignment.assigned_at.desc())
+        .all()
+    )
+
+    history = [
         WorkflowHistoryItem(
             id=row.id,
             actor_user_id=row.changed_by_user_id,
@@ -111,8 +158,19 @@ def get_document_workflow_history(
             body=row.state_code,
             created_at=row.created_at.isoformat(),
         )
-        for row in rows
+        for row in state_rows
     ]
+    history.extend(
+        WorkflowHistoryItem(
+            id=row.id,
+            actor_user_id=row.assigned_by_user_id,
+            action="assignee_changed",
+            body=row.user_id,
+            created_at=row.assigned_at.isoformat(),
+        )
+        for row in assignment_rows
+    )
+    return sorted(history, key=lambda item: item.created_at, reverse=True)
 
 
 @router.post("/bootstrap", response_model=BootstrapDocumentWorkflowResponse, status_code=status.HTTP_201_CREATED)
@@ -122,6 +180,7 @@ def bootstrap_document_workflow(
 ):
     document_id = _require_value(body.document_id, "Documento")
     creator_id = _require_value(body.created_by_user_id, "Creador")
+    assignee_id = _require_value(body.assignee_user_id, "Encargado") if body.assignee_user_id else creator_id
 
     existing_state = (
         db.query(DocumentState)
@@ -158,13 +217,15 @@ def bootstrap_document_workflow(
     )
     assignment = DocumentAssignment(
         document_id=document_id,
-        user_id=creator_id,
+        user_id=assignee_id,
         role_code=OWNER_ROLE,
         assigned_by_user_id=creator_id,
     )
     db.add(state)
     db.add(assignment)
     db.commit()
+    if assignee_id != creator_id:
+        _notify_new_assignee(document_id, assignee_id, creator_id)
 
     return BootstrapDocumentWorkflowResponse(
         document_id=document_id,
@@ -309,48 +370,15 @@ def assign_document_assignee(
     document_id: str,
     body: AssignDocumentAssigneeRequest,
     x_user_id: str | None = Header(default=None, alias="X-User-Id"),
-    x_user_roles: str | None = Header(default=None, alias="X-User-Roles"),
     db: Session = Depends(get_db),
 ):
     if not x_user_id:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Usuario autenticado requerido")
 
     document_id = _require_value(document_id, "Documento")
-    assignee_user_id = _require_value(body.user_id, "Encargado")
-    _assert_document_access(document_id, x_user_id)
+    new_assignee_id = _require_value(body.user_id, "Encargado")
+    _assert_document_permission(document_id, x_user_id, "assign_assignee")
 
-    actor_assignment = (
-        db.query(DocumentAssignment)
-        .filter(
-            DocumentAssignment.document_id == document_id,
-            DocumentAssignment.user_id == x_user_id,
-            DocumentAssignment.is_active.is_(True),
-        )
-        .first()
-    )
-    if not actor_assignment and not _has_global_assignment_privilege(x_user_roles):
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="No puedes asignar encargado")
-
-    current_owner = (
-        db.query(DocumentAssignment)
-        .filter(
-            DocumentAssignment.document_id == document_id,
-            DocumentAssignment.role_code == OWNER_ROLE,
-            DocumentAssignment.is_active.is_(True),
-        )
-        .first()
-    )
-    if current_owner and current_owner.user_id == assignee_user_id:
-        return AssignDocumentAssigneeResponse(
-            document_id=document_id,
-            previous_assignee_user_id=current_owner.user_id,
-            assignee_user_id=current_owner.user_id,
-            assigned_by_user_id=x_user_id,
-            assigned_at=current_owner.assigned_at.isoformat(),
-        )
-
-    previous_assignee_user_id = current_owner.user_id if current_owner else None
-    now = datetime.now(timezone.utc)
     active_owner_assignments = (
         db.query(DocumentAssignment)
         .filter(
@@ -358,28 +386,45 @@ def assign_document_assignee(
             DocumentAssignment.role_code == OWNER_ROLE,
             DocumentAssignment.is_active.is_(True),
         )
+        .order_by(DocumentAssignment.assigned_at.desc())
         .all()
     )
+    current_owner = active_owner_assignments[0] if active_owner_assignments else None
+    previous_assignee_id = current_owner.user_id if current_owner else None
+
+    if current_owner and current_owner.user_id == new_assignee_id and len(active_owner_assignments) == 1:
+        return AssignDocumentAssigneeResponse(
+            document_id=document_id,
+            previous_assignee_user_id=previous_assignee_id,
+            assignee_user_id=current_owner.user_id,
+            assigned_by_user_id=current_owner.assigned_by_user_id,
+            assigned_at=current_owner.assigned_at.isoformat(),
+        )
+
+    revoked_at = datetime.now(timezone.utc)
     for assignment in active_owner_assignments:
         assignment.is_active = False
-        assignment.revoked_at = now
+        assignment.revoked_at = revoked_at
 
-    new_assignment = DocumentAssignment(
+    assignment = DocumentAssignment(
         document_id=document_id,
-        user_id=assignee_user_id,
+        user_id=new_assignee_id,
         role_code=OWNER_ROLE,
         assigned_by_user_id=x_user_id,
     )
-    db.add(new_assignment)
+    db.add(assignment)
     db.commit()
-    db.refresh(new_assignment)
+    db.refresh(assignment)
+
+    if new_assignee_id != x_user_id:
+        _notify_new_assignee(document_id, new_assignee_id, x_user_id)
 
     return AssignDocumentAssigneeResponse(
         document_id=document_id,
-        previous_assignee_user_id=previous_assignee_user_id,
-        assignee_user_id=new_assignment.user_id,
-        assigned_by_user_id=x_user_id,
-        assigned_at=new_assignment.assigned_at.isoformat(),
+        previous_assignee_user_id=previous_assignee_id,
+        assignee_user_id=assignment.user_id,
+        assigned_by_user_id=assignment.assigned_by_user_id,
+        assigned_at=assignment.assigned_at.isoformat(),
     )
 
 
