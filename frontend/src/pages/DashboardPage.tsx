@@ -4620,19 +4620,28 @@ function CreateDocumentModal({
 function EditMetadataModal({
   document,
   unassignedFiles,
+  assigneeOptions,
   onClose,
   onUpdated,
+  onAssignAssignee,
 }: {
   document: DocumentItem
   unassignedFiles: StoredFileItem[]
+  assigneeOptions: [string, string][]
   onClose: () => void
   onUpdated: (document: DocumentItemResponse, attachment?: DocumentAttachmentResult) => void
+  onAssignAssignee: (documentId: string, userId: string) => Promise<void>
 }) {
+  const currentAssigneeId = document.assignee ?? document.owner
+  const assigneeChoices = currentAssigneeId && !assigneeOptions.some(([value]) => value === currentAssigneeId)
+    ? [[currentAssigneeId, currentAssigneeId] as [string, string], ...assigneeOptions]
+    : assigneeOptions
   const [title, setTitle] = useState(document.name)
   const [documentTypeId, setDocumentTypeId] = useState(document.documentTypeId ?? 'contrato')
   const [description, setDescription] = useState(document.description ?? '')
   const [expedientId, setExpedientId] = useState(document.folder === 'root' ? '' : document.folder)
   const [confidentialityLevel, setConfidentialityLevel] = useState(document.confidentialityLevel ?? 'publico_interno')
+  const [assigneeUserId, setAssigneeUserId] = useState(currentAssigneeId ?? '')
   const [attachmentMode, setAttachmentMode] = useState<'none' | 'existing' | 'upload'>('none')
   const [selectedUnassignedFileId, setSelectedUnassignedFileId] = useState('')
   const [newFile, setNewFile] = useState<File | null>(null)
@@ -4688,6 +4697,9 @@ function EditMetadataModal({
         attachment.uploadedFile = newFile
       }
       onUpdated(data, attachment)
+      if (assigneeUserId && assigneeUserId !== currentAssigneeId) {
+        await onAssignAssignee(document.id, assigneeUserId)
+      }
       onClose()
     } catch (err) {
       setError(getApiErrorMessage(err, 'No se pudo actualizar la metadata'))
@@ -4738,7 +4750,7 @@ function EditMetadataModal({
           <div style={{ padding: '16px 18px', borderBottom: '1px solid var(--border)' }}>
             <div style={{ fontSize: 16, fontWeight: 600, color: 'var(--fg)', marginBottom: 4 }}>Editar metadata</div>
             <div style={{ fontSize: 12.5, color: 'var(--fg-muted)' }}>
-              Actualiza solo datos descriptivos del documento. Estado y asignaciones quedan en workflow.
+              Actualiza datos descriptivos, archivo y encargado del documento.
             </div>
           </div>
 
@@ -4826,6 +4838,32 @@ function EditMetadataModal({
                   outline: 'none',
                 }}
               />
+            </label>
+
+            <label style={{ display: 'grid', gap: 6 }}>
+              <span style={{ color: 'var(--fg-muted)', fontSize: 12 }}>Encargado</span>
+              <select
+                value={assigneeUserId}
+                disabled={submitting || assigneeChoices.length === 0}
+                onChange={(event) => setAssigneeUserId(event.target.value)}
+                style={{
+                  border: '1px solid var(--border)',
+                  borderRadius: 8,
+                  background: 'var(--bg-elev-2)',
+                  color: 'var(--fg)',
+                  padding: '10px 11px',
+                  fontSize: 13,
+                  outline: 'none',
+                }}
+              >
+                {assigneeChoices.length === 0 ? (
+                  <option value="">Sin usuarios disponibles</option>
+                ) : (
+                  assigneeChoices.map(([value, label]) => (
+                    <option key={value} value={value}>{label}</option>
+                  ))
+                )}
+              </select>
             </label>
 
             <label style={{ display: 'grid', gap: 6 }}>
@@ -7343,7 +7381,9 @@ export default function DashboardPage() {
       setAssignmentCounts((current) => ({ ...current, [documentId]: assignedUserIds.length }))
     }
 
-    setToast(`Encargado actualizado: ${labelForUserId(assignment.assignee_user_id)}`)
+    const assigneeLabel = filterUserOptions.find(([value]) => value === assignment.assignee_user_id)?.[1]
+      ?? assignment.assignee_user_id
+    setToast(`Encargado actualizado: ${assigneeLabel}`)
   }
 
   async function handleAction(action: string, docId?: string) {
@@ -7968,8 +8008,10 @@ export default function DashboardPage() {
         <EditMetadataModal
           document={editingMetadataDoc}
           unassignedFiles={unassignedFiles}
+          assigneeOptions={filterUserOptions}
           onClose={() => setEditingMetadataDocId(null)}
           onUpdated={handleMetadataUpdated}
+          onAssignAssignee={handleAssignAssignee}
         />
       )}
       {assignFileModalFile && (
