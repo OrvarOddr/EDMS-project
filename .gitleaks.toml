@@ -1,0 +1,18 @@
+title = "EDMS gitleaks config"
+
+# Extiende las reglas por defecto de gitleaks y solo agrega un allowlist
+# acotado para credenciales ficticias usadas exclusivamente en tests.
+[extend]
+useDefault = true
+
+[allowlist]
+description = "Valores de prueba (no son secretos reales)"
+paths = [
+  '''services/.*/tests/.*''',
+  '''e2e/.*''',
+]
+regexes = [
+  '''clave-segura-123''',
+  '''test-admin-pass-123456''',
+  '''test-jwt-secret-key-with-at-least-32-characters''',
+]
