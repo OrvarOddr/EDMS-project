@@ -2,7 +2,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from sqlalchemy import text
 from app.database import engine, Base
-from app.routers import health, documents
+from app.routers import health, documents, notifications
 
 
 @asynccontextmanager
@@ -18,3 +18,5 @@ async def lifespan(app: FastAPI):
 app = FastAPI(title="collaboration-service", lifespan=lifespan)
 app.include_router(health.router)
 app.include_router(documents.router)
+app.include_router(notifications.router)
+app.include_router(notifications.internal_router)

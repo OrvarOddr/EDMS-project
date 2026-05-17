@@ -107,6 +107,7 @@ services:
     environment:
       DATABASE_URL: postgresql://edms_workflow:${WORKFLOW_DB_PASSWORD:?WORKFLOW_DB_PASSWORD requerido}@postgres:5432/edms?options=-csearch_path=workflow
       DOCUMENT_SERVICE_URL: http://document-service:8002
+      COLLABORATION_SERVICE_URL: http://collaboration-service:8004
     depends_on:
       postgres-init:
         condition: service_completed_successfully
