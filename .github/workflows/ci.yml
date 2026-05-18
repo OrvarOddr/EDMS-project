@@ -279,6 +279,7 @@ jobs:
     name: SAST backend (bandit)
     runs-on: ubuntu-latest
     strategy:
+      fail-fast: false
       matrix:
         service: [auth-service, document-service, workflow-service, collaboration-service, file-service, api-gateway]
     steps:
@@ -295,6 +296,7 @@ jobs:
     name: Auditoria de dependencias backend (pip-audit)
     runs-on: ubuntu-latest
     strategy:
+      fail-fast: false
       matrix:
         service: [auth-service, document-service, workflow-service, collaboration-service, file-service, api-gateway]
     steps:
@@ -338,7 +340,7 @@ jobs:
       # Solo vuln: los secretos ya los cubre gitleaks (job "Escaneo de
       # secretos") con su allowlist, evitando dobles falsos positivos.
       - name: Trivy filesystem
-        uses: aquasecurity/trivy-action@0.24.0
+        uses: aquasecurity/trivy-action@v0.36.0
         with:
           scan-type: fs
           scanners: vuln
