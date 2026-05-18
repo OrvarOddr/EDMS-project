@@ -102,6 +102,19 @@ def _fetch_active_assignment_user_ids(document_id: str) -> list[str]:
         return []
 
 
+def _fetch_document_name(document_id: str) -> str | None:
+    try:
+        with httpx.Client(timeout=3.0) as client:
+            response = client.get(
+                f"{settings.DOCUMENT_SERVICE_URL}/internal/documents/{document_id}/name",
+            )
+        if response.status_code == 200:
+            return response.json().get("name")
+    except httpx.HTTPError:
+        pass
+    return None
+
+
 def _create_notification(
     db: Session,
     *,
@@ -111,6 +124,7 @@ def _create_notification(
     actor_user_id: str,
     document_id: str,
     source_id: str,
+    document_name: str | None = None,
     body: str | None = None,
 ) -> None:
     duplicate = (
@@ -130,6 +144,7 @@ def _create_notification(
             recipient_user_id=recipient_user_id,
             actor_user_id=actor_user_id,
             document_id=document_id,
+            document_name=document_name,
             source_id=source_id,
             type=notif_type,
             title=title,
@@ -175,6 +190,7 @@ def create_comment(
     db.commit()
     db.refresh(comment)
 
+    doc_name = _fetch_document_name(document_id)
     active_assignment_user_ids = _fetch_active_assignment_user_ids(document_id)
     mentioned_set = set(mentioned_user_ids)
     for recipient_user_id in active_assignment_user_ids:
@@ -187,6 +203,7 @@ def create_comment(
             title="Nuevo comentario en un documento asignado",
             actor_user_id=x_user_id,
             document_id=document_id,
+            document_name=doc_name,
             source_id=comment.id,
             body=text[:240],
         )
@@ -199,6 +216,7 @@ def create_comment(
             title="Te mencionaron en un comentario",
             actor_user_id=x_user_id,
             document_id=document_id,
+            document_name=doc_name,
             source_id=comment.id,
             body=text[:240],
         )

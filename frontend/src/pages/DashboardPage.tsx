@@ -2754,6 +2754,11 @@ function ActivityPanel({
                   <div style={{ color: 'var(--fg)', fontWeight: 500, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
                     {item.title}
                   </div>
+                  {item.document_name && (
+                    <div style={{ fontSize: 11.5, color: 'var(--accent)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                      {item.document_name}
+                    </div>
+                  )}
                   {item.body && (
                     <div style={{ fontSize: 11.5, color: 'var(--fg-muted)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
                       {item.body}

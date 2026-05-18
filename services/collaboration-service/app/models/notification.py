@@ -18,6 +18,7 @@ class Notification(Base):
     recipient_user_id = Column(String, nullable=False, index=True)
     actor_user_id = Column(String, nullable=True)
     document_id = Column(String, nullable=True, index=True)
+    document_name = Column(String, nullable=True)
     source_id = Column(String, nullable=True, index=True)
     type = Column(String, nullable=False)
     title = Column(String, nullable=False)

@@ -17,6 +17,7 @@ class CreateNotificationRequest(BaseModel):
     title: str
     actor_user_id: str | None = None
     document_id: str | None = None
+    document_name: str | None = None
     source_id: str | None = None
     body: str | None = None
 
@@ -85,6 +86,7 @@ def create_notification(body: CreateNotificationRequest, db: Session = Depends(g
         recipient_user_id=recipient,
         actor_user_id=body.actor_user_id,
         document_id=body.document_id,
+        document_name=body.document_name,
         source_id=source_id,
         type=notif_type,
         title=title,
