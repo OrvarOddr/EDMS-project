@@ -82,6 +82,7 @@ Documentos de trabajo:
 - [architecture/contracts-and-service-ownership.md](architecture/contracts-and-service-ownership.md)
 - [architecture/database-schemas-by-service.md](architecture/database-schemas-by-service.md)
 - [architecture/architecture-diagrams.md](architecture/architecture-diagrams.md)
+- [architecture/devsecops-y-seguridad.md](architecture/devsecops-y-seguridad.md)
 
 ### 4. Datos
 
