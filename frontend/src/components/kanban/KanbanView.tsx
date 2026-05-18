@@ -27,6 +27,18 @@ interface KanbanCol {
   bg: string
 }
 
+function kanbanDueLabel(value: string): string {
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) return value
+  return date.toLocaleDateString('es-CL', { day: '2-digit', month: '2-digit', year: 'numeric' })
+}
+
+function kanbanDueOverdue(value: string): boolean {
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) return false
+  return date.getTime() < Date.now()
+}
+
 const KANBAN_COLS: KanbanCol[] = [
   { id: 'borrador',        label: 'Borrador',           color: 'var(--fg-dim)',        bg: 'oklch(0.55 0 0 / 0.08)' },
   { id: 'revision',        label: 'En revisión',        color: 'oklch(0.72 0.13 255)', bg: 'oklch(0.35 0.08 255 / 0.12)' },
@@ -134,24 +146,18 @@ function KanbanCard({ doc, tags, isDragging, onOpen, onDragStart, onDragEnd }: K
         </div>
       )}
 
-      {doc.dueDate && (() => {
-        const due = new Date(doc.dueDate)
-        const valid = !Number.isNaN(due.getTime())
-        const overdue = valid && due.getTime() < Date.now()
-        return (
-          <span style={{
-            display: 'inline-flex',
-            alignItems: 'center',
-            gap: 4,
-            alignSelf: 'flex-start',
-            fontSize: 10.5,
-            color: overdue ? 'var(--danger)' : 'var(--fg-dim)',
-          }}>
-            ⏱ Vence {valid ? due.toLocaleDateString('es-CL', { day: '2-digit', month: '2-digit', year: 'numeric' }) : doc.dueDate}
-            {overdue ? ' · vencido' : ''}
-          </span>
-        )
-      })()}
+      {doc.dueDate && (
+        <span style={{
+          display: 'inline-flex',
+          alignItems: 'center',
+          gap: 4,
+          alignSelf: 'flex-start',
+          fontSize: 10.5,
+          color: kanbanDueOverdue(doc.dueDate) ? 'var(--danger)' : 'var(--fg-dim)',
+        }}>
+          ⏱ Vence {kanbanDueLabel(doc.dueDate)}{kanbanDueOverdue(doc.dueDate) ? ' · vencido' : ''}
+        </span>
+      )}
 
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>

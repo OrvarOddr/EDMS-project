@@ -141,7 +141,9 @@ def _clean_required(value: str, field_name: str) -> str:
 
 
 def _record_metadata_activity(document: Document, actor_user_id: str, changed_fields: list[str]) -> None:
-    metadata = document.metadata_json if isinstance(document.metadata_json, dict) else {}
+    # Copia: reasignar el MISMO dict no marca la columna JSON como modificada
+    # en SQLAlchemy y la actividad no se persistia.
+    metadata = dict(document.metadata_json) if isinstance(document.metadata_json, dict) else {}
     activity = metadata.get("activity") if isinstance(metadata.get("activity"), list) else []
     metadata["activity"] = [
         {
