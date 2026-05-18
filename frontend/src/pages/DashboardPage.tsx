@@ -8,6 +8,7 @@ import {
   type ReactNode,
 } from 'react'
 import logo from '../assets/logo.png'
+import { normalizeMentionToken, notifTimeAgo } from '../lib/text'
 import { useAuth } from '../context/AuthContext'
 import KanbanView from '../components/kanban/KanbanView'
 import { assignRole, createUser, listRoles, listUsers, type RoleItem, type UserMe } from '../api/auth'
@@ -368,14 +369,6 @@ function userLabelFromAuth(firstName: string, lastName: string, email: string) {
   const full = `${firstName} ${lastName}`.trim()
   if (full) return full
   return email.split('@')[0]
-}
-
-function normalizeMentionToken(value: string) {
-  return value
-    .normalize('NFD')
-    .replace(/[\u0300-\u036f]/g, '')
-    .toLowerCase()
-    .replace(/[^a-z0-9_-]+/g, '')
 }
 
 function initialsFromLabel(label: string) {
@@ -3779,20 +3772,6 @@ function ContextMenu({
       )}
     </div>
   )
-}
-
-function notifTimeAgo(iso: string): string {
-  const then = new Date(iso).getTime()
-  if (Number.isNaN(then)) return ''
-  const diff = Math.max(0, Date.now() - then)
-  const min = Math.floor(diff / 60000)
-  if (min < 1) return 'ahora'
-  if (min < 60) return `${min} min`
-  const hrs = Math.floor(min / 60)
-  if (hrs < 24) return `${hrs} h`
-  const days = Math.floor(hrs / 24)
-  if (days === 1) return 'ayer'
-  return `${days} d`
 }
 
 function notifIcon(type: string) {
