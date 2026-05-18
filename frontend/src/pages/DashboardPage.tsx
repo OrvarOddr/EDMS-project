@@ -7944,12 +7944,7 @@ export default function DashboardPage() {
         ) : showDashboard ? (
           <div style={{ flex: 1, overflow: 'auto' }}>
             <OverviewCards storage={storage} />
-            <div style={{ display: 'grid', gridTemplateColumns: '1.5fr 1fr', gap: 12, padding: '14px 18px' }}>
-              <ApprovalsPanel onOpenDoc={openDoc} />
-              <ActivityPanel items={recentActivity} onOpenDoc={openDoc} />
-            </div>
-
-            <div style={{ padding: '4px 18px 24px' }}>
+            <div style={{ padding: '14px 18px 10px' }}>
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
                 <h2 style={{ fontSize: 14, fontWeight: 600, margin: 0 }}>Recientes</h2>
                 <button onClick={() => setSelectedView('recientes')} style={{ fontSize: 12, color: 'var(--fg-muted)', display: 'flex', alignItems: 'center', gap: 3 }}>
@@ -8008,6 +8003,11 @@ export default function DashboardPage() {
                   })}
                 </div>
               </div>
+            </div>
+
+            <div style={{ display: 'grid', gridTemplateColumns: '1.5fr 1fr', gap: 12, padding: '4px 18px 24px' }}>
+              <ApprovalsPanel onOpenDoc={openDoc} />
+              <ActivityPanel items={recentActivity} onOpenDoc={openDoc} />
             </div>
 
           </div>
