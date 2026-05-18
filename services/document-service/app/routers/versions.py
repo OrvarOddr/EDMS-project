@@ -158,14 +158,48 @@ def _record_metadata_activity(document: Document, actor_user_id: str, changed_fi
     document.metadata_json = metadata
 
 
-def _notify_metadata_change(document_id: str, actor_user_id: str, changed_fields: list[str]) -> None:
+def _metadata_value_label(field: str, value: object) -> str:
+    if value is None or value == "":
+        return "sin valor"
+    if field == "confidentiality_level":
+        labels = {
+            "publico_interno": "Publico interno",
+            "confidencial": "Confidencial",
+            "reservado": "Reservado",
+        }
+        return labels.get(str(value), str(value))
+    if isinstance(value, datetime):
+        return value.date().isoformat()
+    return str(value)
+
+
+def _metadata_change_body(document_title: str, change_details: dict[str, tuple[object, object]]) -> str:
+    parts = []
+    for field, (old_value, new_value) in change_details.items():
+        if field == "due_date":
+            continue
+        label = _metadata_field_label(field)
+        old_label = _metadata_value_label(field, old_value)
+        new_label = _metadata_value_label(field, new_value)
+        parts.append(f"{label} cambio de \"{old_label}\" a \"{new_label}\"")
+
+    if not parts:
+        return f"Documento \"{document_title}\": metadata actualizada."
+    return f"Documento \"{document_title}\": {'; '.join(parts)}."
+
+
+def _notify_metadata_change(
+    document_id: str,
+    document_title: str,
+    actor_user_id: str,
+    change_details: dict[str, tuple[object, object]],
+) -> None:
     """Best-effort: publica cambios descriptivos en la actividad reciente."""
-    visible_fields = [field for field in changed_fields if field != "due_date"]
+    visible_fields = [field for field in change_details if field != "due_date"]
     if not visible_fields:
         return
 
-    labels = ", ".join(_metadata_field_label(field) for field in visible_fields)
-    body_text = f"Se actualizo {labels}."
+    body_text = _metadata_change_body(document_title, change_details)
     source_id = f"metadata:{document_id}:{uuid.uuid4()}"
 
     try:
@@ -178,7 +212,7 @@ def _notify_metadata_change(document_id: str, actor_user_id: str, changed_fields
                     "document_id": document_id,
                     "source_id": source_id,
                     "type": "metadata_actualizada",
-                    "title": "Metadata actualizada",
+                    "title": f"Metadata actualizada: {document_title}",
                     "body": body_text,
                 },
             )
@@ -710,6 +744,10 @@ def update_document_metadata(
         for field, value in updates.items()
         if getattr(document, field) != value
     ]
+    change_details = {
+        field: (getattr(document, field), updates[field])
+        for field in changed_fields
+    }
 
     due_provided = "due_date" in body.model_fields_set
     new_due = _parse_due_date(body.due_date) if due_provided else None
@@ -722,6 +760,7 @@ def update_document_metadata(
     for field, value in updates.items():
         setattr(document, field, value)
     if due_changed:
+        change_details["due_date"] = (document.due_at, new_due)
         document.due_at = new_due
         changed_fields.append("due_date")
     document.updated_at = datetime.now(timezone.utc)
@@ -732,7 +771,7 @@ def update_document_metadata(
 
     if due_changed:
         _notify_due_date_change(document.id, actor_user_id, document.due_at)
-    _notify_metadata_change(document.id, actor_user_id, changed_fields)
+    _notify_metadata_change(document.id, document.title, actor_user_id, change_details)
 
     return _to_document_response(document, current_mime_type=current_mime_type)
 
