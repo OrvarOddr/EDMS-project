@@ -158,6 +158,34 @@ def _record_metadata_activity(document: Document, actor_user_id: str, changed_fi
     document.metadata_json = metadata
 
 
+def _notify_metadata_change(document_id: str, actor_user_id: str, changed_fields: list[str]) -> None:
+    """Best-effort: publica cambios descriptivos en la actividad reciente."""
+    visible_fields = [field for field in changed_fields if field != "due_date"]
+    if not visible_fields:
+        return
+
+    labels = ", ".join(_metadata_field_label(field) for field in visible_fields)
+    body_text = f"Se actualizo {labels}."
+    source_id = f"metadata:{document_id}:{uuid.uuid4()}"
+
+    try:
+        with httpx.Client(timeout=5.0) as client:
+            client.post(
+                f"{settings.COLLABORATION_SERVICE_URL}/internal/collaboration/notifications",
+                json={
+                    "recipient_user_id": actor_user_id,
+                    "actor_user_id": actor_user_id,
+                    "document_id": document_id,
+                    "source_id": source_id,
+                    "type": "metadata_actualizada",
+                    "title": "Metadata actualizada",
+                    "body": body_text,
+                },
+            )
+    except httpx.HTTPError:
+        pass
+
+
 def _bootstrap_workflow(document_id: str, actor_user_id: str, assignee_user_id: str | None = None) -> dict:
     payload = {
         "document_id": document_id,
@@ -686,9 +714,10 @@ def update_document_metadata(
     due_provided = "due_date" in body.model_fields_set
     new_due = _parse_due_date(body.due_date) if due_provided else None
     due_changed = due_provided and _normalize_dt(document.due_at) != _normalize_dt(new_due)
+    current_mime_type = _current_mime_map(db, [document.id]).get(document.id)
 
     if not changed_fields and not due_changed:
-        return _to_document_response(document)
+        return _to_document_response(document, current_mime_type=current_mime_type)
 
     for field, value in updates.items():
         setattr(document, field, value)
@@ -703,8 +732,9 @@ def update_document_metadata(
 
     if due_changed:
         _notify_due_date_change(document.id, actor_user_id, document.due_at)
+    _notify_metadata_change(document.id, actor_user_id, changed_fields)
 
-    return _to_document_response(document)
+    return _to_document_response(document, current_mime_type=current_mime_type)
 
 
 @router.patch("/{document_id}/trash", response_model=DocumentResponse)
