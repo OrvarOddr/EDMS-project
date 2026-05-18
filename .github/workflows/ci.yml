@@ -274,3 +274,74 @@ jobs:
       - name: Validar Dockerfiles
         run: |
           find . -name "Dockerfile" -not -path "*/.git/*" | xargs hadolint --ignore DL3008 --ignore DL3013 --ignore DL3042 --ignore DL3016
+
+  sast-backend:
+    name: SAST backend (bandit)
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        service: [auth-service, document-service, workflow-service, collaboration-service, file-service, api-gateway]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Instalar bandit
+        run: pip install bandit
+      - name: Bandit ${{ matrix.service }}
+        run: bandit -r services/${{ matrix.service }}/app -ll
+
+  deps-audit-backend:
+    name: Auditoria de dependencias backend (pip-audit)
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        service: [auth-service, document-service, workflow-service, collaboration-service, file-service, api-gateway]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Instalar pip-audit
+        run: pip install pip-audit
+      # CVEs ignoradas: requieren subir fastapi/python-jose (topados por pines
+      # transitivos). Dependabot abre los PRs de upgrade, revisados aparte.
+      - name: pip-audit ${{ matrix.service }}
+        run: >-
+          pip-audit -r services/${{ matrix.service }}/requirements.txt
+          --ignore-vuln CVE-2024-47874
+          --ignore-vuln CVE-2025-54121
+          --ignore-vuln CVE-2026-30922
+
+  deps-audit-frontend:
+    name: Auditoria de dependencias frontend (npm audit)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+          cache-dependency-path: frontend/package-lock.json
+      - name: Instalar dependencias
+        run: npm ci
+        working-directory: frontend
+      - name: npm audit
+        run: npm audit --audit-level=high
+        working-directory: frontend
+
+  trivy-fs:
+    name: Trivy (vulnerabilidades y secretos)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Trivy filesystem
+        uses: aquasecurity/trivy-action@0.24.0
+        with:
+          scan-type: fs
+          scanners: vuln,secret
+          severity: HIGH,CRITICAL
+          ignore-unfixed: true
+          exit-code: "1"
+          skip-dirs: "frontend/node_modules,.venv-test"
+          trivyignores: .trivyignore
