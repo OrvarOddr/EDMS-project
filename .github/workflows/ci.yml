@@ -335,11 +335,13 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      # Solo vuln: los secretos ya los cubre gitleaks (job "Escaneo de
+      # secretos") con su allowlist, evitando dobles falsos positivos.
       - name: Trivy filesystem
         uses: aquasecurity/trivy-action@0.24.0
         with:
           scan-type: fs
-          scanners: vuln,secret
+          scanners: vuln
           severity: HIGH,CRITICAL
           ignore-unfixed: true
           exit-code: "1"
