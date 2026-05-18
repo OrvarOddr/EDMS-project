@@ -61,6 +61,7 @@ import {
   markNotificationRead,
   type NotificationItem,
 } from '../api/notifications'
+import { getRecentActivity, type ActivityItem as RecentActivityItem } from '../api/activity'
 
 type ViewMode = 'list' | 'grid'
 type DocKind = 'pdf' | 'doc' | 'sheet' | 'slide' | 'image' | 'sig'
@@ -610,10 +611,6 @@ function getFolderPath(folders: FolderItem[], targetId: string, path: FolderItem
 
 function findUserById(userId: string) {
   return dashboardData.users.find((user) => user.id === userId) ?? null
-}
-
-function findDocById(docId: string) {
-  return dashboardData.docs.find((doc) => doc.id === docId) ?? null
 }
 
 function findKind(kindId: DocKind) {
@@ -2681,7 +2678,13 @@ function ApprovalsPanel({ onOpenDoc }: { onOpenDoc: (docId: string) => void }) {
   )
 }
 
-function ActivityPanel() {
+function ActivityPanel({
+  items,
+  onOpenDoc,
+}: {
+  items: RecentActivityItem[]
+  onOpenDoc: (documentId: string) => void
+}) {
   return (
     <div style={{ background: 'var(--bg-elev)', border: '1px solid var(--border)', borderRadius: 10, overflow: 'hidden' }}>
       <div style={{ padding: '12px 14px', borderBottom: '1px solid var(--border)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
@@ -2690,34 +2693,47 @@ function ActivityPanel() {
           <span style={{ fontSize: 13, fontWeight: 600 }}>Actividad reciente</span>
         </div>
       </div>
-      <div style={{ padding: '6px 0' }}>
-        {dashboardData.activity.map((item) => {
-          const doc = findDocById(item.doc)
-          const user = findUserById(item.who)
-          return (
-            <div key={item.id} style={{ padding: '8px 14px', display: 'flex', alignItems: 'center', gap: 10, fontSize: 12.5 }}>
-              <OwnerAvatar userId={item.who} size={22} />
-              <div style={{ flex: 1, minWidth: 0, color: 'var(--fg-muted)' }}>
-                <b style={{ color: 'var(--fg)', fontWeight: 500 }}>{user?.name.split(' ')[0]}</b> {item.what}{' '}
-                <span
-                  style={{
-                    color: 'var(--fg)',
-                    whiteSpace: 'nowrap',
-                    overflow: 'hidden',
-                    textOverflow: 'ellipsis',
-                    display: 'inline-block',
-                    maxWidth: 240,
-                    verticalAlign: 'bottom',
-                  }}
-                >
-                  {doc?.name}
-                </span>
+      {items.length === 0 ? (
+        <div style={{ padding: '24px 14px', fontSize: 12, color: 'var(--fg-muted)', textAlign: 'center' }}>
+          No hay actividad reciente
+        </div>
+      ) : (
+        <div style={{ padding: '6px 0' }}>
+          {items.map((item) => {
+            const navigable = Boolean(item.document_id)
+            return (
+              <div
+                key={item.id}
+                className={navigable ? 'edms-nav-item' : undefined}
+                onClick={() => item.document_id && onOpenDoc(item.document_id)}
+                style={{
+                  padding: '8px 14px',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 10,
+                  fontSize: 12.5,
+                  cursor: navigable ? 'pointer' : 'default',
+                }}
+              >
+                <div style={{ width: 24, height: 24, borderRadius: 12, background: 'var(--bg-elev-2)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                  {notifIcon(item.type)}
+                </div>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ color: 'var(--fg)', fontWeight: 500, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                    {item.title}
+                  </div>
+                  {item.body && (
+                    <div style={{ fontSize: 11.5, color: 'var(--fg-muted)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                      {item.body}
+                    </div>
+                  )}
+                </div>
+                <span style={{ fontSize: 11, color: 'var(--fg-dim)', flexShrink: 0 }}>{notifTimeAgo(item.created_at)}</span>
               </div>
-              <span style={{ fontSize: 11, color: 'var(--fg-dim)' }}>{item.at}</span>
-            </div>
-          )
-        })}
-      </div>
+            )
+          })}
+        </div>
+      )}
     </div>
   )
 }
@@ -6629,6 +6645,7 @@ export default function DashboardPage() {
   } | null>(null)
   const [notifications, setNotifications] = useState<NotificationItem[]>([])
   const [notifUnread, setNotifUnread] = useState(0)
+  const [recentActivity, setRecentActivity] = useState<RecentActivityItem[]>([])
   const [teamModalOpen, setTeamModalOpen] = useState(false)
   const [createDocumentModalOpen, setCreateDocumentModalOpen] = useState(false)
   const [editingMetadataDocId, setEditingMetadataDocId] = useState<string | null>(null)
@@ -6735,6 +6752,14 @@ export default function DashboardPage() {
     }
   }, [])
 
+  const refreshActivity = useCallback(async () => {
+    try {
+      setRecentActivity(await getRecentActivity())
+    } catch {
+      /* actividad no disponible: se reintenta en el próximo ciclo */
+    }
+  }, [])
+
   useEffect(() => {
     const initialTimer = window.setTimeout(() => {
       void refreshNotifications()
@@ -6753,6 +6778,17 @@ export default function DashboardPage() {
     }, 0)
     return () => window.clearTimeout(timer)
   }, [notifOpen, refreshNotifications])
+
+  useEffect(() => {
+    const initialTimer = window.setTimeout(() => {
+      void refreshActivity()
+    }, 0)
+    const timer = window.setInterval(refreshActivity, 60000)
+    return () => {
+      window.clearTimeout(initialTimer)
+      window.clearInterval(timer)
+    }
+  }, [refreshActivity])
 
   async function handleMarkNotificationRead(id: string) {
     setNotifications((current) =>
@@ -7826,7 +7862,7 @@ export default function DashboardPage() {
             <OverviewCards storage={storage} />
             <div style={{ display: 'grid', gridTemplateColumns: '1.5fr 1fr', gap: 12, padding: '14px 18px' }}>
               <ApprovalsPanel onOpenDoc={openDoc} />
-              <ActivityPanel />
+              <ActivityPanel items={recentActivity} onOpenDoc={openDoc} />
             </div>
 
             <div style={{ padding: '4px 18px 24px' }}>
