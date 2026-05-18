@@ -59,14 +59,13 @@ test('US-014: crear documento, mover a observado con comentario y verlo en el hi
   expect(detail.status(), await detail.text()).toBe(200)
   const body = await detail.json()
   expect(body.workflow.state_code).toBe('observado')
-  const cambio = body.history.find(
+  const cambios = body.history.filter(
     (h: { action: string; body?: string }) => h.action === 'state_change' && h.body === 'observado',
   )
-  // Diagnostico temporal: volcar lo que devuelve el detalle.
-  console.log('DIAG history=', JSON.stringify(body.history))
-  console.log('DIAG state_change_resp ya fue 200; cambio=', JSON.stringify(cambio))
-  expect(cambio, 'historial debe registrar el cambio a observado').toBeTruthy()
-  expect(cambio.note).toBe(motivo)
+  // No debe haber duplicados (regresion: document-service mezclaba el
+  // historial de workflow dos veces).
+  expect(cambios.length, 'el cambio a observado no debe duplicarse').toBe(1)
+  expect(cambios[0].note).toBe(motivo)
 })
 
 test('US-014: comentar el documento ejercita collaboration-service en vivo', async ({ request }) => {

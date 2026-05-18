@@ -539,10 +539,11 @@ def get_document_detail(
 
     collaboration = _fetch_collaboration_timeline(document.id, actor_user_id)
     comments = collaboration.get("comments") if isinstance(collaboration.get("comments"), list) else []
-    collaboration_history = collaboration.get("history") if isinstance(collaboration.get("history"), list) else []
+    # No se usa collaboration["history"]: es un re-fetch lossy del historial
+    # de workflow (pierde `note`/comentario) y duplicaria eventos. El
+    # historial de workflow se toma directo, que es la fuente autoritativa.
     workflow_history = _fetch_workflow_history(document.id)
     history_items = [
-        *[DocumentDetailTimelineItemResponse(**item) for item in collaboration_history if isinstance(item, dict)],
         *[DocumentDetailTimelineItemResponse(**item) for item in workflow_history if isinstance(item, dict)],
         *_metadata_history(document),
         *_version_history(versions),
