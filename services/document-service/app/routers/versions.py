@@ -210,9 +210,10 @@ def _notify_metadata_change(
                     "recipient_user_id": actor_user_id,
                     "actor_user_id": actor_user_id,
                     "document_id": document_id,
+                    "document_name": document_title,
                     "source_id": source_id,
                     "type": "metadata_actualizada",
-                    "title": f"Metadata actualizada: {document_title}",
+                    "title": "Metadata actualizada",
                     "body": body_text,
                 },
             )
@@ -934,6 +935,14 @@ def create_document_from_file(
         document=_to_document_response(document, workflow, current_mime_type=file_meta.get("mime_type")),
         version=_to_response(version),
     )
+
+
+@internal_router.get("/{document_id}/name")
+def get_document_name(document_id: str, db: Session = Depends(get_db)):
+    document = db.query(Document).filter(Document.id == document_id.strip()).first()
+    if not document:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Documento no encontrado")
+    return {"document_id": document.id, "name": document.title}
 
 
 @internal_router.get("/{document_id}/access")

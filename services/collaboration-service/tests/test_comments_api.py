@@ -14,6 +14,7 @@ DOC = "doc-1"
 AUTHOR = "autor-1"
 
 ACCESS_URL = f"{DOCUMENT_SERVICE_URL}/internal/documents/{DOC}/access"
+NAME_URL = f"{DOCUMENT_SERVICE_URL}/internal/documents/{DOC}/name"
 ASSIGNMENTS_URL = f"{WORKFLOW_SERVICE_URL}/internal/workflow/documents/{DOC}/assignments"
 
 
@@ -45,6 +46,7 @@ def test_permiso_denegado_propaga_403(client):
 @respx.mock
 def test_comentario_notifica_a_asignados_y_mencionados(client):
     respx.get(ACCESS_URL).mock(return_value=httpx.Response(200))
+    respx.get(NAME_URL).mock(return_value=httpx.Response(200, json={"name": "Doc 1"}))
     respx.get(ASSIGNMENTS_URL).mock(
         return_value=httpx.Response(200, json=[{"user_id": "encargado-1"}, {"user_id": AUTHOR}])
     )
@@ -79,6 +81,7 @@ def test_comentario_notifica_a_asignados_y_mencionados(client):
 @respx.mock
 def test_comentario_sin_asignados_no_falla(client):
     respx.get(ACCESS_URL).mock(return_value=httpx.Response(200))
+    respx.get(NAME_URL).mock(return_value=httpx.Response(200, json={"name": "Doc 1"}))
     respx.get(ASSIGNMENTS_URL).mock(return_value=httpx.Response(200, json=[]))
     r = client.post(
         f"/collaboration/documents/{DOC}/comments",

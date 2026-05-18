@@ -4,6 +4,7 @@ export interface ActivityItem {
   id: string
   actor_user_id: string | null
   document_id: string | null
+  document_name: string | null
   type: string
   title: string
   body: string | null

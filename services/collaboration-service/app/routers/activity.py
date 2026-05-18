@@ -18,6 +18,7 @@ class ActivityItem(BaseModel):
     id: str
     actor_user_id: str | None = None
     document_id: str | None = None
+    document_name: str | None = None
     type: str
     title: str
     body: str | None = None
@@ -50,6 +51,7 @@ def list_recent_activity(
                 id=row.id,
                 actor_user_id=row.actor_user_id,
                 document_id=row.document_id,
+                document_name=row.document_name,
                 type=row.type,
                 title=row.title,
                 body=row.body,
