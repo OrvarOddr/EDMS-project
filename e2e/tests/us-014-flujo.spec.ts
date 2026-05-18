@@ -62,6 +62,9 @@ test('US-014: crear documento, mover a observado con comentario y verlo en el hi
   const cambio = body.history.find(
     (h: { action: string; body?: string }) => h.action === 'state_change' && h.body === 'observado',
   )
+  // Diagnostico temporal: volcar lo que devuelve el detalle.
+  console.log('DIAG history=', JSON.stringify(body.history))
+  console.log('DIAG state_change_resp ya fue 200; cambio=', JSON.stringify(cambio))
   expect(cambio, 'historial debe registrar el cambio a observado').toBeTruthy()
   expect(cambio.note).toBe(motivo)
 })
