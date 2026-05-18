@@ -116,6 +116,7 @@ interface DocumentItem {
   assignedUserIds?: string[]
   createdAt?: string
   updatedAt?: string
+  dueDate?: string | null
   folder: string
   owner: string
   size: string
@@ -430,6 +431,20 @@ function formatDocumentDate(value: string) {
   })
 }
 
+function dueDateLabel(value?: string | null): string {
+  if (!value) return ''
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) return ''
+  return date.toLocaleDateString('es-CL', { day: '2-digit', month: '2-digit', year: 'numeric' })
+}
+
+function isOverdue(value?: string | null): boolean {
+  if (!value) return false
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) return false
+  return date.getTime() < Date.now()
+}
+
 function docKindFromMime(mimeType: string): DocKind {
   if (mimeType === 'application/pdf') return 'pdf'
   if (mimeType.startsWith('image/')) return 'image'
@@ -513,6 +528,7 @@ function documentResponseToItem(document: DocumentItemResponse): DocumentItem {
     assignedUserIds,
     createdAt: document.created_at,
     updatedAt: document.updated_at,
+    dueDate: document.due_date ?? null,
     folder: document.expedient_id || 'root',
     owner: document.owner_user_id,
     size: 'Sin archivo',
@@ -2348,6 +2364,21 @@ function ListView({
                           {doc.code}
                         </span>
                       )}
+                      {doc.dueDate && (
+                        <span
+                          style={{
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            gap: 4,
+                            marginTop: 3,
+                            fontSize: 10.5,
+                            color: isOverdue(doc.dueDate) ? 'var(--danger)' : 'var(--fg-dim)',
+                          }}
+                        >
+                          <Icon.Clock size={10} />
+                          Vence {dueDateLabel(doc.dueDate)}{isOverdue(doc.dueDate) ? ' · vencido' : ''}
+                        </span>
+                      )}
                     </span>
                   </div>
                 </td>
@@ -3269,6 +3300,12 @@ function DetailDrawer({
               ['Carpeta', <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5 }}><Icon.Folder size={12} style={{ color: 'var(--fg-dim)' }} />{doc.folder}</span>],
               ['Tipo documental', doc.documentTypeId ?? kind.label],
               ['Confidencialidad', confidentialityLabel(doc.confidentialityLevel)],
+              ['Vence', doc.dueDate ? (
+                <span style={{ color: isOverdue(doc.dueDate) ? 'var(--danger)' : 'var(--fg)', display: 'inline-flex', alignItems: 'center', gap: 5 }}>
+                  <Icon.Clock size={12} />
+                  {dueDateLabel(doc.dueDate)}{isOverdue(doc.dueDate) ? ' · vencido' : ''}
+                </span>
+              ) : <span style={{ color: 'var(--fg-dim)' }}>Sin fecha</span>],
               ['Descripcion', doc.description || <span style={{ color: 'var(--fg-dim)' }}>—</span>],
               ['Archivo', currentFile?.original_filename ?? <span style={{ color: 'var(--fg-dim)' }}>Sin archivo principal</span>],
               ['Tamaño', currentFile?.size_bytes ? formatFileSize(currentFile.size_bytes) : doc.size],
@@ -4686,6 +4723,7 @@ function EditMetadataModal({
   const [description, setDescription] = useState(document.description ?? '')
   const [expedientId, setExpedientId] = useState(document.folder === 'root' ? '' : document.folder)
   const [confidentialityLevel, setConfidentialityLevel] = useState(document.confidentialityLevel ?? 'publico_interno')
+  const [dueDate, setDueDate] = useState(document.dueDate ? document.dueDate.slice(0, 10) : '')
   const [assigneeUserId, setAssigneeUserId] = useState(currentAssigneeId ?? '')
   const [attachmentMode, setAttachmentMode] = useState<'none' | 'existing' | 'upload'>('none')
   const [selectedUnassignedFileId, setSelectedUnassignedFileId] = useState('')
@@ -4725,6 +4763,7 @@ function EditMetadataModal({
         description: description.trim(),
         expedient_id: expedientId.trim() || null,
         confidentiality_level: confidentialityLevel,
+        due_date: dueDate.trim() || null,
       })
       const attachment: DocumentAttachmentResult = {}
       if (attachmentMode === 'existing') {
@@ -4881,6 +4920,26 @@ function EditMetadataModal({
                   padding: '10px 11px',
                   fontSize: 13,
                   outline: 'none',
+                }}
+              />
+            </label>
+
+            <label style={{ display: 'grid', gap: 6 }}>
+              <span style={{ color: 'var(--fg-muted)', fontSize: 12 }}>Fecha de vencimiento (opcional)</span>
+              <input
+                type="date"
+                value={dueDate}
+                disabled={submitting}
+                onChange={(event) => setDueDate(event.target.value)}
+                style={{
+                  border: '1px solid var(--border)',
+                  borderRadius: 8,
+                  background: 'var(--bg-elev-2)',
+                  color: 'var(--fg)',
+                  padding: '10px 11px',
+                  fontSize: 13,
+                  outline: 'none',
+                  colorScheme: 'dark',
                 }}
               />
             </label>
@@ -7851,6 +7910,7 @@ export default function DashboardPage() {
                 assignedCount: assignmentCounts[doc.id] ?? 0,
                 assigneeLabel: labelForUserId(doc.assignee ?? doc.owner),
                 assigneeInitials: initialsForUserId(doc.assignee ?? doc.owner),
+                dueDate: doc.dueDate ?? null,
               }))}
               tags={tags}
               onOpen={openDoc}

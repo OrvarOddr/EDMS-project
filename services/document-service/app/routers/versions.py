@@ -60,6 +60,7 @@ def _to_document_response(document: Document, workflow: dict | None = None, curr
         created_at=document.created_at.isoformat(),
         updated_at=document.updated_at.isoformat(),
         archived_at=document.archived_at.isoformat() if document.archived_at else None,
+        due_date=document.due_at.isoformat() if document.due_at else None,
         metadata_activity=activity,
         workflow_state_code=workflow.get("state_code") if workflow else None,
         assignee_user_id=workflow.get("assignee_user_id") if workflow else None,
@@ -568,6 +569,70 @@ def get_document_detail(
     )
 
 
+def _normalize_dt(value: datetime | None) -> datetime | None:
+    """Normaliza a UTC con zona para comparar fechas de forma estable."""
+    if value is None:
+        return None
+    if value.tzinfo is None:
+        return value.replace(tzinfo=timezone.utc)
+    return value.astimezone(timezone.utc)
+
+
+def _parse_due_date(value: str | None) -> datetime | None:
+    """ISO "YYYY-MM-DD" o datetime. "" / null => None (limpia). Invalido => 422."""
+    if value is None:
+        return None
+    cleaned = value.strip()
+    if not cleaned:
+        return None
+    try:
+        parsed = datetime.fromisoformat(cleaned.replace("Z", "+00:00"))
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="Fecha de vencimiento invalida (use formato ISO, p. ej. 2026-06-30)",
+        ) from exc
+    return _normalize_dt(parsed)
+
+
+def _notify_due_date_change(document_id: str, actor_user_id: str, due_at: datetime | None) -> None:
+    """Best-effort: avisa a los asignados activos del cambio de fecha de vencimiento."""
+    if due_at is not None:
+        fecha = due_at.date().isoformat()
+        title = "Fecha de vencimiento actualizada"
+        body_text = f"El documento vence el {fecha}."
+    else:
+        title = "Fecha de vencimiento eliminada"
+        body_text = "El documento ya no tiene fecha de vencimiento."
+    try:
+        with httpx.Client(timeout=5.0) as client:
+            response = client.get(
+                f"{settings.WORKFLOW_SERVICE_URL}/internal/workflow/documents/{document_id}/assignments",
+            )
+            if response.status_code >= 400:
+                return
+            recipients: list[str] = []
+            for item in response.json():
+                uid = str(item.get("user_id", "")).strip()
+                if uid and uid != actor_user_id and uid not in recipients:
+                    recipients.append(uid)
+            for recipient in recipients:
+                client.post(
+                    f"{settings.COLLABORATION_SERVICE_URL}/internal/collaboration/notifications",
+                    json={
+                        "recipient_user_id": recipient,
+                        "actor_user_id": actor_user_id,
+                        "document_id": document_id,
+                        "source_id": None,
+                        "type": "fecha_vencimiento",
+                        "title": title,
+                        "body": body_text,
+                    },
+                )
+    except httpx.HTTPError:
+        pass
+
+
 @router.patch("/{document_id}/metadata", response_model=DocumentResponse)
 def update_document_metadata(
     document_id: str,
@@ -599,16 +664,27 @@ def update_document_metadata(
         if getattr(document, field) != value
     ]
 
-    if not changed_fields:
+    due_provided = "due_date" in body.model_fields_set
+    new_due = _parse_due_date(body.due_date) if due_provided else None
+    due_changed = due_provided and _normalize_dt(document.due_at) != _normalize_dt(new_due)
+
+    if not changed_fields and not due_changed:
         return _to_document_response(document)
 
     for field, value in updates.items():
         setattr(document, field, value)
+    if due_changed:
+        document.due_at = new_due
+        changed_fields.append("due_date")
     document.updated_at = datetime.now(timezone.utc)
     _record_metadata_activity(document, actor_user_id, changed_fields)
 
     db.commit()
     db.refresh(document)
+
+    if due_changed:
+        _notify_due_date_change(document.id, actor_user_id, document.due_at)
+
     return _to_document_response(document)
 
 

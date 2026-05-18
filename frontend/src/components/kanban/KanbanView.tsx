@@ -11,6 +11,7 @@ export interface KanbanDocItem {
   assignedCount?: number
   assigneeLabel?: string
   assigneeInitials?: string
+  dueDate?: string | null
 }
 
 export interface KanbanTagItem {
@@ -132,6 +133,25 @@ function KanbanCard({ doc, tags, isDragging, onOpen, onDragStart, onDragEnd }: K
           )}
         </div>
       )}
+
+      {doc.dueDate && (() => {
+        const due = new Date(doc.dueDate)
+        const valid = !Number.isNaN(due.getTime())
+        const overdue = valid && due.getTime() < Date.now()
+        return (
+          <span style={{
+            display: 'inline-flex',
+            alignItems: 'center',
+            gap: 4,
+            alignSelf: 'flex-start',
+            fontSize: 10.5,
+            color: overdue ? 'var(--danger)' : 'var(--fg-dim)',
+          }}>
+            ⏱ Vence {valid ? due.toLocaleDateString('es-CL', { day: '2-digit', month: '2-digit', year: 'numeric' }) : doc.dueDate}
+            {overdue ? ' · vencido' : ''}
+          </span>
+        )
+      })()}
 
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>

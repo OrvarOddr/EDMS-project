@@ -18,6 +18,9 @@ class UpdateDocumentMetadataRequest(BaseModel):
     description: str
     expedient_id: str | None = None
     confidentiality_level: str = "publico_interno"
+    # Fecha de vencimiento opcional (ISO "YYYY-MM-DD" o datetime).
+    # "" o null limpian la fecha. Ausente => no se toca.
+    due_date: str | None = None
 
 
 class RegisterDocumentVersionRequest(BaseModel):
@@ -71,6 +74,7 @@ class DocumentResponse(BaseModel):
     created_at: str
     updated_at: str
     archived_at: str | None = None
+    due_date: str | None = None
     metadata_activity: list[DocumentActivityResponse] = Field(default_factory=list)
     workflow_state_code: str | None = None
     assignee_user_id: str | None = None

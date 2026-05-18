@@ -13,6 +13,7 @@ export interface DocumentItemResponse {
   created_at: string
   updated_at: string
   archived_at?: string | null
+  due_date?: string | null
   metadata_activity?: DocumentActivityItem[]
   workflow_state_code?: string | null
   assignee_user_id?: string | null
@@ -101,6 +102,7 @@ export interface UpdateDocumentMetadataPayload {
   description: string
   expedient_id?: string | null
   confidentiality_level: string
+  due_date?: string | null
 }
 
 export interface ListDocumentsParams {
