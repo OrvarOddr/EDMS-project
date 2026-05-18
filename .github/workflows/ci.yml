@@ -349,3 +349,69 @@ jobs:
           exit-code: "1"
           skip-dirs: "frontend/node_modules,.venv-test"
           trivyignores: .trivyignore
+
+  e2e:
+    name: E2E (Playwright)
+    runs-on: ubuntu-latest
+    if: github.event_name == 'pull_request'
+    steps:
+      - uses: actions/checkout@v4
+      - name: Generar .env de prueba
+        run: |
+          cat > .env <<'EOF'
+          POSTGRES_PASSWORD=e2e-postgres-pass-123456
+          AUTH_DB_PASSWORD=e2e-auth-db-pass-123456
+          DOCUMENTS_DB_PASSWORD=e2e-docs-db-pass-123456
+          WORKFLOW_DB_PASSWORD=e2e-wf-db-pass-123456
+          COLLABORATION_DB_PASSWORD=e2e-collab-db-pass-123456
+          FILES_DB_PASSWORD=e2e-files-db-pass-123456
+          MINIO_ROOT_PASSWORD=e2e-minio-pass-123456
+          JWT_SECRET_KEY=e2e-jwt-secret-key-with-at-least-32-characters
+          JWT_ISSUER=edms-auth
+          JWT_AUDIENCE=edms
+          BOOTSTRAP_ADMIN_EMAIL=admin@edms.dev
+          BOOTSTRAP_ADMIN_PASSWORD=e2e-admin-pass-123456
+          EOF
+      - name: Levantar stack
+        run: docker compose up -d --build
+      - name: Esperar a que el stack este listo (login admin via API)
+        run: |
+          for i in $(seq 1 60); do
+            code=$(curl -s -o /dev/null -w "%{http_code}" -X POST \
+              http://localhost:8052/api/auth/login \
+              -H "Content-Type: application/json" \
+              -d '{"email":"admin@edms.dev","password":"e2e-admin-pass-123456"}' || true)
+            if [ "$code" = "200" ]; then echo "stack listo"; exit 0; fi
+            echo "intento $i: http=$code"; sleep 5
+          done
+          echo "timeout esperando stack"; docker compose ps; docker compose logs --tail=150; exit 1
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+          cache-dependency-path: e2e/package-lock.json
+      - name: Instalar Playwright
+        run: |
+          npm ci
+          npx playwright install --with-deps chromium
+        working-directory: e2e
+      - name: Ejecutar E2E
+        run: npm test
+        working-directory: e2e
+        env:
+          E2E_BASE_URL: http://localhost:8052
+          E2E_ADMIN_EMAIL: admin@edms.dev
+          E2E_ADMIN_PASSWORD: e2e-admin-pass-123456
+      - name: Logs del stack (si falla)
+        if: failure()
+        run: docker compose logs --tail=200
+      - name: Subir reporte Playwright
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report
+          path: e2e/playwright-report
+          retention-days: 7
+      - name: Bajar stack
+        if: always()
+        run: docker compose down -v

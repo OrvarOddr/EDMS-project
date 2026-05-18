@@ -15,4 +15,6 @@ regexes = [
   '''clave-segura-123''',
   '''test-admin-pass-123456''',
   '''test-jwt-secret-key-with-at-least-32-characters''',
+  # Valores ficticios del .env de prueba que genera el job e2e en ci.yml
+  '''e2e-[a-z0-9-]+''',
 ]
