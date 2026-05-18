@@ -3162,7 +3162,7 @@ function DetailDrawer({
       }}
     >
       <div style={{ padding: '12px 14px', display: 'flex', alignItems: 'center', gap: 8, borderBottom: '1px solid var(--border)' }}>
-        <KindBadge kind={doc.kind} />
+        <KindBadge kind={effectiveKind} />
         <span style={{ flex: 1, fontSize: 12, color: 'var(--fg-muted)' }}>Detalles</span>
         <button className="edms-nav-item" title="Abrir completo" style={{ width: 26, height: 26, borderRadius: 5, display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--fg-muted)' }}>
           <Icon.Eye size={14} />
@@ -7606,6 +7606,7 @@ export default function DashboardPage() {
     )))
     if (attachment?.attachedUnassignedFileId) markUnassignedFileAsUsed(attachment.attachedUnassignedFileId)
     if (uploadedFile) void refreshStorageSummary()
+    void getRecentActivity().then(setRecentActivity).catch(() => undefined)
     setToast(
       attachment?.attachedUnassignedFileId || uploadedFile
         ? `Documento "${document.title}" actualizado con archivo`
