@@ -1,0 +1,6 @@
+# CVEs aceptadas temporalmente: su remediacion exige subir un framework
+# (fastapi / python-jose) que esta topado por pines transitivos. Dependabot
+# abrira los PRs de upgrade, que se revisan y testean por separado.
+CVE-2024-47874  # starlette <0.40.0 (topado por fastapi==0.115.0, starlette<0.39)
+CVE-2025-54121  # starlette <0.47.2 (topado por fastapi==0.115.0)
+CVE-2026-30922  # pyasn1 <0.6.3 (topado por python-jose==3.4.0, pyasn1<0.5.0)
