@@ -94,6 +94,7 @@ export interface CreateDocumentPayload {
   expedient_id?: string | null
   confidentiality_level: string
   assignee_user_id?: string | null
+  due_date?: string | null
 }
 
 export interface UpdateDocumentMetadataPayload {

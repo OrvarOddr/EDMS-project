@@ -573,6 +573,7 @@ function metadataFieldLabel(field: string) {
     document_type_id: 'tipo documental',
     expedient_id: 'expediente',
     confidentiality_level: 'confidencialidad',
+    due_date: 'fecha de vencimiento',
   }
   return labels[field] ?? field
 }
@@ -4266,6 +4267,7 @@ function CreateDocumentModal({
   const [documentTypeId, setDocumentTypeId] = useState('contrato')
   const [confidentialityLevel, setConfidentialityLevel] = useState('publico_interno')
   const [assigneeUserId, setAssigneeUserId] = useState(() => assigneeOptions[0]?.[0] ?? '')
+  const [dueDate, setDueDate] = useState('')
   const [description, setDescription] = useState('')
   const [expedientId, setExpedientId] = useState('')
   const [attachmentMode, setAttachmentMode] = useState<'none' | 'existing' | 'upload'>(() => initialUnassignedFile ? 'existing' : 'none')
@@ -4307,6 +4309,7 @@ function CreateDocumentModal({
         expedient_id: expedientId.trim() || null,
         confidentiality_level: confidentialityLevel,
         assignee_user_id: assigneeUserId.trim() || assigneeOptions[0]?.[0] || null,
+        due_date: dueDate.trim() || null,
       })
       const attachment: DocumentAttachmentResult = {}
       if (attachmentMode === 'existing') {
@@ -4473,8 +4476,9 @@ function CreateDocumentModal({
               </select>
             </label>
 
-            <label style={{ display: 'grid', gap: 6 }}>
-              <span style={{ color: 'var(--fg-muted)', fontSize: 12 }}>Expediente opcional</span>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+              <label style={{ display: 'grid', gap: 6 }}>
+                <span style={{ color: 'var(--fg-muted)', fontSize: 12 }}>Expediente opcional</span>
                 <input
                   value={expedientId}
                   disabled={submitting}
@@ -4490,7 +4494,27 @@ function CreateDocumentModal({
                     outline: 'none',
                   }}
                 />
-            </label>
+              </label>
+
+              <label style={{ display: 'grid', gap: 6 }}>
+                <span style={{ color: 'var(--fg-muted)', fontSize: 12 }}>Fecha de vencimiento</span>
+                <input
+                  type="date"
+                  value={dueDate}
+                  disabled={submitting}
+                  onChange={(event) => setDueDate(event.target.value)}
+                  style={{
+                    border: '1px solid var(--border)',
+                    borderRadius: 8,
+                    background: 'var(--bg-elev-2)',
+                    color: 'var(--fg)',
+                    padding: '10px 11px',
+                    fontSize: 13,
+                    outline: 'none',
+                  }}
+                />
+              </label>
+            </div>
 
             <label style={{ display: 'grid', gap: 6 }}>
               <span style={{ color: 'var(--fg-muted)', fontSize: 12 }}>Descripcion</span>

@@ -54,6 +54,26 @@ def test_documento_nuevo_sin_fecha(client):
 
 
 @respx.mock
+def test_crear_documento_con_fecha_de_vencimiento(client):
+    _bootstrap_mock()
+    r = client.post(
+        "/documents",
+        headers={"X-User-Id": USER},
+        json={
+            "title": "Doc",
+            "document_type_id": "t1",
+            "description": "d",
+            "due_date": "2026-12-31",
+        },
+    )
+    assert r.status_code == 201, r.text
+    body = r.json()
+    assert body["due_date"].startswith("2026-12-31")
+    cambios = [a for a in body["metadata_activity"] if "due_date" in a.get("changed_fields", [])]
+    assert cambios, body["metadata_activity"]
+
+
+@respx.mock
 def test_definir_fecha_persiste_y_se_devuelve(client):
     _bootstrap_mock()
     respx.get(url__regex=rf"{WORKFLOW_SERVICE_URL}/internal/workflow/documents/.+/assignments").mock(

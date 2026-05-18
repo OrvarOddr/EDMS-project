@@ -279,16 +279,29 @@ def _metadata_history(document: Document) -> list[DocumentDetailTimelineItemResp
     history: list[DocumentDetailTimelineItemResponse] = []
     for item in activity:
         changed_fields = item.get("changed_fields") if isinstance(item.get("changed_fields"), list) else []
+        field_labels = [_metadata_field_label(str(field)) for field in changed_fields]
         history.append(
             DocumentDetailTimelineItemResponse(
                 id=str(item.get("id", uuid.uuid4())),
                 actor_user_id=item.get("actor_user_id"),
                 action=str(item.get("action", "metadata_updated")),
-                body=f"Metadata actualizada: {', '.join(str(field) for field in changed_fields)}" if changed_fields else "Metadata actualizada",
+                body=f"Metadata actualizada: {', '.join(field_labels)}" if field_labels else "Metadata actualizada",
                 created_at=str(item.get("created_at", document.updated_at.isoformat())),
             )
         )
     return history
+
+
+def _metadata_field_label(field: str) -> str:
+    labels = {
+        "title": "titulo",
+        "description": "descripcion",
+        "document_type_id": "tipo documental",
+        "expedient_id": "expediente",
+        "confidentiality_level": "confidencialidad",
+        "due_date": "fecha de vencimiento",
+    }
+    return labels.get(field, field)
 
 
 def _version_history(versions: list[DocumentVersion]) -> list[DocumentDetailTimelineItemResponse]:
@@ -316,6 +329,7 @@ def create_document(
     document_type_id = _clean_required(body.document_type_id, "Tipo documental")
     expedient_id = body.expedient_id.strip() if body.expedient_id else None
     assignee_user_id = body.assignee_user_id.strip() if body.assignee_user_id else None
+    due_at = _parse_due_date(body.due_date)
 
     document = Document(
         code=_document_code(title),
@@ -326,8 +340,11 @@ def create_document(
         confidentiality_level=body.confidentiality_level,
         owner_user_id=actor_user_id,
         created_by_user_id=actor_user_id,
+        due_at=due_at,
         metadata_json={"source": "manual_creation"},
     )
+    if due_at is not None:
+        _record_metadata_activity(document, actor_user_id, ["due_date"])
     db.add(document)
     db.flush()
 
