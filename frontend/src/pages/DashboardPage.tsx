@@ -439,11 +439,53 @@ function dueDateLabel(value?: string | null): string {
   return date.toLocaleDateString('es-CL', { day: '2-digit', month: '2-digit', year: 'numeric' })
 }
 
-function isOverdue(value?: string | null): boolean {
-  if (!value) return false
+/** Color + tinte + etiqueta relativa segun proximidad del vencimiento. */
+function dueUrgency(value?: string | null): { color: string; soft: string; label: string } {
+  if (!value) return { color: 'var(--fg-dim)', soft: 'var(--bg-elev-2)', label: '' }
   const date = new Date(value)
-  if (Number.isNaN(date.getTime())) return false
-  return date.getTime() < Date.now()
+  if (Number.isNaN(date.getTime())) return { color: 'var(--fg-dim)', soft: 'var(--bg-elev-2)', label: '' }
+  const dayMs = 86_400_000
+  const days = Math.ceil((date.getTime() - Date.now()) / dayMs)
+  if (days < 0) return { color: 'var(--danger)', soft: 'var(--danger-soft)', label: 'Vencido' }
+  if (days === 0) return { color: 'var(--danger)', soft: 'var(--danger-soft)', label: 'Vence hoy' }
+  if (days <= 2) return { color: 'var(--danger)', soft: 'var(--danger-soft)', label: `Vence en ${days} d` }
+  if (days <= 7) return { color: 'var(--warn)', soft: 'var(--warn-soft)', label: `Vence en ${days} d` }
+  if (days <= 30) return { color: 'var(--warn)', soft: 'var(--warn-soft)', label: `Vence en ${days} d` }
+  return { color: 'var(--fg-muted)', soft: 'var(--bg-elev-2)', label: dueDateLabel(value) }
+}
+
+const WORKFLOW_STATE_THEME: Record<string, { label: string; color: string; soft: string }> = {
+  borrador:        { label: 'Borrador',           color: 'var(--fg-muted)', soft: 'var(--bg-elev-2)' },
+  en_revision:     { label: 'En revisión',        color: 'var(--accent)',   soft: 'var(--accent-soft)' },
+  observado:       { label: 'Observado',          color: 'var(--warn)',     soft: 'var(--warn-soft)' },
+  pendiente_firma: { label: 'Pendiente de firma', color: 'var(--warn)',     soft: 'var(--warn-soft)' },
+  aprobado:        { label: 'Aprobado',           color: 'var(--ok)',       soft: 'var(--ok-soft)' },
+  rechazado:       { label: 'Rechazado',          color: 'var(--danger)',   soft: 'var(--danger-soft)' },
+  archivado:       { label: 'Archivado',          color: 'var(--fg-dim)',   soft: 'var(--bg-elev-2)' },
+}
+
+function StateBadge({ state }: { state?: string | null }) {
+  const theme = WORKFLOW_STATE_THEME[state ?? ''] ?? WORKFLOW_STATE_THEME.borrador
+  return (
+    <span
+      style={{
+        display: 'inline-flex',
+        alignItems: 'center',
+        gap: 5,
+        padding: '2px 9px',
+        borderRadius: 999,
+        fontSize: 11.5,
+        fontWeight: 500,
+        color: theme.color,
+        background: theme.soft,
+        border: `1px solid ${theme.color}`,
+        whiteSpace: 'nowrap',
+      }}
+    >
+      <span style={{ width: 5, height: 5, borderRadius: 3, background: theme.color, flexShrink: 0 }} />
+      {theme.label}
+    </span>
+  )
 }
 
 function docKindFromMime(mimeType: string): DocKind {
@@ -2369,21 +2411,30 @@ function ListView({
                           {doc.code}
                         </span>
                       )}
-                      {doc.dueDate && (
-                        <span
-                          style={{
-                            display: 'inline-flex',
-                            alignItems: 'center',
-                            gap: 4,
-                            marginTop: 3,
-                            fontSize: 10.5,
-                            color: isOverdue(doc.dueDate) ? 'var(--danger)' : 'var(--fg-dim)',
-                          }}
-                        >
-                          <Icon.Clock size={10} />
-                          Vence {dueDateLabel(doc.dueDate)}{isOverdue(doc.dueDate) ? ' · vencido' : ''}
-                        </span>
-                      )}
+                      {doc.dueDate && (() => {
+                        const urg = dueUrgency(doc.dueDate)
+                        return (
+                          <span
+                            style={{
+                              display: 'inline-flex',
+                              alignItems: 'center',
+                              gap: 4,
+                              marginTop: 4,
+                              fontSize: 10,
+                              fontWeight: 500,
+                              color: urg.color,
+                              background: urg.soft,
+                              border: `1px solid ${urg.color}`,
+                              borderRadius: 999,
+                              padding: '1px 7px',
+                              alignSelf: 'flex-start',
+                            }}
+                          >
+                            <Icon.Clock size={9} />
+                            {urg.label} · {dueDateLabel(doc.dueDate)}
+                          </span>
+                        )
+                      })()}
                     </span>
                   </div>
                 </td>
@@ -2615,17 +2666,46 @@ function GridView({
 
 function OverviewCards({ storage }: { storage: { used: number; total: number } }) {
   const cards = [
-    { label: 'Documentos totales', value: dashboardData.stats.total.toLocaleString('es-ES'), delta: `+${dashboardData.stats.deltaWeek} esta semana`, deltaTone: 'var(--ok)' },
-    { label: 'Pendientes de firma', value: dashboardData.stats.pendientes, delta: '3 vencen hoy', deltaTone: 'var(--warn)' },
-    { label: 'Compartidos externos', value: dashboardData.stats.compartidos, delta: '12 con acceso expirado', deltaTone: 'var(--fg-dim)' },
-    { label: 'Almacenamiento', value: `${storage.used} GB`, delta: `${storage.total > 0 ? Math.round((storage.used / storage.total) * 100) : 0}% usado`, deltaTone: 'var(--fg-dim)' },
+    { label: 'Documentos totales', value: dashboardData.stats.total.toLocaleString('es-ES'), delta: `+${dashboardData.stats.deltaWeek} esta semana`, deltaTone: 'var(--ok)', accent: 'var(--accent)', icon: <Icon.File size={15} /> },
+    { label: 'Pendientes de firma', value: dashboardData.stats.pendientes, delta: '3 vencen hoy', deltaTone: 'var(--warn)', accent: 'var(--warn)', icon: <Icon.Signature size={15} /> },
+    { label: 'Compartidos externos', value: dashboardData.stats.compartidos, delta: '12 con acceso expirado', deltaTone: 'var(--fg-muted)', accent: 'var(--accent)', icon: <Icon.Users size={15} /> },
+    { label: 'Almacenamiento', value: `${storage.used} GB`, delta: `${storage.total > 0 ? Math.round((storage.used / storage.total) * 100) : 0}% usado`, deltaTone: 'var(--fg-muted)', accent: 'var(--ok)', icon: <Icon.Folder size={15} /> },
   ]
 
   return (
     <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 12, padding: '16px 18px 4px' }}>
       {cards.map((card) => (
-        <div key={card.label} style={{ background: 'var(--bg-elev)', border: '1px solid var(--border)', borderRadius: 10, padding: '12px 14px' }}>
-          <div style={{ fontSize: 11.5, color: 'var(--fg-dim)', letterSpacing: '0.02em', marginBottom: 6 }}>{card.label}</div>
+        <div
+          key={card.label}
+          style={{
+            position: 'relative',
+            background: 'var(--bg-elev)',
+            border: '1px solid var(--border)',
+            borderRadius: 10,
+            padding: '12px 14px 12px 16px',
+            boxShadow: 'var(--shadow-sm)',
+            overflow: 'hidden',
+          }}
+        >
+          <div style={{ position: 'absolute', left: 0, top: 0, bottom: 0, width: 3, background: card.accent }} />
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
+            <span style={{ fontSize: 11.5, color: 'var(--fg-dim)', letterSpacing: '0.02em' }}>{card.label}</span>
+            <span
+              style={{
+                width: 26,
+                height: 26,
+                borderRadius: 7,
+                display: 'inline-flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                color: card.accent,
+                background: `color-mix(in oklch, ${card.accent} 15%, transparent)`,
+                flexShrink: 0,
+              }}
+            >
+              {card.icon}
+            </span>
+          </div>
           <div style={{ fontSize: 22, fontWeight: 600, color: 'var(--fg)', fontVariantNumeric: 'tabular-nums', lineHeight: 1.1, marginBottom: 6 }}>{card.value}</div>
           <div style={{ fontSize: 11, color: card.deltaTone }}>{card.delta}</div>
         </div>
@@ -2804,7 +2884,7 @@ function DueSoonPanel({
       ) : (
         <div style={{ padding: '6px 0' }}>
           {docs.map((doc) => {
-            const overdue = isOverdue(doc.dueDate)
+            const urg = dueUrgency(doc.dueDate)
             return (
               <div
                 key={doc.id}
@@ -2823,7 +2903,7 @@ function DueSoonPanel({
                   style={{
                     width: 4,
                     alignSelf: 'stretch',
-                    background: overdue ? 'var(--danger)' : 'var(--warn)',
+                    background: urg.color,
                     borderRadius: 2,
                   }}
                 />
@@ -2835,9 +2915,23 @@ function DueSoonPanel({
                     Encargado: {userLabel(doc.assignee ?? doc.owner)}
                   </div>
                 </div>
-                <span style={{ fontSize: 11.5, color: overdue ? 'var(--danger)' : 'var(--fg-muted)', flexShrink: 0, display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+                <span
+                  style={{
+                    fontSize: 11,
+                    fontWeight: 500,
+                    color: urg.color,
+                    background: urg.soft,
+                    border: `1px solid ${urg.color}`,
+                    borderRadius: 999,
+                    padding: '2px 9px',
+                    flexShrink: 0,
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: 4,
+                  }}
+                >
                   <Icon.Clock size={11} />
-                  {dueDateLabel(doc.dueDate)}{overdue ? ' · vencido' : ''}
+                  {urg.label} · {dueDateLabel(doc.dueDate)}
                 </span>
               </div>
             )
@@ -3030,19 +3124,6 @@ function DetailDrawer({
     const found = findUserById(userId)
     if (found) return found.name
     return `Usuario ${userId.slice(0, 8)}`
-  }
-
-  function workflowStateLabel(stateCode?: string | null) {
-    const labels: Record<string, string> = {
-      borrador:        'Borrador',
-      en_revision:     'En revisión',
-      observado:       'Observado',
-      aprobado:        'Aprobado',
-      pendiente_firma: 'Pendiente de firma',
-      rechazado:       'Rechazado',
-      archivado:       'Archivado',
-    }
-    return labels[stateCode ?? ''] ?? 'Borrador'
   }
 
   function roleLabel(roleCode?: string | null) {
@@ -3375,16 +3456,32 @@ function DetailDrawer({
             {[
               ['Autor', <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}><OwnerAvatar userId={doc.owner} size={18} /><span>{owner?.name ?? userLabel(doc.owner)}</span></div>],
               ['Encargado', assigneeField],
-              ['Estado workflow', workflowStateLabel(workflow?.state_code ?? detail?.document.workflow_state_code)],
+              ['Estado workflow', <StateBadge state={workflow?.state_code ?? detail?.document.workflow_state_code} />],
               ['Carpeta', <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5 }}><Icon.Folder size={12} style={{ color: 'var(--fg-dim)' }} />{doc.folder}</span>],
               ['Tipo documental', doc.documentTypeId ?? kind.label],
               ['Confidencialidad', confidentialityLabel(doc.confidentialityLevel)],
-              ['Vence', doc.dueDate ? (
-                <span style={{ color: isOverdue(doc.dueDate) ? 'var(--danger)' : 'var(--fg)', display: 'inline-flex', alignItems: 'center', gap: 5 }}>
-                  <Icon.Clock size={12} />
-                  {dueDateLabel(doc.dueDate)}{isOverdue(doc.dueDate) ? ' · vencido' : ''}
-                </span>
-              ) : <span style={{ color: 'var(--fg-dim)' }}>Sin fecha</span>],
+              ['Vence', doc.dueDate ? (() => {
+                const urg = dueUrgency(doc.dueDate)
+                return (
+                  <span
+                    style={{
+                      color: urg.color,
+                      background: urg.soft,
+                      border: `1px solid ${urg.color}`,
+                      borderRadius: 999,
+                      padding: '2px 9px',
+                      fontSize: 11.5,
+                      fontWeight: 500,
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      gap: 5,
+                    }}
+                  >
+                    <Icon.Clock size={12} />
+                    {dueDateLabel(doc.dueDate)} · {urg.label}
+                  </span>
+                )
+              })() : <span style={{ color: 'var(--fg-dim)' }}>Sin fecha</span>],
               ['Descripcion', doc.description || <span style={{ color: 'var(--fg-dim)' }}>—</span>],
               ['Archivo', currentFile?.original_filename ?? <span style={{ color: 'var(--fg-dim)' }}>Sin archivo principal</span>],
               ['Tamaño', currentFile?.size_bytes ? formatFileSize(currentFile.size_bytes) : doc.size],
