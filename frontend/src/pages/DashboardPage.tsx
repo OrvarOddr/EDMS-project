@@ -1,6 +1,7 @@
 import {
   useCallback,
   useEffect,
+  useLayoutEffect,
   useMemo,
   useRef,
   useState,
@@ -3863,7 +3864,9 @@ function NotifPopover({
 }) {
   const [pos, setPos] = useState<{ top: number; right: number } | null>(null)
 
-  useEffect(() => {
+  // useLayoutEffect: medir y posicionar ANTES del paint para que no haya
+  // un salto visible desde la posicion de fallback a la correcta.
+  useLayoutEffect(() => {
     if (!open) return
     function compute() {
       const rect = bellRef.current?.getBoundingClientRect()
@@ -3897,7 +3900,7 @@ function NotifPopover({
 
   return (
     <>
-      <div onClick={onClose} style={{ position: 'fixed', inset: 0, zIndex: 40 }} />
+      <div onClick={onClose} style={{ position: 'fixed', inset: 0, zIndex: 1000 }} />
       <div
         style={{
           position: 'fixed',
@@ -3908,7 +3911,8 @@ function NotifPopover({
           border: '1px solid var(--border-strong)',
           borderRadius: 10,
           boxShadow: 'var(--shadow)',
-          zIndex: 50,
+          zIndex: 1001,
+          opacity: pos ? 1 : 0,
           overflow: 'hidden',
         }}
       >
