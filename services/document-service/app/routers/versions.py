@@ -505,6 +505,7 @@ def list_documents(
     assignee_user_id: str | None = Query(default=None, max_length=80),
     assigned_user_id: str | None = Query(default=None, max_length=80),
     date: str | None = Query(default=None, max_length=20),
+    due_within_days: int | None = Query(default=None, ge=1, le=365),
     x_user_id: str | None = Header(default=None, alias="X-User-Id"),
     db: Session = Depends(get_db),
 ):
@@ -533,7 +534,17 @@ def list_documents(
     if modified_after:
         query = query.filter(Document.updated_at >= modified_after)
 
-    documents = query.order_by(Document.created_at.desc()).all()
+    # US-034: vencimientos proximos -> solo documentos con fecha de
+    # vencimiento dentro de la ventana, ordenados por proximidad.
+    if due_within_days is not None:
+        limit_dt = datetime.now(timezone.utc) + timedelta(days=due_within_days)
+        query = query.filter(
+            Document.due_at.isnot(None),
+            Document.due_at <= limit_dt,
+        )
+        documents = query.order_by(Document.due_at.asc()).all()
+    else:
+        documents = query.order_by(Document.created_at.desc()).all()
     ids = [d.id for d in documents]
     summary_map = _fetch_batch_workflow_summaries(ids)
     documents = _filter_visible_documents(

@@ -2779,6 +2779,75 @@ function ActivityPanel({
   )
 }
 
+function DueSoonPanel({
+  docs,
+  onOpenDoc,
+  userLabel,
+}: {
+  docs: DocumentItem[]
+  onOpenDoc: (docId: string) => void
+  userLabel: (userId?: string | null) => string
+}) {
+  return (
+    <div style={{ background: 'var(--bg-elev)', border: '1px solid var(--border)', borderRadius: 10, overflow: 'hidden' }}>
+      <div style={{ padding: '12px 14px', borderBottom: '1px solid var(--border)', display: 'flex', alignItems: 'center', gap: 8 }}>
+        <Icon.Clock size={14} style={{ color: 'var(--warn)' }} />
+        <span style={{ fontSize: 13, fontWeight: 600 }}>Próximos vencimientos</span>
+        <span style={{ fontSize: 11, padding: '1px 6px', borderRadius: 10, background: 'var(--bg-active)', color: 'var(--fg-muted)' }}>
+          {docs.length}
+        </span>
+      </div>
+      {docs.length === 0 ? (
+        <div style={{ padding: '24px 14px', fontSize: 12, color: 'var(--fg-muted)', textAlign: 'center' }}>
+          No hay vencimientos próximos
+        </div>
+      ) : (
+        <div style={{ padding: '6px 0' }}>
+          {docs.map((doc) => {
+            const overdue = isOverdue(doc.dueDate)
+            return (
+              <div
+                key={doc.id}
+                className="edms-nav-item"
+                onClick={() => onOpenDoc(doc.id)}
+                style={{
+                  padding: '10px 14px',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 12,
+                  cursor: 'pointer',
+                  borderBottom: '1px solid var(--border)',
+                }}
+              >
+                <div
+                  style={{
+                    width: 4,
+                    alignSelf: 'stretch',
+                    background: overdue ? 'var(--danger)' : 'var(--warn)',
+                    borderRadius: 2,
+                  }}
+                />
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ fontSize: 13, fontWeight: 500, color: 'var(--fg)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', marginBottom: 2 }}>
+                    {doc.name}
+                  </div>
+                  <div style={{ fontSize: 11.5, color: 'var(--fg-muted)' }}>
+                    Encargado: {userLabel(doc.assignee ?? doc.owner)}
+                  </div>
+                </div>
+                <span style={{ fontSize: 11.5, color: overdue ? 'var(--danger)' : 'var(--fg-muted)', flexShrink: 0, display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+                  <Icon.Clock size={11} />
+                  {dueDateLabel(doc.dueDate)}{overdue ? ' · vencido' : ''}
+                </span>
+              </div>
+            )
+          })}
+        </div>
+      )}
+    </div>
+  )
+}
+
 function BulkBar({
   count,
   onClear,
@@ -6900,6 +6969,7 @@ export default function DashboardPage() {
   const [notifications, setNotifications] = useState<NotificationItem[]>([])
   const [notifUnread, setNotifUnread] = useState(0)
   const [recentActivity, setRecentActivity] = useState<RecentActivityItem[]>([])
+  const [dueSoonDocs, setDueSoonDocs] = useState<DocumentItem[]>([])
   const [teamModalOpen, setTeamModalOpen] = useState(false)
   const [createDocumentModalOpen, setCreateDocumentModalOpen] = useState(false)
   const [editingMetadataDocId, setEditingMetadataDocId] = useState<string | null>(null)
@@ -7014,6 +7084,15 @@ export default function DashboardPage() {
     }
   }, [])
 
+  const refreshDueSoon = useCallback(async () => {
+    try {
+      const { data } = await listDocuments({ due_within_days: 14 })
+      setDueSoonDocs(data.map(documentResponseToItem).slice(0, 8))
+    } catch {
+      /* vencimientos no disponibles: se reintenta en el próximo ciclo */
+    }
+  }, [])
+
   useEffect(() => {
     const initialTimer = window.setTimeout(() => {
       void refreshNotifications()
@@ -7043,6 +7122,17 @@ export default function DashboardPage() {
       window.clearInterval(timer)
     }
   }, [refreshActivity])
+
+  useEffect(() => {
+    const initialTimer = window.setTimeout(() => {
+      void refreshDueSoon()
+    }, 0)
+    const timer = window.setInterval(refreshDueSoon, 120000)
+    return () => {
+      window.clearTimeout(initialTimer)
+      window.clearInterval(timer)
+    }
+  }, [refreshDueSoon])
 
   async function handleMarkNotificationRead(id: string) {
     setNotifications((current) =>
@@ -8178,9 +8268,13 @@ export default function DashboardPage() {
               </div>
             </div>
 
-            <div style={{ display: 'grid', gridTemplateColumns: '1.5fr 1fr', gap: 12, padding: '4px 18px 24px' }}>
+            <div style={{ display: 'grid', gridTemplateColumns: '1.5fr 1fr', gap: 12, padding: '4px 18px 12px' }}>
               <ApprovalsPanel onOpenDoc={openDoc} />
               <ActivityPanel items={recentActivity} onOpenDoc={openDoc} />
+            </div>
+
+            <div style={{ padding: '4px 18px 24px' }}>
+              <DueSoonPanel docs={dueSoonDocs} onOpenDoc={openDoc} userLabel={labelForUserId} />
             </div>
 
           </div>
