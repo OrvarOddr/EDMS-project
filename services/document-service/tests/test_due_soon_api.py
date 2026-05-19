@@ -76,6 +76,25 @@ def test_due_soon_filtra_y_ordena_por_proximidad(client):
 
 
 @respx.mock
+def test_due_soon_devuelve_todos_por_proximidad_sin_tope(client):
+    _mocks()
+    today = datetime.now(timezone.utc).date()
+    cercano = _create(client, "Cercano")
+    lejano = _create(client, "Lejano 2027")
+    sin = _create(client, "Sin fecha due_soon")
+
+    _set_due(client, lejano, (today + timedelta(days=400)).isoformat())
+    _set_due(client, cercano, (today + timedelta(days=10)).isoformat())
+
+    r = client.get("/documents", headers={"X-User-Id": USER}, params={"due_soon": "true"})
+    assert r.status_code == 200, r.text
+    ids = [d["id"] for d in r.json()]
+    # incluye el lejano (sin tope de dias) y ordena por proximidad
+    assert ids == [cercano, lejano]
+    assert sin not in ids
+
+
+@respx.mock
 def test_due_soon_incluye_vencidos(client):
     _mocks()
     today = datetime.now(timezone.utc).date()

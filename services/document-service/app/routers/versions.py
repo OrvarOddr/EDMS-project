@@ -506,6 +506,7 @@ def list_documents(
     assigned_user_id: str | None = Query(default=None, max_length=80),
     date: str | None = Query(default=None, max_length=20),
     due_within_days: int | None = Query(default=None, ge=1, le=365),
+    due_soon: bool = Query(default=False),
     x_user_id: str | None = Header(default=None, alias="X-User-Id"),
     db: Session = Depends(get_db),
 ):
@@ -534,14 +535,19 @@ def list_documents(
     if modified_after:
         query = query.filter(Document.updated_at >= modified_after)
 
-    # US-034: vencimientos proximos -> solo documentos con fecha de
-    # vencimiento dentro de la ventana, ordenados por proximidad.
+    # US-034: vencimientos proximos. due_within_days acota a una ventana de
+    # dias; due_soon devuelve TODOS los que tienen fecha (sin tope de dias)
+    # ordenados por proximidad -> evita que un vencimiento lejano "no se
+    # muestre" en el widget.
     if due_within_days is not None:
         limit_dt = datetime.now(timezone.utc) + timedelta(days=due_within_days)
         query = query.filter(
             Document.due_at.isnot(None),
             Document.due_at <= limit_dt,
         )
+        documents = query.order_by(Document.due_at.asc()).all()
+    elif due_soon:
+        query = query.filter(Document.due_at.isnot(None))
         documents = query.order_by(Document.due_at.asc()).all()
     else:
         documents = query.order_by(Document.created_at.desc()).all()
