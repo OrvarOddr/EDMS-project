@@ -3054,6 +3054,9 @@ function DetailDrawer({
   const [commentText, setCommentText] = useState('')
   const [commentSending, setCommentSending] = useState(false)
   const [showFullTimeline, setShowFullTimeline] = useState(false)
+  const commentRef = useRef<HTMLTextAreaElement>(null)
+  // Autocompletado de menciones: token "@..." activo bajo el cursor.
+  const [mention, setMention] = useState<{ query: string; start: number } | null>(null)
   const [editingAssignee, setEditingAssignee] = useState(false)
   const [assigneeDraft, setAssigneeDraft] = useState('')
   const [assigneeSaving, setAssigneeSaving] = useState(false)
@@ -3188,6 +3191,38 @@ function DetailDrawer({
     })
 
     return Array.from(mentioned)
+  }
+
+  function handleCommentChange(value: string, caret: number) {
+    setCommentText(value)
+    const upto = value.slice(0, caret)
+    const m = upto.match(/@([\w.-]*)$/)
+    if (m) setMention({ query: normalizeMentionToken(m[1]), start: caret - m[0].length })
+    else setMention(null)
+  }
+
+  const mentionMatches = mention
+    ? assigneeOptions
+        .filter(([, label]) => mention.query === '' || normalizeMentionToken(label).includes(mention.query))
+        .slice(0, 6)
+    : []
+
+  function applyMention(label: string) {
+    if (!mention) return
+    const token = `@${label.trim().replace(/\s+/g, '.')} `
+    const before = commentText.slice(0, mention.start)
+    const after = commentText.slice(mention.start).replace(/^@[\w.-]*/, '')
+    const next = before + token + after
+    setCommentText(next)
+    setMention(null)
+    const pos = (before + token).length
+    requestAnimationFrame(() => {
+      const el = commentRef.current
+      if (el) {
+        el.focus()
+        el.setSelectionRange(pos, pos)
+      }
+    })
   }
 
   async function handleSubmitComment() {
@@ -3523,13 +3558,17 @@ function DetailDrawer({
           </div>
 
           {detail?.permissions?.can_comment !== false && (
-            <div style={{ display: 'flex', gap: 6, marginBottom: 10 }}>
+            <div style={{ position: 'relative', display: 'flex', gap: 6, marginBottom: 10 }}>
               <textarea
+                ref={commentRef}
                 value={commentText}
-                onChange={(e) => setCommentText(e.target.value)}
-                placeholder="Escribe un comentario..."
+                onChange={(e) => handleCommentChange(e.target.value, e.target.selectionStart ?? e.target.value.length)}
+                placeholder="Escribe un comentario... usa @ para mencionar"
                 rows={2}
-                onKeyDown={(e) => { if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) handleSubmitComment() }}
+                onKeyDown={(e) => {
+                  if (e.key === 'Escape' && mention) { setMention(null); return }
+                  if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) handleSubmitComment()
+                }}
                 style={{
                   flex: 1, resize: 'none', fontSize: 12, padding: '6px 8px',
                   borderRadius: 6, border: '1px solid var(--border)',
@@ -3549,6 +3588,41 @@ function DetailDrawer({
               >
                 {commentSending ? '…' : 'Enviar'}
               </button>
+              {mention && mentionMatches.length > 0 && (
+                <div
+                  style={{
+                    position: 'absolute',
+                    top: '100%',
+                    left: 0,
+                    marginTop: 4,
+                    minWidth: 200,
+                    maxWidth: 280,
+                    background: 'var(--bg-elev)',
+                    border: '1px solid var(--border-strong)',
+                    borderRadius: 8,
+                    boxShadow: 'var(--shadow)',
+                    zIndex: 60,
+                    overflow: 'hidden',
+                  }}
+                >
+                  {mentionMatches.map(([userId, label]) => (
+                    <button
+                      key={userId}
+                      type="button"
+                      className="edms-nav-item"
+                      onClick={() => applyMention(label)}
+                      style={{
+                        display: 'flex', alignItems: 'center', gap: 8, width: '100%',
+                        padding: '7px 10px', background: 'transparent', border: 'none',
+                        color: 'var(--fg)', fontSize: 12, cursor: 'pointer', textAlign: 'left',
+                      }}
+                    >
+                      <span style={{ color: 'var(--accent)', fontWeight: 600 }}>@</span>
+                      {label}
+                    </button>
+                  ))}
+                </div>
+              )}
             </div>
           )}
 
