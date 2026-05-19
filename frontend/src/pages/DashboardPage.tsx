@@ -451,7 +451,7 @@ function dueUrgency(value?: string | null): { color: string; soft: string; label
   if (days <= 2) return { color: 'var(--danger)', soft: 'var(--danger-soft)', label: `Vence en ${days} d` }
   if (days <= 7) return { color: 'var(--warn)', soft: 'var(--warn-soft)', label: `Vence en ${days} d` }
   if (days <= 30) return { color: 'var(--warn)', soft: 'var(--warn-soft)', label: `Vence en ${days} d` }
-  return { color: 'var(--fg-muted)', soft: 'var(--bg-elev-2)', label: dueDateLabel(value) }
+  return { color: 'var(--fg-muted)', soft: 'var(--bg-elev-2)', label: '' }
 }
 
 const WORKFLOW_STATE_THEME: Record<string, { label: string; color: string; soft: string }> = {
@@ -2431,7 +2431,7 @@ function ListView({
                             }}
                           >
                             <Icon.Clock size={9} />
-                            {urg.label} · {dueDateLabel(doc.dueDate)}
+                            {urg.label ? `${urg.label} · ` : ''}{dueDateLabel(doc.dueDate)}
                           </span>
                         )
                       })()}
@@ -2931,7 +2931,7 @@ function DueSoonPanel({
                   }}
                 >
                   <Icon.Clock size={11} />
-                  {urg.label} · {dueDateLabel(doc.dueDate)}
+                  {urg.label ? `${urg.label} · ` : ''}{dueDateLabel(doc.dueDate)}
                 </span>
               </div>
             )
@@ -3513,7 +3513,7 @@ function DetailDrawer({
                     }}
                   >
                     <Icon.Clock size={12} />
-                    {dueDateLabel(doc.dueDate)} · {urg.label}
+                    {dueDateLabel(doc.dueDate)}{urg.label ? ` · ${urg.label}` : ''}
                   </span>
                 )
               })() : <span style={{ color: 'var(--fg-dim)' }}>Sin fecha</span>],
