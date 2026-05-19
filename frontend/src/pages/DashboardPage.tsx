@@ -3031,6 +3031,8 @@ function DetailDrawer({
   assigneeOptions,
   onAssignAssignee,
   onCommentPosted,
+  fullScreen = false,
+  onToggleFull,
 }: {
   doc: DocumentItem | null
   onClose: () => void
@@ -3044,6 +3046,8 @@ function DetailDrawer({
   assigneeOptions: [string, string][]
   onAssignAssignee?: (docId: string, userId: string) => Promise<void>
   onCommentPosted?: (item: DocumentDetailTimelineItem) => void
+  fullScreen?: boolean
+  onToggleFull?: () => void
 }) {
   const [preview, setPreview] = useState<{
     fileId: string
@@ -3344,21 +3348,39 @@ function DetailDrawer({
 
   return (
     <aside
-      style={{
-        width: 360,
-        height: '100%',
-        flexShrink: 0,
-        background: 'var(--bg-elev)',
-        borderLeft: '1px solid var(--border)',
-        display: 'flex',
-        flexDirection: 'column',
-        animation: 'edms-slide-in 0.18s ease-out',
-      }}
+      style={
+        fullScreen
+          ? {
+              position: 'fixed',
+              inset: 0,
+              zIndex: 1000,
+              width: '100vw',
+              height: '100vh',
+              background: 'var(--bg-elev)',
+              display: 'flex',
+              flexDirection: 'column',
+            }
+          : {
+              width: 360,
+              height: '100%',
+              flexShrink: 0,
+              background: 'var(--bg-elev)',
+              borderLeft: '1px solid var(--border)',
+              display: 'flex',
+              flexDirection: 'column',
+              animation: 'edms-slide-in 0.18s ease-out',
+            }
+      }
     >
       <div style={{ padding: '12px 14px', display: 'flex', alignItems: 'center', gap: 8, borderBottom: '1px solid var(--border)' }}>
         <KindBadge kind={effectiveKind} />
         <span style={{ flex: 1, fontSize: 12, color: 'var(--fg-muted)' }}>Detalles</span>
-        <button className="edms-nav-item" title="Abrir completo" style={{ width: 26, height: 26, borderRadius: 5, display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--fg-muted)' }}>
+        <button
+          onClick={onToggleFull}
+          className="edms-nav-item"
+          title={fullScreen ? 'Salir de pantalla completa' : 'Abrir completo'}
+          style={{ width: 26, height: 26, borderRadius: 5, display: 'flex', alignItems: 'center', justifyContent: 'center', color: fullScreen ? 'var(--accent)' : 'var(--fg-muted)' }}
+        >
           <Icon.Eye size={14} />
         </button>
         <button onClick={onClose} className="edms-nav-item" style={{ width: 26, height: 26, borderRadius: 5, display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--fg-muted)' }}>
@@ -3366,8 +3388,8 @@ function DetailDrawer({
         </button>
       </div>
 
-      <div style={{ flex: 1, overflow: 'auto' }}>
-        <div style={{ padding: '14px 14px 0' }}>
+      <div style={{ flex: 1, overflow: 'auto', ...(fullScreen ? { display: 'flex', flexDirection: 'column', alignItems: 'center', padding: '8px 0 32px' } : {}) }}>
+        <div style={{ padding: '14px 14px 0', ...(fullScreen ? { width: 'min(900px, 96vw)' } : {}) }}>
           <div
             style={{
               aspectRatio: '8.5 / 11',
@@ -3446,8 +3468,8 @@ function DetailDrawer({
           </div>
         </div>
 
-        <div style={{ padding: '14px' }}>
-          <div style={{ fontSize: 15, fontWeight: 600, color: 'var(--fg)', marginBottom: 6, lineHeight: 1.3 }}>{doc.name}</div>
+        <div style={{ padding: '14px', ...(fullScreen ? { width: 'min(900px, 96vw)' } : {}) }}>
+          <div style={{ fontSize: fullScreen ? 19 : 15, fontWeight: 600, color: 'var(--fg)', marginBottom: 6, lineHeight: 1.3 }}>{doc.name}</div>
           <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12 }}>
             <StatusPill status={doc.status} />
             <span style={{ color: 'var(--fg-dim)', fontSize: 11 }}>·</span>
@@ -3457,8 +3479,8 @@ function DetailDrawer({
           </div>
 
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 6, marginBottom: 14 }}>
-            <button className="edms-button edms-button-primary" style={btnStylePrimary} disabled={!canDownloadFile}>
-              <Icon.Eye size={13} /> Abrir
+            <button className="edms-button edms-button-primary" style={btnStylePrimary} onClick={onToggleFull}>
+              <Icon.Eye size={13} /> {fullScreen ? 'Cerrar vista' : 'Abrir'}
             </button>
             <button className="edms-button" style={btnStyleGhost} onClick={() => onEditMetadata(doc)} disabled={!canEditMetadata}>
               <Icon.File size={13} /> Editar
@@ -7128,6 +7150,9 @@ export default function DashboardPage() {
   const [filters, setFilters] = useState<FiltersState>(initialFilters)
   const [selected, setSelected] = useState<Set<string>>(new Set())
   const [openDocId, setOpenDocId] = useState<string | null>(null)
+  // Qué documento está en pantalla completa. Derivado: si openDocId cambia,
+  // fullScreen deja de aplicar sin necesidad de un efecto que haga setState.
+  const [fullDocId, setFullDocId] = useState<string | null>(null)
   const [ctxMenu, setCtxMenu] = useState<ContextMenuState | null>(null)
   const [notifOpen, setNotifOpen] = useState(false)
   const [notifsModalOpen, setNotifsModalOpen] = useState(false)
@@ -8568,6 +8593,10 @@ export default function DashboardPage() {
             }
           })
         }}
+        fullScreen={fullDocId !== null && fullDocId === openDocId}
+        onToggleFull={() =>
+          setFullDocId((current) => (current && current === openDocId ? null : openDocId))
+        }
       />
       <FileDetailDrawer
         file={selectedView === 'archivos-sin-asignar' ? selectedUnassignedFile : null}
