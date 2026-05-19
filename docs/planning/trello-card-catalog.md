@@ -1006,3 +1006,30 @@ Definicion de terminado:
 - La vista respeta permisos
 - Se puede acceder al documento desde el listado
 - El flujo funciona entre frontend, gateway y servicios consultados
+
+### 41. [P1] [Frontend] US-038 Centro de notificaciones
+
+Descripcion:
+Como usuario quiero ver y gestionar mis notificaciones desde la campana del dashboard para enterarme de cambios relevantes (asignaciones, comentarios, menciones, cambios de estado, vencimientos) sin depender de avisos externos.
+
+Checklist:
+
+- Mostrar contador de no leidas en la campana
+- Abrir un popover con las notificaciones recientes desde la campana
+- Anclar el popover correctamente debajo de la campana
+- Mostrar tipo, titulo, detalle, documento y tiempo relativo de cada notificacion
+- Marcar una notificacion como leida al abrirla
+- Permitir marcar todas como leidas
+- Navegar al documento relacionado desde la notificacion
+- Agregar boton "Ver todas" que abra una ventana con todas las notificaciones y su detalle
+- Manejar estado vacio si no hay notificaciones
+- Consultar notificaciones via api-gateway respetando el usuario autenticado
+
+Definicion de terminado:
+
+- El usuario ve sus notificaciones desde la campana
+- El popover aparece correctamente posicionado bajo la campana
+- La ventana "Ver todas" lista todas las notificaciones con su detalle
+- Marcar leida / marcar todo leido se refleja en la UI
+- Se puede navegar al documento relacionado
+- El flujo funciona entre frontend, gateway y collaboration-service

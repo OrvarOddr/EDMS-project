@@ -1441,6 +1441,7 @@ function Topbar({
   onSelectResult,
   onOpenNotifs,
   notifCount,
+  bellRef,
   userLabel,
   userInitials,
   userEmail,
@@ -1459,6 +1460,7 @@ function Topbar({
   onSelectResult: (docId: string) => void
   onOpenNotifs: () => void
   notifCount: number
+  bellRef: React.RefObject<HTMLButtonElement | null>
   userLabel: string
   userInitials: string
   userEmail: string
@@ -1543,6 +1545,7 @@ function Topbar({
         <div style={{ width: 1, height: 18, background: 'var(--border)', margin: '0 2px' }} />
 
         <button
+          ref={bellRef}
           onClick={onOpenNotifs}
           className="edms-nav-item"
           title="Notificaciones"
@@ -3846,6 +3849,8 @@ function NotifPopover({
   onMarkRead,
   onMarkAllRead,
   onOpenDoc,
+  onSeeAll,
+  bellRef,
 }: {
   open: boolean
   onClose: () => void
@@ -3853,7 +3858,31 @@ function NotifPopover({
   onMarkRead: (id: string) => void
   onMarkAllRead: () => void
   onOpenDoc: (id: string) => void
+  onSeeAll: () => void
+  bellRef: React.RefObject<HTMLButtonElement | null>
 }) {
+  const [pos, setPos] = useState<{ top: number; right: number } | null>(null)
+
+  useEffect(() => {
+    if (!open) return
+    function compute() {
+      const rect = bellRef.current?.getBoundingClientRect()
+      if (rect) {
+        setPos({
+          top: Math.round(rect.bottom + 6),
+          right: Math.max(8, Math.round(window.innerWidth - rect.right)),
+        })
+      }
+    }
+    compute()
+    window.addEventListener('resize', compute)
+    window.addEventListener('scroll', compute, true)
+    return () => {
+      window.removeEventListener('resize', compute)
+      window.removeEventListener('scroll', compute, true)
+    }
+  }, [open, bellRef])
+
   if (!open) return null
 
   const hasUnread = items.some((item) => !item.is_read)
@@ -3871,9 +3900,9 @@ function NotifPopover({
       <div onClick={onClose} style={{ position: 'fixed', inset: 0, zIndex: 40 }} />
       <div
         style={{
-          position: 'absolute',
-          top: 56,
-          right: 108,
+          position: 'fixed',
+          top: pos?.top ?? 56,
+          right: pos?.right ?? 16,
           width: 340,
           background: 'var(--bg-elev)',
           border: '1px solid var(--border-strong)',
@@ -3926,8 +3955,139 @@ function NotifPopover({
             </div>
           ))}
         </div>
+        <button
+          onClick={onSeeAll}
+          className="edms-nav-item"
+          style={{
+            width: '100%',
+            padding: '10px 14px',
+            borderTop: '1px solid var(--border)',
+            background: 'transparent',
+            color: 'var(--accent)',
+            fontSize: 12,
+            fontWeight: 500,
+            cursor: 'pointer',
+            textAlign: 'center',
+          }}
+        >
+          Ver todas
+        </button>
       </div>
     </>
+  )
+}
+
+function NotificationsModal({
+  open,
+  onClose,
+  items,
+  onMarkRead,
+  onMarkAllRead,
+  onOpenDoc,
+}: {
+  open: boolean
+  onClose: () => void
+  items: NotificationItem[]
+  onMarkRead: (id: string) => void
+  onMarkAllRead: () => void
+  onOpenDoc: (id: string) => void
+}) {
+  if (!open) return null
+
+  const hasUnread = items.some((item) => !item.is_read)
+
+  function handleItemClick(item: NotificationItem) {
+    if (!item.is_read) onMarkRead(item.id)
+    if (item.document_id) {
+      onOpenDoc(item.document_id)
+      onClose()
+    }
+  }
+
+  return (
+    <div
+      onClick={onClose}
+      style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.55)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000 }}
+    >
+      <div
+        onClick={(e) => e.stopPropagation()}
+        style={{
+          background: 'var(--bg-elev)',
+          border: '1px solid var(--border-strong)',
+          borderRadius: 12,
+          width: 560,
+          maxWidth: '92vw',
+          maxHeight: '80vh',
+          display: 'flex',
+          flexDirection: 'column',
+          boxShadow: 'var(--shadow)',
+          overflow: 'hidden',
+        }}
+      >
+        <div style={{ padding: '16px 20px', borderBottom: '1px solid var(--border)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          <div>
+            <h3 style={{ margin: 0, fontSize: 15 }}>Todas las notificaciones</h3>
+            <p style={{ margin: '4px 0 0', color: 'var(--fg-muted)', fontSize: 12 }}>
+              {items.length} en total{hasUnread ? ` · ${items.filter((i) => !i.is_read).length} sin leer` : ''}
+            </p>
+          </div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+            <button
+              onClick={onMarkAllRead}
+              disabled={!hasUnread}
+              style={{ fontSize: 12, color: hasUnread ? 'var(--accent)' : 'var(--fg-dim)', cursor: hasUnread ? 'pointer' : 'default' }}
+            >
+              Marcar todo leído
+            </button>
+            <button
+              onClick={onClose}
+              className="edms-nav-item"
+              style={{ width: 28, height: 28, borderRadius: 6, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', color: 'var(--fg-muted)', cursor: 'pointer' }}
+              aria-label="Cerrar"
+            >
+              <Icon.Close size={15} />
+            </button>
+          </div>
+        </div>
+
+        {items.length === 0 ? (
+          <div style={{ padding: '40px 20px', fontSize: 13, color: 'var(--fg-muted)', textAlign: 'center' }}>
+            No tienes notificaciones
+          </div>
+        ) : (
+          <div style={{ overflowY: 'auto', padding: '6px 0' }}>
+            {items.map((item) => (
+              <div
+                key={item.id}
+                className="edms-nav-item"
+                onClick={() => handleItemClick(item)}
+                style={{
+                  padding: '12px 20px',
+                  borderBottom: '1px solid var(--border)',
+                  display: 'flex',
+                  gap: 12,
+                  cursor: item.document_id ? 'pointer' : 'default',
+                  background: item.is_read ? 'transparent' : 'color-mix(in oklch, var(--accent) 7%, transparent)',
+                }}
+              >
+                <div style={{ width: 28, height: 28, borderRadius: 14, background: 'var(--bg-elev-2)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                  {notifIcon(item.type)}
+                </div>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10 }}>
+                    <span style={{ fontSize: 13, color: 'var(--fg)', fontWeight: item.is_read ? 400 : 600 }}>{item.title}</span>
+                    <span style={{ fontSize: 11, color: 'var(--fg-dim)', flexShrink: 0 }}>{notifTimeAgo(item.created_at)}</span>
+                  </div>
+                  {item.body && (
+                    <div style={{ fontSize: 12, color: 'var(--fg-muted)', marginTop: 3, lineHeight: 1.4 }}>{item.body}</div>
+                  )}
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    </div>
   )
 }
 
@@ -6726,6 +6886,8 @@ export default function DashboardPage() {
   const [openDocId, setOpenDocId] = useState<string | null>(null)
   const [ctxMenu, setCtxMenu] = useState<ContextMenuState | null>(null)
   const [notifOpen, setNotifOpen] = useState(false)
+  const [notifsModalOpen, setNotifsModalOpen] = useState(false)
+  const bellRef = useRef<HTMLButtonElement>(null)
   const [stateCommentPrompt, setStateCommentPrompt] = useState<{
     stateLabel: string
     resolve: (comment: string) => void
@@ -7852,6 +8014,7 @@ export default function DashboardPage() {
           onSelectResult={openDoc}
           onOpenNotifs={() => setNotifOpen(true)}
           notifCount={notifUnread}
+          bellRef={bellRef}
           userLabel={currentUserLabel}
           userInitials={currentUserInitials}
           userEmail={currentUserEmail}
@@ -8150,6 +8313,16 @@ export default function DashboardPage() {
       <NotifPopover
         open={notifOpen}
         onClose={() => setNotifOpen(false)}
+        items={notifications}
+        onMarkRead={handleMarkNotificationRead}
+        onMarkAllRead={handleMarkAllNotificationsRead}
+        onOpenDoc={openDoc}
+        onSeeAll={() => { setNotifOpen(false); setNotifsModalOpen(true) }}
+        bellRef={bellRef}
+      />
+      <NotificationsModal
+        open={notifsModalOpen}
+        onClose={() => setNotifsModalOpen(false)}
         items={notifications}
         onMarkRead={handleMarkNotificationRead}
         onMarkAllRead={handleMarkAllNotificationsRead}
