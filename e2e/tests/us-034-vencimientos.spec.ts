@@ -52,6 +52,37 @@ test('US-034: documento con vencimiento próximo aparece en el listado filtrado'
   expect(ids).toContain(doc.id)
 })
 
+test('US-034: due_soon devuelve documentos con vencimiento lejano (sin tope de días)', async ({ request }) => {
+  const token = await login(request)
+  const auth = { Authorization: `Bearer ${token}` }
+
+  const created = await request.post('/api/documents', {
+    headers: auth,
+    data: { title: 'E2E US-034 vence lejano', document_type_id: 'tipo-e2e', description: 'x' },
+  })
+  expect(created.status(), await created.text()).toBe(201)
+  const doc = await created.json()
+
+  // vencimiento a >1 año: fuera de cualquier ventana de días pero debe
+  // aparecer con due_soon (ordenado por proximidad).
+  const patched = await request.patch(`/api/documents/${doc.id}/metadata`, {
+    headers: auth,
+    data: {
+      title: 'E2E US-034 vence lejano',
+      document_type_id: 'tipo-e2e',
+      description: 'x',
+      confidentiality_level: 'publico_interno',
+      due_date: isoInDays(500),
+    },
+  })
+  expect(patched.status(), await patched.text()).toBe(200)
+
+  const soon = await request.get('/api/documents?due_soon=true', { headers: auth })
+  expect(soon.status()).toBe(200)
+  const ids = (await soon.json()).map((d: { id: string }) => d.id)
+  expect(ids).toContain(doc.id)
+})
+
 test('US-034: due_within_days inválido devuelve 422', async ({ request }) => {
   const token = await login(request)
   const res = await request.get('/api/documents?due_within_days=0', {

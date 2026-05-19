@@ -7086,7 +7086,7 @@ export default function DashboardPage() {
 
   const refreshDueSoon = useCallback(async () => {
     try {
-      const { data } = await listDocuments({ due_within_days: 14 })
+      const { data } = await listDocuments({ due_soon: true })
       setDueSoonDocs(data.map(documentResponseToItem).slice(0, 8))
     } catch {
       /* vencimientos no disponibles: se reintenta en el próximo ciclo */
