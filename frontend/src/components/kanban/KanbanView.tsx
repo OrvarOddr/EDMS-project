@@ -33,10 +33,15 @@ function kanbanDueLabel(value: string): string {
   return date.toLocaleDateString('es-CL', { day: '2-digit', month: '2-digit', year: 'numeric' })
 }
 
-function kanbanDueOverdue(value: string): boolean {
+function kanbanDueUrgency(value: string): { color: string; soft: string; label: string } {
   const date = new Date(value)
-  if (Number.isNaN(date.getTime())) return false
-  return date.getTime() < Date.now()
+  if (Number.isNaN(date.getTime())) return { color: 'var(--fg-dim)', soft: 'var(--bg-elev-2)', label: value }
+  const days = Math.ceil((date.getTime() - Date.now()) / 86_400_000)
+  if (days < 0) return { color: 'var(--danger)', soft: 'var(--danger-soft)', label: 'Vencido' }
+  if (days === 0) return { color: 'var(--danger)', soft: 'var(--danger-soft)', label: 'Vence hoy' }
+  if (days <= 2) return { color: 'var(--danger)', soft: 'var(--danger-soft)', label: `Vence en ${days} d` }
+  if (days <= 30) return { color: 'var(--warn)', soft: 'var(--warn-soft)', label: `Vence en ${days} d` }
+  return { color: 'var(--fg-muted)', soft: 'var(--bg-elev-2)', label: `Vence ${kanbanDueLabel(value)}` }
 }
 
 const KANBAN_COLS: KanbanCol[] = [
@@ -146,18 +151,26 @@ function KanbanCard({ doc, tags, isDragging, onOpen, onDragStart, onDragEnd }: K
         </div>
       )}
 
-      {doc.dueDate && (
-        <span style={{
-          display: 'inline-flex',
-          alignItems: 'center',
-          gap: 4,
-          alignSelf: 'flex-start',
-          fontSize: 10.5,
-          color: kanbanDueOverdue(doc.dueDate) ? 'var(--danger)' : 'var(--fg-dim)',
-        }}>
-          ⏱ Vence {kanbanDueLabel(doc.dueDate)}{kanbanDueOverdue(doc.dueDate) ? ' · vencido' : ''}
-        </span>
-      )}
+      {doc.dueDate && (() => {
+        const urg = kanbanDueUrgency(doc.dueDate)
+        return (
+          <span style={{
+            display: 'inline-flex',
+            alignItems: 'center',
+            gap: 4,
+            alignSelf: 'flex-start',
+            fontSize: 10,
+            fontWeight: 500,
+            color: urg.color,
+            background: urg.soft,
+            border: `1px solid ${urg.color}`,
+            borderRadius: 999,
+            padding: '1px 7px',
+          }}>
+            ⏱ {urg.label}
+          </span>
+        )
+      })()}
 
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
