@@ -3134,9 +3134,11 @@ function DetailDrawer({
   function userLabel(userId?: string | null) {
     if (!userId) return 'Sin asignar'
     if (currentUserId && userId === currentUserId) return currentUserLabel
+    const option = assigneeOptions.find(([id]) => id === userId)
+    if (option) return option[1]
     const found = findUserById(userId)
     if (found) return found.name
-    return `Usuario ${userId.slice(0, 8)}`
+    return 'Usuario sin nombre'
   }
 
   function roleLabel(roleCode?: string | null) {
@@ -7373,7 +7375,7 @@ export default function DashboardPage() {
     if (option) return option[1]
     const sampleUser = findUserById(userId)
     if (sampleUser) return sampleUser.name
-    return `Usuario ${userId.slice(0, 8)}`
+    return 'Usuario sin nombre'
   }
 
   function initialsForUserId(userId?: string | null) {

@@ -100,9 +100,10 @@ def create_user(
 
 @router.get("", response_model=list[UserResponse])
 def list_users(db: Session = Depends(get_db), actor: User = Depends(_current_user)):
-    if not actor.is_superuser:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Solo superusuarios pueden listar usuarios")
-
+    # Lectura del directorio: cualquier usuario autenticado puede listar a sus
+    # colegas para resolver encargados/menciones/asignaciones en el frontend.
+    # La creacion/edicion sigue siendo solo de superusers.
+    _ = actor
     users = (
         db.query(User)
         .filter(User.deleted_at.is_(None))
