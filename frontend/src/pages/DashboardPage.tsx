@@ -2832,8 +2832,19 @@ function activityVerb(type: string): string {
     case 'firma_solicitud': return 'solicitó firma en'
     case 'aprobacion': return 'aprobó'
     case 'compartido': return 'compartió'
-    default: return ''
+    case 'metadata_actualizada': return 'actualizó metadata'
+    case 'fecha_vencimiento': return 'actualizó la fecha de vencimiento'
+    default: return 'actualizó'
   }
+}
+
+function activityTarget(item: RecentActivityItem): string {
+  // En eventos de metadata el body describe el cambio puntual; preferimos
+  // mostrar eso. En el resto, mostramos el documento como target.
+  if (item.type === 'metadata_actualizada' || item.type === 'fecha_vencimiento') {
+    return item.body ?? item.document_name ?? ''
+  }
+  return item.document_name ?? item.body ?? ''
 }
 
 function ActivityPanel({
@@ -2863,7 +2874,7 @@ function ActivityPanel({
             const navigable = Boolean(item.document_id)
             const actorName = item.actor_user_id ? userLabel(item.actor_user_id) : ''
             const verb = activityVerb(item.type)
-            const target = item.document_name ?? item.body ?? ''
+            const target = activityTarget(item)
             const initials = actorName ? initialsFromLabel(actorName) : '?'
             const avatarColor = actorColorFromId(item.actor_user_id)
             const showActorLine = Boolean(actorName)
@@ -2873,10 +2884,10 @@ function ActivityPanel({
                 className={navigable ? 'edms-nav-item' : undefined}
                 onClick={() => item.document_id && onOpenDoc(item.document_id)}
                 style={{
-                  padding: '10px 14px',
+                  padding: '8px 14px',
                   display: 'flex',
                   alignItems: 'flex-start',
-                  gap: 12,
+                  gap: 10,
                   fontSize: 12.5,
                   cursor: navigable ? 'pointer' : 'default',
                 }}
@@ -2884,18 +2895,19 @@ function ActivityPanel({
                 <span
                   title={actorName || undefined}
                   style={{
-                    width: 32,
-                    height: 32,
-                    borderRadius: 16,
+                    width: 24,
+                    height: 24,
+                    borderRadius: 12,
                     background: avatarColor,
                     color: '#0e0f12',
-                    fontSize: 12,
+                    fontSize: 10.5,
                     fontWeight: 600,
                     display: 'inline-flex',
                     alignItems: 'center',
                     justifyContent: 'center',
                     flexShrink: 0,
                     border: '1.5px solid var(--bg-elev)',
+                    marginTop: 1,
                   }}
                 >
                   {item.actor_user_id ? initials : notifIcon(item.type)}
