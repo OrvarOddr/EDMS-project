@@ -3639,6 +3639,151 @@ function DetailDrawer({
             </div>
           )}
 
+          <div style={{ border: '1px solid var(--border)', borderRadius: 8, background: 'var(--bg-elev-2)', padding: '10px 12px', marginBottom: 14, display: 'flex', flexDirection: 'column', gap: 8 }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
+              <div style={{ fontSize: 11, color: 'var(--fg-dim)', letterSpacing: '0.06em', textTransform: 'uppercase', fontWeight: 600, display: 'flex', alignItems: 'center', gap: 6 }}>
+                <Icon.Users size={11} /> Personas asignadas
+              </div>
+              {canManageAssignments && !addingAssignment && (
+                <button
+                  type="button"
+                  onClick={() => setAddingAssignment(true)}
+                  className="edms-button"
+                  style={{ ...btnStyleGhost, padding: '3px 8px', fontSize: 11 }}
+                >
+                  <Icon.Plus size={11} /> Agregar
+                </button>
+              )}
+            </div>
+
+            {assignments.length > 0 ? (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                {assignments.map((assignment) => {
+                  const isOwner = assignment.role_code === 'encargado'
+                  const removeBusy = assignmentBusy === `remove-${assignment.id}`
+                  const roleBusy = assignmentBusy === `role-${assignment.id}`
+                  return (
+                    <div key={assignment.id} style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', fontSize: 12.5 }}>
+                      <OwnerAvatar userId={assignment.user_id} size={20} />
+                      <span style={{ color: 'var(--fg)', flex: 1, minWidth: 0 }}>{userLabel(assignment.user_id)}</span>
+                      {canManageAssignments && !isOwner ? (
+                        <select
+                          value={assignment.role_code}
+                          disabled={roleBusy}
+                          onChange={(e) => handleUpdateAssignmentRole(assignment.id, e.target.value)}
+                          style={{
+                            fontSize: 11.5, padding: '2px 6px', borderRadius: 4,
+                            background: 'var(--bg-elev)', color: 'var(--fg)',
+                            border: '1px solid var(--border)', cursor: 'pointer',
+                          }}
+                        >
+                          {nonOwnerRoleOptions.map((opt) => (
+                            <option key={opt.value} value={opt.value}>{opt.label}</option>
+                          ))}
+                        </select>
+                      ) : (
+                        <span style={{
+                          color: isOwner ? 'var(--accent)' : 'var(--fg-muted)',
+                          background: isOwner ? 'var(--accent-soft)' : 'var(--bg-elev)',
+                          border: `1px solid ${isOwner ? 'var(--accent)' : 'var(--border)'}`,
+                          borderRadius: 999, padding: '1px 8px', fontSize: 11, fontWeight: 500,
+                        }}>
+                          {roleLabel(assignment.role_code)}
+                        </span>
+                      )}
+                      {canManageAssignments && !isOwner && (
+                        <button
+                          type="button"
+                          onClick={() => handleRemoveAssignment(assignment.id)}
+                          disabled={removeBusy}
+                          title="Quitar asignacion"
+                          className="edms-nav-item"
+                          style={{
+                            width: 22, height: 22, borderRadius: 4,
+                            display: 'flex', alignItems: 'center', justifyContent: 'center',
+                            color: 'var(--fg-muted)', background: 'transparent', border: 'none',
+                            cursor: removeBusy ? 'wait' : 'pointer',
+                          }}
+                        >
+                          <Icon.Close size={12} />
+                        </button>
+                      )}
+                    </div>
+                  )
+                })}
+              </div>
+            ) : (
+              <div style={{ color: 'var(--fg-muted)', fontSize: 12 }}>Sin personas asignadas todavia.</div>
+            )}
+
+            {canManageAssignments && addingAssignment && (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 6, padding: '6px 0 0', borderTop: '1px solid var(--border)' }}>
+                <div style={{ display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap', paddingTop: 6 }}>
+                  <select
+                    value={addAssignUser}
+                    onChange={(e) => setAddAssignUser(e.target.value)}
+                    style={{
+                      flex: 1, minWidth: 140, fontSize: 12, padding: '4px 6px', borderRadius: 4,
+                      background: 'var(--bg-elev)', color: 'var(--fg)',
+                      border: '1px solid var(--border)',
+                    }}
+                  >
+                    <option value="">Selecciona usuario...</option>
+                    {availableUsersForNewAssignment.map(([id, label]) => (
+                      <option key={id} value={id}>{label}</option>
+                    ))}
+                  </select>
+                  <select
+                    value={addAssignRole}
+                    onChange={(e) => setAddAssignRole(e.target.value)}
+                    style={{
+                      fontSize: 12, padding: '4px 6px', borderRadius: 4,
+                      background: 'var(--bg-elev)', color: 'var(--fg)',
+                      border: '1px solid var(--border)',
+                    }}
+                  >
+                    {nonOwnerRoleOptions.map((opt) => (
+                      <option key={opt.value} value={opt.value}>{opt.label}</option>
+                    ))}
+                  </select>
+                </div>
+                <div style={{ display: 'flex', gap: 6 }}>
+                  <button
+                    type="button"
+                    onClick={handleAddAssignment}
+                    disabled={assignmentBusy === 'add' || !addAssignUser}
+                    className="edms-button edms-button-primary"
+                    style={{ ...btnStylePrimary, padding: '5px 10px', fontSize: 12 }}
+                  >
+                    {assignmentBusy === 'add' ? 'Agregando...' : 'Agregar'}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => { setAddingAssignment(false); setAssignmentError(null); setAddAssignUser('') }}
+                    className="edms-button"
+                    style={{ ...btnStyleGhost, padding: '5px 10px', fontSize: 12 }}
+                  >
+                    Cancelar
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {!canManageAssignments && assignments.some((a) => a.role_code !== 'encargado') && (
+              <div style={{ color: 'var(--fg-dim)', fontSize: 11.5, fontStyle: 'italic' }}>
+                Solo el encargado puede gestionar las personas asignadas.
+              </div>
+            )}
+            {!canManageAssignments && assignments.length <= 1 && canAssignAssignee === false && (
+              <div style={{ color: 'var(--fg-dim)', fontSize: 11.5, fontStyle: 'italic' }}>
+                Solo el encargado puede agregar o quitar personas.
+              </div>
+            )}
+            {assignmentError && (
+              <div style={{ color: 'var(--danger)', fontSize: 11.5 }}>{assignmentError}</div>
+            )}
+          </div>
+
           <div style={{ display: 'flex', flexDirection: 'column', gap: 0 }}>
             {[
               ['Autor', <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}><OwnerAvatar userId={doc.owner} size={18} /><span>{owner?.name ?? userLabel(doc.owner)}</span></div>],
@@ -3674,131 +3819,6 @@ function DetailDrawer({
               ['Tamaño', currentFile?.size_bytes ? formatFileSize(currentFile.size_bytes) : doc.size],
               ['Tipo', currentFile?.mime_type ? fileKindLabel(currentFile.mime_type) : kind.label],
               [doc.pages ? 'Páginas' : 'Filas', doc.pages ?? doc.rows?.toLocaleString('es-ES') ?? '—'],
-              ['Asignados', (
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-                  {assignments.length > 0 ? (
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-                      {assignments.map((assignment) => {
-                        const isOwner = assignment.role_code === 'encargado'
-                        const removeBusy = assignmentBusy === `remove-${assignment.id}`
-                        const roleBusy = assignmentBusy === `role-${assignment.id}`
-                        return (
-                          <div key={assignment.id} style={{ color: 'var(--fg)', display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap' }}>
-                            <span>{userLabel(assignment.user_id)}</span>
-                            <span style={{ color: 'var(--fg-dim)' }}>·</span>
-                            {canManageAssignments && !isOwner ? (
-                              <select
-                                value={assignment.role_code}
-                                disabled={roleBusy}
-                                onChange={(e) => handleUpdateAssignmentRole(assignment.id, e.target.value)}
-                                style={{
-                                  fontSize: 11.5, padding: '1px 4px', borderRadius: 4,
-                                  background: 'var(--bg-elev-2)', color: 'var(--fg)',
-                                  border: '1px solid var(--border)', cursor: 'pointer',
-                                }}
-                              >
-                                {nonOwnerRoleOptions.map((opt) => (
-                                  <option key={opt.value} value={opt.value}>{opt.label}</option>
-                                ))}
-                              </select>
-                            ) : (
-                              <span style={{ color: 'var(--fg-dim)' }}>{roleLabel(assignment.role_code)}</span>
-                            )}
-                            {canManageAssignments && !isOwner && (
-                              <button
-                                type="button"
-                                onClick={() => handleRemoveAssignment(assignment.id)}
-                                disabled={removeBusy}
-                                title="Quitar asignacion"
-                                className="edms-nav-item"
-                                style={{
-                                  width: 18, height: 18, borderRadius: 4,
-                                  display: 'flex', alignItems: 'center', justifyContent: 'center',
-                                  color: 'var(--fg-muted)', background: 'transparent', border: 'none',
-                                  cursor: removeBusy ? 'wait' : 'pointer',
-                                }}
-                              >
-                                <Icon.Close size={11} />
-                              </button>
-                            )}
-                          </div>
-                        )
-                      })}
-                    </div>
-                  ) : doc.shared.length > 0 ? (
-                    <AvatarStack ids={doc.shared} max={5} />
-                  ) : (
-                    <span style={{ color: 'var(--fg-dim)' }}>Solo tú</span>
-                  )}
-
-                  {canManageAssignments && (
-                    addingAssignment ? (
-                      <div style={{ display: 'flex', flexDirection: 'column', gap: 4, padding: '4px 0' }}>
-                        <div style={{ display: 'flex', gap: 4, alignItems: 'center', flexWrap: 'wrap' }}>
-                          <select
-                            value={addAssignUser}
-                            onChange={(e) => setAddAssignUser(e.target.value)}
-                            style={{
-                              flex: 1, minWidth: 120, fontSize: 11.5, padding: '3px 5px', borderRadius: 4,
-                              background: 'var(--bg-elev-2)', color: 'var(--fg)',
-                              border: '1px solid var(--border)',
-                            }}
-                          >
-                            <option value="">Selecciona usuario...</option>
-                            {availableUsersForNewAssignment.map(([id, label]) => (
-                              <option key={id} value={id}>{label}</option>
-                            ))}
-                          </select>
-                          <select
-                            value={addAssignRole}
-                            onChange={(e) => setAddAssignRole(e.target.value)}
-                            style={{
-                              fontSize: 11.5, padding: '3px 5px', borderRadius: 4,
-                              background: 'var(--bg-elev-2)', color: 'var(--fg)',
-                              border: '1px solid var(--border)',
-                            }}
-                          >
-                            {nonOwnerRoleOptions.map((opt) => (
-                              <option key={opt.value} value={opt.value}>{opt.label}</option>
-                            ))}
-                          </select>
-                        </div>
-                        <div style={{ display: 'flex', gap: 4 }}>
-                          <button
-                            type="button"
-                            onClick={handleAddAssignment}
-                            disabled={assignmentBusy === 'add' || !addAssignUser}
-                            className="edms-button edms-button-primary"
-                            style={{ ...btnStylePrimary, padding: '4px 8px', fontSize: 11 }}
-                          >
-                            {assignmentBusy === 'add' ? 'Agregando...' : 'Agregar'}
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => { setAddingAssignment(false); setAssignmentError(null); setAddAssignUser('') }}
-                            className="edms-button"
-                            style={{ ...btnStyleGhost, padding: '4px 8px', fontSize: 11 }}
-                          >
-                            Cancelar
-                          </button>
-                        </div>
-                      </div>
-                    ) : (
-                      <button
-                        type="button"
-                        onClick={() => setAddingAssignment(true)}
-                        className="edms-button"
-                        style={{ ...btnStyleGhost, padding: '4px 8px', fontSize: 11, alignSelf: 'flex-start' }}
-                      >
-                        <Icon.Plus size={11} /> Agregar persona
-                      </button>
-                    )
-                  )}
-                  {assignmentError && (
-                    <span style={{ color: 'var(--danger)', fontSize: 11 }}>{assignmentError}</span>
-                  )}
-                </div>
-              )],
               ['Etiquetas', doc.tags.length > 0 ? <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>{doc.tags.map((tag) => <TagChip key={tag} id={tag} tags={tags} />)}</div> : <span style={{ color: 'var(--fg-dim)' }}>—</span>],
             ].map(([label, value], index) => (
               <div
@@ -4775,7 +4795,7 @@ function UploadFileModal({
         style={{
           position: 'fixed',
           inset: 0,
-          zIndex: 120,
+          zIndex: 1100,
           background: 'oklch(0 0 0 / 0.56)',
           backdropFilter: 'blur(10px)',
           pointerEvents: 'auto',
@@ -4787,7 +4807,7 @@ function UploadFileModal({
         style={{
           position: 'fixed',
           inset: 0,
-          zIndex: 121,
+          zIndex: 1101,
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'center',
@@ -5090,7 +5110,7 @@ function CreateDocumentModal({
         style={{
           position: 'fixed',
           inset: 0,
-          zIndex: 120,
+          zIndex: 1100,
           background: 'oklch(0 0 0 / 0.56)',
           backdropFilter: 'blur(10px)',
           pointerEvents: 'auto',
@@ -5102,7 +5122,7 @@ function CreateDocumentModal({
         style={{
           position: 'fixed',
           inset: 0,
-          zIndex: 121,
+          zIndex: 1101,
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'center',
@@ -5573,7 +5593,7 @@ function EditMetadataModal({
         style={{
           position: 'fixed',
           inset: 0,
-          zIndex: 120,
+          zIndex: 1100,
           background: 'oklch(0 0 0 / 0.56)',
           backdropFilter: 'blur(10px)',
           pointerEvents: 'auto',
@@ -5585,7 +5605,7 @@ function EditMetadataModal({
         style={{
           position: 'fixed',
           inset: 0,
-          zIndex: 121,
+          zIndex: 1101,
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'center',
@@ -5979,7 +5999,7 @@ function AssignFileToDocumentModal({
         style={{
           position: 'fixed',
           inset: 0,
-          zIndex: 120,
+          zIndex: 1100,
           background: 'oklch(0 0 0 / 0.56)',
           backdropFilter: 'blur(10px)',
           pointerEvents: 'auto',
@@ -5991,7 +6011,7 @@ function AssignFileToDocumentModal({
         style={{
           position: 'fixed',
           inset: 0,
-          zIndex: 121,
+          zIndex: 1101,
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'center',
@@ -6901,7 +6921,7 @@ function TeamManagerModal({
         style={{
           position: 'fixed',
           inset: 0,
-          zIndex: 120,
+          zIndex: 1100,
           background: 'rgba(3, 6, 12, 0.62)',
           backdropFilter: 'blur(6px)',
         }}
@@ -6910,7 +6930,7 @@ function TeamManagerModal({
         style={{
           position: 'fixed',
           inset: 0,
-          zIndex: 130,
+          zIndex: 1102,
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'center',
