@@ -26,6 +26,10 @@ AVATAR_PALETTE: tuple[str, ...] = (
     "oklch(0.73 0.18 330)",  # rosa
     "oklch(0.75 0.14 200)",  # turquesa
     "oklch(0.78 0.15 90)",   # amarillo
+    "oklch(0.70 0.15 180)",  # cian profundo
+    "oklch(0.68 0.16 265)",  # indigo
+    "oklch(0.80 0.14 70)",   # ambar
+    "oklch(0.72 0.19 350)",  # magenta
 )
 
 
@@ -40,6 +44,25 @@ def _generate_avatar_color(seed: str | None = None) -> str:
             h = (h * 31 + ord(ch)) & 0xFFFFFFFF
         return AVATAR_PALETTE[h % len(AVATAR_PALETTE)]
     return random.choice(AVATAR_PALETTE)
+
+
+def _pick_avatar_color_least_used(db: Session) -> str:
+    """Elige un color de la paleta que aparezca menos veces entre los usuarios
+    activos no eliminados. Con tie-break aleatorio, asi varios usuarios creados
+    seguidos quedan en colores distintos en vez de chocar en el mismo tono.
+    """
+    counts = {color: 0 for color in AVATAR_PALETTE}
+    used = (
+        db.query(User.color)
+        .filter(User.deleted_at.is_(None), User.color.isnot(None))
+        .all()
+    )
+    for (color,) in used:
+        if color in counts:
+            counts[color] += 1
+    min_count = min(counts.values())
+    candidates = [color for color, c in counts.items() if c == min_count]
+    return random.choice(candidates)
 
 
 def _current_user(
@@ -106,7 +129,7 @@ def create_user(
         last_name=body.last_name,
         status=body.status,
         is_superuser=role.code == "admin",
-        color=_generate_avatar_color(),
+        color=_pick_avatar_color_least_used(db),
     )
     db.add(user)
     db.flush()

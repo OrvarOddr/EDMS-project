@@ -126,6 +126,38 @@ def test_asignar_rol_cambia_rol_y_superuser(client, admin_token):
     assert body["is_superuser"] is True
 
 
+def test_crear_usuarios_seguidos_minimiza_colisiones(client, admin_token):
+    """Con seleccion 'menos usado', N usuarios <= |paleta| no deben repetir color."""
+    from app.routers.users import AVATAR_PALETTE
+
+    role_id = _role_id(client, admin_token, "colaborador")
+    colores = []
+    # Creamos justo |paleta|-1 usuarios extra (mas el admin sembrado ya tiene uno):
+    # como elegimos siempre el menos usado y partimos sin colisiones, cada nuevo
+    # usuario deberia caer en un color distinto a los ya usados.
+    cupos = len(AVATAR_PALETTE) - 1
+    for i in range(cupos):
+        r = client.post(
+            "/users",
+            headers=auth_headers(admin_token),
+            json={
+                "email": f"sin-colision-{i}@edms.dev",
+                "password": "clave-segura-123",
+                "first_name": f"User{i}",
+                "last_name": "Colision",
+                "role_id": role_id,
+            },
+        )
+        assert r.status_code == 201, r.text
+        colores.append(r.json()["color"])
+
+    # Verificamos: la frecuencia maxima de cualquier color en la lista de nuevos
+    # usuarios no supera ceil(cupos / |paleta|) = 1 (porque cupos < |paleta|).
+    from collections import Counter
+    counts = Counter(colores)
+    assert max(counts.values()) <= 1, f"Hubo colisiones evitables: {counts}"
+
+
 def test_crear_usuario_asigna_color_de_paleta(client, admin_token):
     """El color de avatar se asigna al crear y se devuelve en la response."""
     from app.routers.users import AVATAR_PALETTE
