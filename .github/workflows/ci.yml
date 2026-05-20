@@ -309,12 +309,23 @@ jobs:
       # CVEs ignoradas: requieren subir fastapi/python-jose (topados por pines
       # transitivos). Dependabot abre los PRs de upgrade, revisados aparte.
       - name: pip-audit ${{ matrix.service }}
-        run: >-
-          pip-audit -r services/${{ matrix.service }}/requirements.txt
-          --ignore-vuln CVE-2024-47874
-          --ignore-vuln CVE-2025-54121
-          --ignore-vuln CVE-2026-30922
-          --ignore-vuln PYSEC-2025-185
+        run: |
+          set +e
+          for attempt in 1 2 3; do
+            pip-audit -r services/${{ matrix.service }}/requirements.txt \
+              --timeout 60 \
+              --ignore-vuln CVE-2024-47874 \
+              --ignore-vuln CVE-2025-54121 \
+              --ignore-vuln CVE-2026-30922 \
+              --ignore-vuln PYSEC-2025-185
+            status=$?
+            if [ $status -eq 0 ]; then
+              exit 0
+            fi
+            echo "pip-audit fallo (intento $attempt, exit $status). Reintentando..."
+            sleep $((attempt * 10))
+          done
+          exit 1
 
   deps-audit-frontend:
     name: Auditoria de dependencias frontend (npm audit)
