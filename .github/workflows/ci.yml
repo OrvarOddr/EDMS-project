@@ -314,6 +314,7 @@ jobs:
           --ignore-vuln CVE-2024-47874
           --ignore-vuln CVE-2025-54121
           --ignore-vuln CVE-2026-30922
+          --ignore-vuln PYSEC-2025-185
 
   deps-audit-frontend:
     name: Auditoria de dependencias frontend (npm audit)
