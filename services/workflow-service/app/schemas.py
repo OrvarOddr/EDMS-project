@@ -81,6 +81,15 @@ class AssignDocumentAssigneeResponse(BaseModel):
     assigned_at: str
 
 
+class AddAssignmentRequest(BaseModel):
+    user_id: str
+    role_code: str
+
+
+class UpdateAssignmentRoleRequest(BaseModel):
+    role_code: str
+
+
 class WorkflowHistoryItem(BaseModel):
     id: str
     actor_user_id: str

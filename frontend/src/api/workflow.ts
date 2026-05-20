@@ -47,3 +47,42 @@ export async function assignDocumentAssignee(
   )
   return data
 }
+
+export interface DocumentAssignment {
+  id: string
+  user_id: string
+  role_code: string
+  assigned_by_user_id: string
+  assigned_at: string
+}
+
+export async function addDocumentAssignment(
+  documentId: string,
+  userId: string,
+  roleCode: string,
+): Promise<DocumentAssignment> {
+  const { data } = await client.post<DocumentAssignment>(
+    `/workflow/documents/${documentId}/assignments`,
+    { user_id: userId, role_code: roleCode },
+  )
+  return data
+}
+
+export async function removeDocumentAssignment(
+  documentId: string,
+  assignmentId: string,
+): Promise<void> {
+  await client.delete(`/workflow/documents/${documentId}/assignments/${assignmentId}`)
+}
+
+export async function updateDocumentAssignmentRole(
+  documentId: string,
+  assignmentId: string,
+  roleCode: string,
+): Promise<DocumentAssignment> {
+  const { data } = await client.patch<DocumentAssignment>(
+    `/workflow/documents/${documentId}/assignments/${assignmentId}`,
+    { role_code: roleCode },
+  )
+  return data
+}

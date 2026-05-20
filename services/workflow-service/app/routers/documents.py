@@ -1,13 +1,14 @@
 from datetime import datetime, timezone
 
 import httpx
-from fastapi import APIRouter, Depends, Header, HTTPException, status
+from fastapi import APIRouter, Depends, Header, HTTPException, Response, status
 from sqlalchemy.orm import Session
 
 from app.config import settings
 from app.database import get_db
 from app.models import DocumentAssignment, DocumentState
 from app.schemas import (
+    AddAssignmentRequest,
     AssignmentCountsRequest,
     AssignmentCountsResponse,
     AssignDocumentAssigneeRequest,
@@ -22,6 +23,7 @@ from app.schemas import (
     ChangeDocumentStateResponse,
     DocumentAssignmentResponse,
     DocumentWorkflowDetailResponse,
+    UpdateAssignmentRoleRequest,
     WorkflowHistoryItem,
 )
 
@@ -30,6 +32,17 @@ public_router = APIRouter(prefix="/workflow/documents", tags=["workflow-document
 
 INITIAL_STATE = "borrador"
 OWNER_ROLE = "encargado"
+# Roles que pueden gestionarse via endpoints de asignaciones (no-owner).
+# El rol encargado se cambia mediante PATCH /workflow/documents/{id}/assignee.
+NON_OWNER_ROLES: frozenset[str] = frozenset({"revisor", "aprobador", "lector"})
+VALID_ROLES: frozenset[str] = NON_OWNER_ROLES | {OWNER_ROLE}
+
+_ROLE_LABELS: dict[str, str] = {
+    "encargado": "encargado",
+    "revisor": "revisor",
+    "aprobador": "aprobador",
+    "lector": "lector",
+}
 
 VALID_STATES: frozenset[str] = frozenset({
     "borrador",
@@ -143,6 +156,53 @@ def _notify_new_assignee(document_id: str, recipient_user_id: str, actor_user_id
         pass
 
 
+def _notify_role_assignment(
+    document_id: str,
+    recipient_user_id: str,
+    actor_user_id: str,
+    assignment_id: str,
+    role_code: str,
+) -> None:
+    """Notifica una asignacion de rol no-owner (revisor/aprobador/lector). Best-effort."""
+    label = _ROLE_LABELS.get(role_code, role_code)
+    try:
+        with httpx.Client(timeout=5.0) as client:
+            client.post(
+                f"{settings.COLLABORATION_SERVICE_URL}/internal/collaboration/notifications",
+                json={
+                    "recipient_user_id": recipient_user_id,
+                    "actor_user_id": actor_user_id,
+                    "document_id": document_id,
+                    "source_id": assignment_id,
+                    "type": "asignacion_rol",
+                    "title": f"Te asignaron como {label} de un documento",
+                    "body": f"Ahora participas como {label} del documento {document_id}.",
+                },
+            )
+    except httpx.HTTPError:
+        pass
+
+
+def _assert_actor_is_owner(db: Session, document_id: str, user_id: str) -> None:
+    """Solo el encargado activo puede gestionar otras asignaciones del documento."""
+    owner = (
+        db.query(DocumentAssignment)
+        .filter(
+            DocumentAssignment.document_id == document_id,
+            DocumentAssignment.role_code == OWNER_ROLE,
+            DocumentAssignment.is_active.is_(True),
+        )
+        .first()
+    )
+    if not owner:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Documento sin workflow")
+    if owner.user_id != user_id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Solo el encargado puede gestionar asignaciones",
+        )
+
+
 def _notify_state_change(
     document_id: str,
     recipient_user_ids: list[str],
@@ -190,10 +250,7 @@ def get_document_workflow_history(
     )
     assignment_rows = (
         db.query(DocumentAssignment)
-        .filter(
-            DocumentAssignment.document_id == document_id,
-            DocumentAssignment.role_code == OWNER_ROLE,
-        )
+        .filter(DocumentAssignment.document_id == document_id)
         .order_by(DocumentAssignment.assigned_at.desc())
         .all()
     )
@@ -209,16 +266,32 @@ def get_document_workflow_history(
         )
         for row in state_rows
     ]
-    history.extend(
-        WorkflowHistoryItem(
-            id=row.id,
-            actor_user_id=row.assigned_by_user_id,
-            action="assignee_changed",
-            body=row.user_id,
-            created_at=row.assigned_at.isoformat(),
+    for row in assignment_rows:
+        if row.role_code == OWNER_ROLE:
+            action_added = "assignee_changed"
+        else:
+            action_added = "assignment_added"
+        history.append(
+            WorkflowHistoryItem(
+                id=row.id,
+                actor_user_id=row.assigned_by_user_id,
+                action=action_added,
+                body=row.user_id,
+                note=row.role_code if row.role_code != OWNER_ROLE else None,
+                created_at=row.assigned_at.isoformat(),
+            )
         )
-        for row in assignment_rows
-    )
+        if row.revoked_at is not None and row.role_code != OWNER_ROLE:
+            history.append(
+                WorkflowHistoryItem(
+                    id=f"{row.id}-revoked",
+                    actor_user_id=row.assigned_by_user_id,
+                    action="assignment_removed",
+                    body=row.user_id,
+                    note=row.role_code,
+                    created_at=row.revoked_at.isoformat(),
+                )
+            )
     return sorted(history, key=lambda item: item.created_at, reverse=True)
 
 
@@ -593,4 +666,219 @@ def change_document_state(
         new_state_code=new_state,
         changed_by_user_id=x_user_id,
         changed_at=new_state_record.created_at.isoformat(),
+    )
+
+
+@public_router.post(
+    "/{document_id}/assignments",
+    response_model=DocumentAssignmentResponse,
+    status_code=status.HTTP_201_CREATED,
+)
+def add_document_assignment(
+    document_id: str,
+    body: AddAssignmentRequest,
+    x_user_id: str | None = Header(default=None, alias="X-User-Id"),
+    db: Session = Depends(get_db),
+):
+    """Agrega una asignacion no-owner (revisor/aprobador/lector) al documento."""
+    if not x_user_id:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Usuario autenticado requerido")
+
+    document_id = _require_value(document_id, "Documento")
+    user_id = _require_value(body.user_id, "Usuario")
+    role_code = _require_value(body.role_code, "Rol")
+
+    if role_code == OWNER_ROLE:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="El encargado se gestiona via PATCH /workflow/documents/{id}/assignee",
+        )
+    if role_code not in NON_OWNER_ROLES:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=f"Rol invalido: {role_code}",
+        )
+
+    _assert_actor_is_owner(db, document_id, x_user_id)
+
+    duplicate = (
+        db.query(DocumentAssignment)
+        .filter(
+            DocumentAssignment.document_id == document_id,
+            DocumentAssignment.user_id == user_id,
+            DocumentAssignment.role_code == role_code,
+            DocumentAssignment.is_active.is_(True),
+        )
+        .first()
+    )
+    if duplicate:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="El usuario ya tiene ese rol asignado en el documento",
+        )
+
+    assignment = DocumentAssignment(
+        document_id=document_id,
+        user_id=user_id,
+        role_code=role_code,
+        assigned_by_user_id=x_user_id,
+    )
+    db.add(assignment)
+    db.commit()
+    db.refresh(assignment)
+
+    if user_id != x_user_id:
+        _notify_role_assignment(document_id, user_id, x_user_id, assignment.id, role_code)
+
+    return DocumentAssignmentResponse(
+        id=assignment.id,
+        user_id=assignment.user_id,
+        role_code=assignment.role_code,
+        assigned_by_user_id=assignment.assigned_by_user_id,
+        assigned_at=assignment.assigned_at.isoformat(),
+    )
+
+
+@public_router.delete(
+    "/{document_id}/assignments/{assignment_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+)
+def remove_document_assignment(
+    document_id: str,
+    assignment_id: str,
+    x_user_id: str | None = Header(default=None, alias="X-User-Id"),
+    db: Session = Depends(get_db),
+):
+    """Revoca una asignacion no-owner del documento (soft-delete)."""
+    if not x_user_id:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Usuario autenticado requerido")
+
+    document_id = _require_value(document_id, "Documento")
+    assignment_id = _require_value(assignment_id, "Asignacion")
+
+    _assert_actor_is_owner(db, document_id, x_user_id)
+
+    assignment = (
+        db.query(DocumentAssignment)
+        .filter(
+            DocumentAssignment.id == assignment_id,
+            DocumentAssignment.document_id == document_id,
+            DocumentAssignment.is_active.is_(True),
+        )
+        .first()
+    )
+    if not assignment:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Asignacion no encontrada")
+    if assignment.role_code == OWNER_ROLE:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="No se puede quitar al encargado; cambialo via /assignee",
+        )
+
+    assignment.is_active = False
+    assignment.revoked_at = datetime.now(timezone.utc)
+    db.commit()
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+@public_router.patch(
+    "/{document_id}/assignments/{assignment_id}",
+    response_model=DocumentAssignmentResponse,
+)
+def update_document_assignment_role(
+    document_id: str,
+    assignment_id: str,
+    body: UpdateAssignmentRoleRequest,
+    x_user_id: str | None = Header(default=None, alias="X-User-Id"),
+    db: Session = Depends(get_db),
+):
+    """Cambia el rol de una asignacion no-owner.
+
+    Se implementa revocando la asignacion anterior y creando una nueva, para
+    dejar trazabilidad de altas y bajas en el historial.
+    """
+    if not x_user_id:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Usuario autenticado requerido")
+
+    document_id = _require_value(document_id, "Documento")
+    assignment_id = _require_value(assignment_id, "Asignacion")
+    new_role = _require_value(body.role_code, "Rol")
+
+    if new_role == OWNER_ROLE:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="Para volver a alguien encargado usa PATCH /assignee",
+        )
+    if new_role not in NON_OWNER_ROLES:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=f"Rol invalido: {new_role}",
+        )
+
+    _assert_actor_is_owner(db, document_id, x_user_id)
+
+    assignment = (
+        db.query(DocumentAssignment)
+        .filter(
+            DocumentAssignment.id == assignment_id,
+            DocumentAssignment.document_id == document_id,
+            DocumentAssignment.is_active.is_(True),
+        )
+        .first()
+    )
+    if not assignment:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Asignacion no encontrada")
+    if assignment.role_code == OWNER_ROLE:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="No se puede cambiar el rol del encargado desde este endpoint",
+        )
+    if assignment.role_code == new_role:
+        return DocumentAssignmentResponse(
+            id=assignment.id,
+            user_id=assignment.user_id,
+            role_code=assignment.role_code,
+            assigned_by_user_id=assignment.assigned_by_user_id,
+            assigned_at=assignment.assigned_at.isoformat(),
+        )
+
+    duplicate = (
+        db.query(DocumentAssignment)
+        .filter(
+            DocumentAssignment.document_id == document_id,
+            DocumentAssignment.user_id == assignment.user_id,
+            DocumentAssignment.role_code == new_role,
+            DocumentAssignment.is_active.is_(True),
+        )
+        .first()
+    )
+    if duplicate:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="El usuario ya tiene ese rol asignado en el documento",
+        )
+
+    revoked_at = datetime.now(timezone.utc)
+    assignment.is_active = False
+    assignment.revoked_at = revoked_at
+
+    new_assignment = DocumentAssignment(
+        document_id=document_id,
+        user_id=assignment.user_id,
+        role_code=new_role,
+        assigned_by_user_id=x_user_id,
+    )
+    db.add(new_assignment)
+    db.commit()
+    db.refresh(new_assignment)
+
+    if new_assignment.user_id != x_user_id:
+        _notify_role_assignment(document_id, new_assignment.user_id, x_user_id, new_assignment.id, new_role)
+
+    return DocumentAssignmentResponse(
+        id=new_assignment.id,
+        user_id=new_assignment.user_id,
+        role_code=new_assignment.role_code,
+        assigned_by_user_id=new_assignment.assigned_by_user_id,
+        assigned_at=new_assignment.assigned_at.isoformat(),
     )

@@ -55,7 +55,14 @@ import {
   removeTagFromDocument,
   type Tag as ApiTag,
 } from '../api/tags'
-import { assignDocumentAssignee, changeDocumentState, getAssignmentCounts } from '../api/workflow'
+import {
+  addDocumentAssignment,
+  assignDocumentAssignee,
+  changeDocumentState,
+  getAssignmentCounts,
+  removeDocumentAssignment,
+  updateDocumentAssignmentRole,
+} from '../api/workflow'
 import {
   getNotifications,
   markAllNotificationsRead,
@@ -3030,6 +3037,9 @@ function DetailDrawer({
   currentUserLabel,
   assigneeOptions,
   onAssignAssignee,
+  onAddAssignment,
+  onRemoveAssignment,
+  onUpdateAssignmentRole,
   onCommentPosted,
   fullScreen = false,
   onToggleFull,
@@ -3045,6 +3055,9 @@ function DetailDrawer({
   currentUserLabel: string
   assigneeOptions: [string, string][]
   onAssignAssignee?: (docId: string, userId: string) => Promise<void>
+  onAddAssignment?: (docId: string, userId: string, roleCode: string) => Promise<void>
+  onRemoveAssignment?: (docId: string, assignmentId: string) => Promise<void>
+  onUpdateAssignmentRole?: (docId: string, assignmentId: string, roleCode: string) => Promise<void>
   onCommentPosted?: (item: DocumentDetailTimelineItem) => void
   fullScreen?: boolean
   onToggleFull?: () => void
@@ -3066,6 +3079,11 @@ function DetailDrawer({
   const [assigneeDraft, setAssigneeDraft] = useState('')
   const [assigneeSaving, setAssigneeSaving] = useState(false)
   const [assigneeError, setAssigneeError] = useState<string | null>(null)
+  const [addingAssignment, setAddingAssignment] = useState(false)
+  const [addAssignUser, setAddAssignUser] = useState('')
+  const [addAssignRole, setAddAssignRole] = useState('revisor')
+  const [assignmentBusy, setAssignmentBusy] = useState<string | null>(null)
+  const [assignmentError, setAssignmentError] = useState<string | null>(null)
   const currentFile = detail?.files.find((file) => file.is_current) ?? detail?.files[0] ?? null
   const selectedVersionFile = viewVersionId
     ? (detail?.files.find((file) => file.id === viewVersionId) ?? null)
@@ -3120,6 +3138,72 @@ function DetailDrawer({
   const canDownloadFile = Boolean(currentFile) && (permissions?.can_download_file ?? true)
   const assignments = workflow?.assignments ?? []
   const assigneeId = workflow?.assignee_user_id ?? doc.owner
+  const canManageAssignments = Boolean(
+    canAssignAssignee
+      && currentUserId
+      && workflow?.assignee_user_id
+      && workflow.assignee_user_id === currentUserId
+      && onAddAssignment
+      && onRemoveAssignment
+      && onUpdateAssignmentRole,
+  )
+  const nonOwnerRoleOptions: { value: string; label: string }[] = [
+    { value: 'revisor', label: 'Revisor' },
+    { value: 'aprobador', label: 'Aprobador' },
+    { value: 'lector', label: 'Lector' },
+  ]
+  const availableUsersForNewAssignment = assigneeOptions.filter(
+    ([id]) => id !== assigneeId,
+  )
+
+  async function handleAddAssignment() {
+    if (!onAddAssignment || !doc) return
+    if (!addAssignUser) {
+      setAssignmentError('Selecciona un usuario')
+      return
+    }
+    setAssignmentBusy('add')
+    setAssignmentError(null)
+    try {
+      await onAddAssignment(doc.id, addAssignUser, addAssignRole)
+      setAddAssignUser('')
+      setAddAssignRole('revisor')
+      setAddingAssignment(false)
+    } catch (err) {
+      const detail = (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail
+      setAssignmentError(detail ?? 'No se pudo agregar la asignacion')
+    } finally {
+      setAssignmentBusy(null)
+    }
+  }
+
+  async function handleRemoveAssignment(assignmentId: string) {
+    if (!onRemoveAssignment || !doc) return
+    setAssignmentBusy(`remove-${assignmentId}`)
+    setAssignmentError(null)
+    try {
+      await onRemoveAssignment(doc.id, assignmentId)
+    } catch (err) {
+      const detail = (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail
+      setAssignmentError(detail ?? 'No se pudo quitar la asignacion')
+    } finally {
+      setAssignmentBusy(null)
+    }
+  }
+
+  async function handleUpdateAssignmentRole(assignmentId: string, roleCode: string) {
+    if (!onUpdateAssignmentRole || !doc) return
+    setAssignmentBusy(`role-${assignmentId}`)
+    setAssignmentError(null)
+    try {
+      await onUpdateAssignmentRole(doc.id, assignmentId, roleCode)
+    } catch (err) {
+      const detail = (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail
+      setAssignmentError(detail ?? 'No se pudo cambiar el rol')
+    } finally {
+      setAssignmentBusy(null)
+    }
+  }
   const activePreview = previewFile && preview?.fileId === previewFile.file_id ? preview : null
   const viewingNonCurrent = Boolean(selectedVersionFile && !selectedVersionFile.is_current)
   const fallbackHistory: DocumentDetailTimelineItem[] = (doc.metadataActivity ?? []).map((item) => ({
@@ -3590,16 +3674,131 @@ function DetailDrawer({
               ['Tamaño', currentFile?.size_bytes ? formatFileSize(currentFile.size_bytes) : doc.size],
               ['Tipo', currentFile?.mime_type ? fileKindLabel(currentFile.mime_type) : kind.label],
               [doc.pages ? 'Páginas' : 'Filas', doc.pages ?? doc.rows?.toLocaleString('es-ES') ?? '—'],
-              ['Asignados', assignments.length > 0 ? (
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-                  {assignments.map((assignment) => (
-                    <span key={assignment.id} style={{ color: 'var(--fg)', display: 'flex', gap: 6, alignItems: 'center' }}>
-                      <span>{userLabel(assignment.user_id)}</span>
-                      <span style={{ color: 'var(--fg-dim)' }}>· {roleLabel(assignment.role_code)}</span>
-                    </span>
-                  ))}
+              ['Asignados', (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                  {assignments.length > 0 ? (
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                      {assignments.map((assignment) => {
+                        const isOwner = assignment.role_code === 'encargado'
+                        const removeBusy = assignmentBusy === `remove-${assignment.id}`
+                        const roleBusy = assignmentBusy === `role-${assignment.id}`
+                        return (
+                          <div key={assignment.id} style={{ color: 'var(--fg)', display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap' }}>
+                            <span>{userLabel(assignment.user_id)}</span>
+                            <span style={{ color: 'var(--fg-dim)' }}>·</span>
+                            {canManageAssignments && !isOwner ? (
+                              <select
+                                value={assignment.role_code}
+                                disabled={roleBusy}
+                                onChange={(e) => handleUpdateAssignmentRole(assignment.id, e.target.value)}
+                                style={{
+                                  fontSize: 11.5, padding: '1px 4px', borderRadius: 4,
+                                  background: 'var(--bg-elev-2)', color: 'var(--fg)',
+                                  border: '1px solid var(--border)', cursor: 'pointer',
+                                }}
+                              >
+                                {nonOwnerRoleOptions.map((opt) => (
+                                  <option key={opt.value} value={opt.value}>{opt.label}</option>
+                                ))}
+                              </select>
+                            ) : (
+                              <span style={{ color: 'var(--fg-dim)' }}>{roleLabel(assignment.role_code)}</span>
+                            )}
+                            {canManageAssignments && !isOwner && (
+                              <button
+                                type="button"
+                                onClick={() => handleRemoveAssignment(assignment.id)}
+                                disabled={removeBusy}
+                                title="Quitar asignacion"
+                                className="edms-nav-item"
+                                style={{
+                                  width: 18, height: 18, borderRadius: 4,
+                                  display: 'flex', alignItems: 'center', justifyContent: 'center',
+                                  color: 'var(--fg-muted)', background: 'transparent', border: 'none',
+                                  cursor: removeBusy ? 'wait' : 'pointer',
+                                }}
+                              >
+                                <Icon.Close size={11} />
+                              </button>
+                            )}
+                          </div>
+                        )
+                      })}
+                    </div>
+                  ) : doc.shared.length > 0 ? (
+                    <AvatarStack ids={doc.shared} max={5} />
+                  ) : (
+                    <span style={{ color: 'var(--fg-dim)' }}>Solo tú</span>
+                  )}
+
+                  {canManageAssignments && (
+                    addingAssignment ? (
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: 4, padding: '4px 0' }}>
+                        <div style={{ display: 'flex', gap: 4, alignItems: 'center', flexWrap: 'wrap' }}>
+                          <select
+                            value={addAssignUser}
+                            onChange={(e) => setAddAssignUser(e.target.value)}
+                            style={{
+                              flex: 1, minWidth: 120, fontSize: 11.5, padding: '3px 5px', borderRadius: 4,
+                              background: 'var(--bg-elev-2)', color: 'var(--fg)',
+                              border: '1px solid var(--border)',
+                            }}
+                          >
+                            <option value="">Selecciona usuario...</option>
+                            {availableUsersForNewAssignment.map(([id, label]) => (
+                              <option key={id} value={id}>{label}</option>
+                            ))}
+                          </select>
+                          <select
+                            value={addAssignRole}
+                            onChange={(e) => setAddAssignRole(e.target.value)}
+                            style={{
+                              fontSize: 11.5, padding: '3px 5px', borderRadius: 4,
+                              background: 'var(--bg-elev-2)', color: 'var(--fg)',
+                              border: '1px solid var(--border)',
+                            }}
+                          >
+                            {nonOwnerRoleOptions.map((opt) => (
+                              <option key={opt.value} value={opt.value}>{opt.label}</option>
+                            ))}
+                          </select>
+                        </div>
+                        <div style={{ display: 'flex', gap: 4 }}>
+                          <button
+                            type="button"
+                            onClick={handleAddAssignment}
+                            disabled={assignmentBusy === 'add' || !addAssignUser}
+                            className="edms-button edms-button-primary"
+                            style={{ ...btnStylePrimary, padding: '4px 8px', fontSize: 11 }}
+                          >
+                            {assignmentBusy === 'add' ? 'Agregando...' : 'Agregar'}
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => { setAddingAssignment(false); setAssignmentError(null); setAddAssignUser('') }}
+                            className="edms-button"
+                            style={{ ...btnStyleGhost, padding: '4px 8px', fontSize: 11 }}
+                          >
+                            Cancelar
+                          </button>
+                        </div>
+                      </div>
+                    ) : (
+                      <button
+                        type="button"
+                        onClick={() => setAddingAssignment(true)}
+                        className="edms-button"
+                        style={{ ...btnStyleGhost, padding: '4px 8px', fontSize: 11, alignSelf: 'flex-start' }}
+                      >
+                        <Icon.Plus size={11} /> Agregar persona
+                      </button>
+                    )
+                  )}
+                  {assignmentError && (
+                    <span style={{ color: 'var(--danger)', fontSize: 11 }}>{assignmentError}</span>
+                  )}
                 </div>
-              ) : doc.shared.length > 0 ? <AvatarStack ids={doc.shared} max={5} /> : <span style={{ color: 'var(--fg-dim)' }}>Solo tú</span>],
+              )],
               ['Etiquetas', doc.tags.length > 0 ? <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>{doc.tags.map((tag) => <TagChip key={tag} id={tag} tags={tags} />)}</div> : <span style={{ color: 'var(--fg-dim)' }}>—</span>],
             ].map(([label, value], index) => (
               <div
@@ -8227,6 +8426,51 @@ export default function DashboardPage() {
     setToast(`Encargado actualizado: ${assigneeLabel}`)
   }
 
+  async function refreshDetailAndCounts(documentId: string) {
+    const detailResponse = await getDocumentDetail(documentId)
+    const detailData = detailResponse.data
+    setDocumentDetails((current) => ({ ...current, [documentId]: detailData }))
+    const assignedUserIds = detailData.document.assigned_user_ids ?? []
+
+    const updateDoc = (doc: DocumentItem) => doc.id === documentId
+      ? {
+          ...doc,
+          assignedUserIds,
+          shared: assignedUserIds.filter((assignedId) => assignedId !== doc.owner),
+          updatedAt: detailData.document.updated_at,
+          modified: 'ahora',
+        }
+      : doc
+    setCreatedDocs((current) => current.map(updateDoc))
+    setSearchResults((current) => current ? current.map(updateDoc) : current)
+
+    try {
+      const counts = await getAssignmentCounts([documentId])
+      setAssignmentCounts((current) => ({ ...current, ...counts }))
+    } catch {
+      setAssignmentCounts((current) => ({ ...current, [documentId]: assignedUserIds.length }))
+    }
+  }
+
+  async function handleAddAssignment(documentId: string, userId: string, roleCode: string) {
+    await addDocumentAssignment(documentId, userId, roleCode)
+    await refreshDetailAndCounts(documentId)
+    const label = filterUserOptions.find(([value]) => value === userId)?.[1] ?? userId
+    setToast(`Asignacion agregada: ${label} (${roleCode})`)
+  }
+
+  async function handleRemoveAssignment(documentId: string, assignmentId: string) {
+    await removeDocumentAssignment(documentId, assignmentId)
+    await refreshDetailAndCounts(documentId)
+    setToast('Asignacion quitada')
+  }
+
+  async function handleUpdateAssignmentRole(documentId: string, assignmentId: string, roleCode: string) {
+    await updateDocumentAssignmentRole(documentId, assignmentId, roleCode)
+    await refreshDetailAndCounts(documentId)
+    setToast(`Rol actualizado: ${roleCode}`)
+  }
+
   async function handleAction(action: string, docId?: string) {
     if (action === 'team') {
       if (!user?.is_superuser) {
@@ -8698,6 +8942,9 @@ export default function DashboardPage() {
         currentUserLabel={currentUserLabel}
         assigneeOptions={filterUserOptions}
         onAssignAssignee={handleAssignAssignee}
+        onAddAssignment={handleAddAssignment}
+        onRemoveAssignment={handleRemoveAssignment}
+        onUpdateAssignmentRole={handleUpdateAssignmentRole}
         onCommentPosted={(item) => {
           if (!openDocId) return
           setDocumentDetails((current) => {
