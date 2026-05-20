@@ -3624,130 +3624,160 @@ function DetailDrawer({
               ? {
                   gridColumn: 2,
                   gridRow: '1 / 4',
-                  position: 'sticky',
-                  top: 0,
                   alignSelf: 'start',
-                  maxHeight: 'calc(100vh - 96px)',
-                  overflow: 'auto',
-                  background: 'var(--bg-elev-2)',
-                  border: '1px solid var(--border)',
-                  borderRadius: 10,
-                  padding: '16px 16px 18px',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  gap: 16,
+                  minWidth: 0,
                 }
               : { padding: '0 14px 14px' }
           }
         >
-          <div style={{ fontSize: 11, color: 'var(--fg-dim)', letterSpacing: '0.06em', textTransform: 'uppercase', fontWeight: 600, marginBottom: 8, display: 'flex', alignItems: 'center', gap: 6 }}>
-            <Icon.Clock size={11} /> Comentarios e historial
-          </div>
+          <div
+            style={
+              fullScreen
+                ? {
+                    height: '78vh',
+                    minHeight: 460,
+                    background: 'var(--bg-elev-2)',
+                    border: '1px solid var(--border)',
+                    borderRadius: 10,
+                    padding: '14px 16px',
+                    display: 'flex',
+                    flexDirection: 'column',
+                  }
+                : undefined
+            }
+          >
+            <div style={{ fontSize: 11, color: 'var(--fg-dim)', letterSpacing: '0.06em', textTransform: 'uppercase', fontWeight: 600, marginBottom: 8, display: 'flex', alignItems: 'center', gap: 6, flexShrink: 0 }}>
+              <Icon.Clock size={11} /> Comentarios
+            </div>
 
-          {detail?.permissions?.can_comment !== false && (
-            <div style={{ position: 'relative', display: 'flex', gap: 6, marginBottom: 10 }}>
-              <textarea
-                ref={commentRef}
-                value={commentText}
-                onChange={(e) => handleCommentChange(e.target.value, e.target.selectionStart ?? e.target.value.length)}
-                placeholder="Escribe un comentario... usa @ para mencionar"
-                rows={2}
-                onKeyDown={(e) => {
-                  if (e.key === 'Escape' && mention) { setMention(null); return }
-                  if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) handleSubmitComment()
-                }}
-                style={{
-                  flex: 1, resize: 'none', fontSize: 12, padding: '6px 8px',
-                  borderRadius: 6, border: '1px solid var(--border)',
-                  background: 'var(--bg-elev-2)', color: 'var(--fg)',
-                  outline: 'none', fontFamily: 'inherit',
-                }}
-              />
-              <button
-                onClick={handleSubmitComment}
-                disabled={commentSending || !commentText.trim()}
-                style={{
-                  padding: '6px 10px', borderRadius: 6, fontSize: 12, alignSelf: 'flex-end',
-                  background: 'var(--accent)', color: '#fff', border: 'none',
-                  cursor: commentSending || !commentText.trim() ? 'default' : 'pointer',
-                  opacity: commentSending || !commentText.trim() ? 0.5 : 1,
-                }}
-              >
-                {commentSending ? '…' : 'Enviar'}
-              </button>
-              {mention && mentionMatches.length > 0 && (
-                <div
+            {detail?.permissions?.can_comment !== false && (
+              <div style={{ position: 'relative', display: 'flex', gap: 6, marginBottom: 10, flexShrink: 0 }}>
+                <textarea
+                  ref={commentRef}
+                  value={commentText}
+                  onChange={(e) => handleCommentChange(e.target.value, e.target.selectionStart ?? e.target.value.length)}
+                  placeholder="Escribe un comentario... usa @ para mencionar"
+                  rows={2}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Escape' && mention) { setMention(null); return }
+                    if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) handleSubmitComment()
+                  }}
                   style={{
-                    position: 'absolute',
-                    top: '100%',
-                    left: 0,
-                    marginTop: 4,
-                    minWidth: 200,
-                    maxWidth: 280,
-                    background: 'var(--bg-elev)',
-                    border: '1px solid var(--border-strong)',
-                    borderRadius: 8,
-                    boxShadow: 'var(--shadow)',
-                    zIndex: 60,
-                    overflow: 'hidden',
+                    flex: 1, resize: 'none', fontSize: 12, padding: '6px 8px',
+                    borderRadius: 6, border: '1px solid var(--border)',
+                    background: 'var(--bg-elev-2)', color: 'var(--fg)',
+                    outline: 'none', fontFamily: 'inherit',
+                  }}
+                />
+                <button
+                  onClick={handleSubmitComment}
+                  disabled={commentSending || !commentText.trim()}
+                  style={{
+                    padding: '6px 10px', borderRadius: 6, fontSize: 12, alignSelf: 'flex-end',
+                    background: 'var(--accent)', color: '#fff', border: 'none',
+                    cursor: commentSending || !commentText.trim() ? 'default' : 'pointer',
+                    opacity: commentSending || !commentText.trim() ? 0.5 : 1,
                   }}
                 >
-                  {mentionMatches.map(([userId, label]) => (
-                    <button
-                      key={userId}
-                      type="button"
-                      className="edms-nav-item"
-                      onClick={() => applyMention(label)}
-                      style={{
-                        display: 'flex', alignItems: 'center', gap: 8, width: '100%',
-                        padding: '7px 10px', background: 'transparent', border: 'none',
-                        color: 'var(--fg)', fontSize: 12, cursor: 'pointer', textAlign: 'left',
-                      }}
-                    >
-                      <span style={{ color: 'var(--accent)', fontWeight: 600 }}>@</span>
-                      {label}
-                    </button>
+                  {commentSending ? '…' : 'Enviar'}
+                </button>
+                {mention && mentionMatches.length > 0 && (
+                  <div
+                    style={{
+                      position: 'absolute',
+                      top: '100%',
+                      left: 0,
+                      marginTop: 4,
+                      minWidth: 200,
+                      maxWidth: 280,
+                      background: 'var(--bg-elev)',
+                      border: '1px solid var(--border-strong)',
+                      borderRadius: 8,
+                      boxShadow: 'var(--shadow)',
+                      zIndex: 60,
+                      overflow: 'hidden',
+                    }}
+                  >
+                    {mentionMatches.map(([userId, label]) => (
+                      <button
+                        key={userId}
+                        type="button"
+                        className="edms-nav-item"
+                        onClick={() => applyMention(label)}
+                        style={{
+                          display: 'flex', alignItems: 'center', gap: 8, width: '100%',
+                          padding: '7px 10px', background: 'transparent', border: 'none',
+                          color: 'var(--fg)', fontSize: 12, cursor: 'pointer', textAlign: 'left',
+                        }}
+                      >
+                        <span style={{ color: 'var(--accent)', fontWeight: 600 }}>@</span>
+                        {label}
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
+
+            <div style={fullScreen ? { flex: 1, overflowY: 'auto', minHeight: 0 } : undefined}>
+              {(detail?.comments ?? []).length > 0 ? (
+                <div style={{ marginBottom: 8 }}>
+                  {detail!.comments.map((item) => (
+                    <div key={item.id} style={{ padding: '7px 0', borderTop: '1px solid var(--border)', fontSize: 12 }}>
+                      <div style={{ color: 'var(--fg)', whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>{renderCommentBody(item.body ?? '')}</div>
+                      <div style={{ color: 'var(--fg-dim)', fontSize: 11, marginTop: 2 }}>
+                        {userLabel(item.actor_user_id)} · {formatDocumentDate(item.created_at)}
+                      </div>
+                    </div>
                   ))}
                 </div>
+              ) : (
+                <div style={{ color: 'var(--fg-muted)', fontSize: 12, padding: '6px 0 4px' }}>Sin comentarios aún.</div>
               )}
             </div>
-          )}
-
-          {(detail?.comments ?? []).length > 0 && (
-            <div style={{ marginBottom: 8 }}>
-              {detail!.comments.map((item) => (
-                <div key={item.id} style={{ padding: '7px 0', borderTop: '1px solid var(--border)', fontSize: 12 }}>
-                  <div style={{ color: 'var(--fg)', whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>{renderCommentBody(item.body ?? '')}</div>
-                  <div style={{ color: 'var(--fg-dim)', fontSize: 11, marginTop: 2 }}>
-                    {userLabel(item.actor_user_id)} · {formatDocumentDate(item.created_at)}
-                  </div>
-                </div>
-              ))}
-            </div>
-          )}
-          {(detail?.comments ?? []).length === 0 && (
-            <div style={{ color: 'var(--fg-muted)', fontSize: 12, padding: '6px 0 4px' }}>Sin comentarios aún.</div>
-          )}
+          </div>
 
           {historyItems.length > 0 && (
-            <>
-              <div style={{ fontSize: 11, color: 'var(--fg-dim)', letterSpacing: '0.06em', textTransform: 'uppercase', fontWeight: 600, margin: '10px 0 6px', display: 'flex', alignItems: 'center', gap: 6 }}>
-                Actividad del documento
+            <div
+              style={
+                fullScreen
+                  ? {
+                      background: 'var(--bg-elev-2)',
+                      border: '1px solid var(--border)',
+                      borderRadius: 10,
+                      padding: '14px 16px',
+                      display: 'flex',
+                      flexDirection: 'column',
+                      maxHeight: '40vh',
+                    }
+                  : undefined
+              }
+            >
+              <div style={{ fontSize: 11, color: 'var(--fg-dim)', letterSpacing: '0.06em', textTransform: 'uppercase', fontWeight: 600, margin: fullScreen ? '0 0 6px' : '10px 0 6px', display: 'flex', alignItems: 'center', gap: 6, flexShrink: 0 }}>
+                <Icon.Clock size={11} /> Actividad del documento
               </div>
-              {(showFullTimeline ? historyItems : historyItems.slice(0, 5)).map((item) => (
-                <div key={item.id} style={{ padding: '7px 0', borderTop: '1px solid var(--border)', fontSize: 12 }}>
-                  <div style={{ color: 'var(--fg)' }}>{timelineLabel(item)}</div>
-                  <div style={{ color: 'var(--fg-dim)', fontSize: 11 }}>
-                    {formatDocumentDate(item.created_at)} · {userLabel(item.actor_user_id)}
+              <div style={fullScreen ? { flex: 1, overflowY: 'auto', minHeight: 0 } : undefined}>
+                {(showFullTimeline ? historyItems : historyItems.slice(0, 5)).map((item) => (
+                  <div key={item.id} style={{ padding: '7px 0', borderTop: '1px solid var(--border)', fontSize: 12 }}>
+                    <div style={{ color: 'var(--fg)' }}>{timelineLabel(item)}</div>
+                    <div style={{ color: 'var(--fg-dim)', fontSize: 11 }}>
+                      {formatDocumentDate(item.created_at)} · {userLabel(item.actor_user_id)}
+                    </div>
                   </div>
-                </div>
-              ))}
-              {historyItems.length > 5 && (
-                <button
-                  onClick={() => setShowFullTimeline((v) => !v)}
-                  style={{ marginTop: 6, fontSize: 11.5, color: 'var(--accent)', background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}
-                >
-                  {showFullTimeline ? 'Ver menos' : `Ver todos (${historyItems.length})`}
-                </button>
-              )}
-            </>
+                ))}
+                {historyItems.length > 5 && (
+                  <button
+                    onClick={() => setShowFullTimeline((v) => !v)}
+                    style={{ marginTop: 6, fontSize: 11.5, color: 'var(--accent)', background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}
+                  >
+                    {showFullTimeline ? 'Ver menos' : `Ver todos (${historyItems.length})`}
+                  </button>
+                )}
+              </div>
+            </div>
           )}
         </div>
 
