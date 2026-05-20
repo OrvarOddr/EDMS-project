@@ -20,6 +20,9 @@ class User(Base):
     status = Column(String, nullable=False, default="active")
     is_superuser = Column(Boolean, nullable=False, default=False)
     last_login_at = Column(DateTime(timezone=True), nullable=True)
+    # Color de avatar persistente. Se asigna al crear el usuario; los usuarios
+    # pre-existentes lo obtienen perezosamente la primera vez que se sirven.
+    color = Column(String, nullable=True)
     created_at = Column(DateTime(timezone=True), nullable=False, default=utcnow)
     updated_at = Column(DateTime(timezone=True), nullable=False, default=utcnow, onupdate=utcnow)
     deleted_at = Column(DateTime(timezone=True), nullable=True)

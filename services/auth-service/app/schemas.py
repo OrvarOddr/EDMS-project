@@ -34,6 +34,7 @@ class UserResponse(BaseModel):
     status: str
     is_superuser: bool
     roles: list[str] = []
+    color: str | None = None
 
 
 class AssignRoleRequest(BaseModel):

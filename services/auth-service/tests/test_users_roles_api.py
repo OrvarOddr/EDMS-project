@@ -124,3 +124,69 @@ def test_asignar_rol_cambia_rol_y_superuser(client, admin_token):
     body = r.json()
     assert body["roles"] == ["admin"]
     assert body["is_superuser"] is True
+
+
+def test_crear_usuario_asigna_color_de_paleta(client, admin_token):
+    """El color de avatar se asigna al crear y se devuelve en la response."""
+    from app.routers.users import AVATAR_PALETTE
+
+    role_id = _role_id(client, admin_token, "colaborador")
+    r = client.post(
+        "/users",
+        headers=auth_headers(admin_token),
+        json={
+            "email": "concolor@edms.dev",
+            "password": "clave-segura-123",
+            "first_name": "Con",
+            "last_name": "Color",
+            "role_id": role_id,
+        },
+    )
+    assert r.status_code == 201, r.text
+    body = r.json()
+    assert body["color"] in AVATAR_PALETTE
+
+
+def test_listado_usuarios_devuelve_color(client, admin_token):
+    """GET /users incluye color para cada usuario."""
+    users = client.get("/users", headers=auth_headers(admin_token)).json()
+    assert users, "no hay usuarios sembrados"
+    assert all(u["color"] for u in users), "algun usuario quedo sin color asignado"
+
+
+def test_color_se_conserva_entre_llamadas(client, admin_token):
+    """Una vez asignado, el color del usuario no cambia entre llamadas."""
+    role_id = _role_id(client, admin_token, "revisor")
+    created = client.post(
+        "/users",
+        headers=auth_headers(admin_token),
+        json={
+            "email": "estable@edms.dev",
+            "password": "clave-segura-123",
+            "first_name": "Es",
+            "last_name": "Table",
+            "role_id": role_id,
+        },
+    ).json()
+    color = created["color"]
+    listado = client.get("/users", headers=auth_headers(admin_token)).json()
+    encontrado = next(u for u in listado if u["id"] == created["id"])
+    assert encontrado["color"] == color
+
+
+def test_usuario_existente_sin_color_recibe_color_lazy(client, admin_token, db_session):
+    """Usuarios pre-existentes (color=None en DB) reciben uno en la primera lectura."""
+    from app.models import User
+
+    user = db_session.query(User).filter(User.email == "admin@edms.dev").first()
+    assert user is not None
+    # Forzamos color=None para simular usuario pre-feature.
+    user.color = None
+    db_session.commit()
+
+    me_first = client.get("/users/me", headers=auth_headers(admin_token)).json()
+    assert me_first["color"] is not None
+
+    db_session.expire_all()
+    user_after = db_session.query(User).filter(User.email == "admin@edms.dev").first()
+    assert user_after.color == me_first["color"], "el color no se persistio en la fila"
