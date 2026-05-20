@@ -14,6 +14,7 @@ export interface UserMe {
   status: string
   is_superuser: boolean
   roles: string[]
+  color: string | null
 }
 
 export interface RoleItem {

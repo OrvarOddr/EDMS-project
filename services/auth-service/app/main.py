@@ -69,6 +69,10 @@ def _seed(db):
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     Base.metadata.create_all(bind=engine)
+    # Migracion en sitio: agregar columna color a auth.users si no existe.
+    with engine.begin() as conn:
+        from sqlalchemy import text
+        conn.execute(text("ALTER TABLE auth.users ADD COLUMN IF NOT EXISTS color VARCHAR"))
     db = SessionLocal()
     try:
         _seed(db)

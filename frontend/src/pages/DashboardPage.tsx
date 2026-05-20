@@ -1,5 +1,7 @@
 import {
+  createContext,
   useCallback,
+  useContext,
   useEffect,
   useLayoutEffect,
   useMemo,
@@ -801,17 +803,33 @@ function KindBadge({ kind, small = false }: { kind: DocKind; small?: boolean }) 
   )
 }
 
+// Directorio global de usuarios reales (current user + workspaceUsers). Lo
+// alimenta DashboardPage en cuanto carga; los avatares consultan aqui antes
+// de caer al mock o al hash deterministico, asi cada persona tiene un solo
+// color en todo el sistema.
+interface UsersDirectoryValue {
+  resolveColor: (userId?: string | null) => string
+  resolveInitials: (userId?: string | null) => string
+  resolveLabel: (userId?: string | null) => string
+}
+
+const UsersDirectoryContext = createContext<UsersDirectoryValue | null>(null)
+
 function OwnerAvatar({ userId, size = 20 }: { userId: string; size?: number }) {
-  const user = findUserById(userId)
-  if (!user) return null
+  const directory = useContext(UsersDirectoryContext)
+  const mock = findUserById(userId)
+  const resolvedColor = directory?.resolveColor(userId) ?? mock?.color
+  const resolvedInitials = mock?.initials ?? directory?.resolveInitials(userId) ?? null
+  const resolvedLabel = mock?.name ?? directory?.resolveLabel(userId) ?? userId
+  if (!resolvedColor || !resolvedInitials) return null
   return (
     <span
-      title={user.name}
+      title={resolvedLabel}
       style={{
         width: size,
         height: size,
         borderRadius: size / 2,
-        background: user.color,
+        background: resolvedColor,
         display: 'inline-flex',
         alignItems: 'center',
         justifyContent: 'center',
@@ -822,7 +840,7 @@ function OwnerAvatar({ userId, size = 20 }: { userId: string; size?: number }) {
         border: '1.5px solid var(--bg-elev)',
       }}
     >
-      {user.initials}
+      {resolvedInitials}
     </span>
   )
 }
@@ -1266,6 +1284,7 @@ function UserMenu({
   userLabel,
   userEmail,
   userInitials,
+  userColor,
   onOpenNotifs,
   onAction,
   onLogout,
@@ -1273,6 +1292,7 @@ function UserMenu({
   userLabel: string
   userEmail: string
   userInitials: string
+  userColor: string
   onOpenNotifs: () => void
   onAction: (action: string) => void
   onLogout: () => Promise<void>
@@ -1324,7 +1344,7 @@ function UserMenu({
             width: 28,
             height: 28,
             borderRadius: 14,
-            background: 'oklch(0.7 0.14 30)',
+            background: userColor,
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'center',
@@ -1387,7 +1407,7 @@ function UserMenu({
                 width: 34,
                 height: 34,
                 borderRadius: 17,
-                background: 'oklch(0.7 0.14 30)',
+                background: userColor,
                 display: 'flex',
                 alignItems: 'center',
                 justifyContent: 'center',
@@ -1495,6 +1515,7 @@ function Topbar({
   userLabel,
   userInitials,
   userEmail,
+  userColor,
   onLogout,
 }: {
   breadcrumb: { id: string; label: string }[]
@@ -1514,6 +1535,7 @@ function Topbar({
   userLabel: string
   userInitials: string
   userEmail: string
+  userColor: string
   onLogout: () => Promise<void>
 }) {
   return (
@@ -1668,6 +1690,7 @@ function Topbar({
           userLabel={userLabel}
           userEmail={userEmail}
           userInitials={userInitials}
+          userColor={userColor}
           onOpenNotifs={onOpenNotifs}
           onAction={onAction}
           onLogout={onLogout}
@@ -2851,10 +2874,12 @@ function ActivityPanel({
   items,
   onOpenDoc,
   userLabel,
+  userColor,
 }: {
   items: RecentActivityItem[]
   onOpenDoc: (documentId: string) => void
   userLabel: (userId?: string | null) => string
+  userColor: (userId?: string | null) => string
 }) {
   return (
     <div style={{ background: 'var(--bg-elev)', border: '1px solid var(--border)', borderRadius: 10, overflow: 'hidden' }}>
@@ -2876,7 +2901,7 @@ function ActivityPanel({
             const verb = activityVerb(item.type)
             const target = activityTarget(item)
             const initials = actorName ? initialsFromLabel(actorName) : '?'
-            const avatarColor = actorColorFromId(item.actor_user_id)
+            const avatarColor = userColor(item.actor_user_id)
             const showActorLine = Boolean(actorName)
             return (
               <div
@@ -7617,6 +7642,7 @@ export default function DashboardPage() {
     : 'Usuario actual'
   const currentUserInitials = user ? initialsFromLabel(currentUserLabel) : 'UA'
   const currentUserEmail = user?.email ?? ''
+  const currentUserColor = user?.color ?? actorColorFromId(user?.id ?? null)
   const firstName = currentUserLabel.split(' ')[0]
   const allDocs = useMemo(() => [...createdDocs, ...dashboardData.docs], [createdDocs])
   const searchQuery = search.trim()
@@ -7672,6 +7698,16 @@ export default function DashboardPage() {
 
   function initialsForUserId(userId?: string | null) {
     return initialsFromLabel(labelForUserId(userId))
+  }
+
+  function colorForUserId(userId?: string | null): string {
+    if (!userId) return 'var(--bg-elev-2)'
+    if (user?.id === userId && user.color) return user.color
+    const real = workspaceUsers.find((u) => u.id === userId)
+    if (real?.color) return real.color
+    const mock = findUserById(userId)
+    if (mock?.color) return mock.color
+    return actorColorFromId(userId)
   }
 
   const refreshNotifications = useCallback(async () => {
@@ -8707,7 +8743,34 @@ export default function DashboardPage() {
     return () => document.removeEventListener('keydown', handleKey)
   }, [createdDocs, selected])
 
+  const usersDirectory = useMemo<UsersDirectoryValue>(() => {
+    const lookupLabel = (userId?: string | null): string => {
+      if (!userId) return 'Sin asignar'
+      if (user?.id === userId) return userLabelFromAuth(user.first_name, user.last_name, user.email)
+      const real = workspaceUsers.find((u) => u.id === userId)
+      if (real) return userLabelFromAuth(real.first_name, real.last_name, real.email)
+      const mock = findUserById(userId)
+      if (mock) return mock.name
+      return 'Usuario sin nombre'
+    }
+    const lookupColor = (userId?: string | null): string => {
+      if (!userId) return 'var(--bg-elev-2)'
+      if (user?.id === userId && user.color) return user.color
+      const real = workspaceUsers.find((u) => u.id === userId)
+      if (real?.color) return real.color
+      const mock = findUserById(userId)
+      if (mock?.color) return mock.color
+      return actorColorFromId(userId)
+    }
+    return {
+      resolveColor: lookupColor,
+      resolveInitials: (userId) => initialsFromLabel(lookupLabel(userId)),
+      resolveLabel: lookupLabel,
+    }
+  }, [user, workspaceUsers])
+
   return (
+    <UsersDirectoryContext.Provider value={usersDirectory}>
     <div className="edms-dashboard" style={{ display: 'flex', height: '100vh', width: '100vw', position: 'relative', background: 'var(--bg)' }}>
       <Sidebar
         collapsed={tweaks.sidebarCollapsed}
@@ -8765,6 +8828,7 @@ export default function DashboardPage() {
           userLabel={currentUserLabel}
           userInitials={currentUserInitials}
           userEmail={currentUserEmail}
+          userColor={currentUserColor}
           onLogout={logout}
         />
 
@@ -8923,7 +8987,7 @@ export default function DashboardPage() {
 
             <div style={{ display: 'grid', gridTemplateColumns: '1.5fr 1fr', gap: 12, padding: '4px 18px 12px' }}>
               <ApprovalsPanel onOpenDoc={openDoc} />
-              <ActivityPanel items={recentActivity} onOpenDoc={openDoc} userLabel={labelForUserId} />
+              <ActivityPanel items={recentActivity} onOpenDoc={openDoc} userLabel={labelForUserId} userColor={colorForUserId} />
             </div>
 
             <div style={{ padding: '4px 18px 24px' }}>
@@ -9252,5 +9316,6 @@ export default function DashboardPage() {
       )}
       <Toast toast={toast} onClose={() => setToast(null)} />
     </div>
+    </UsersDirectoryContext.Provider>
   )
 }

@@ -1,3 +1,5 @@
+import random
+
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 from app.database import get_db
@@ -10,6 +12,34 @@ from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 
 router = APIRouter(prefix="/users", tags=["users"])
 bearer = HTTPBearer()
+
+# Paleta de colores de avatar (oklch). Misma familia que usa el frontend, asi
+# los circulos quedan consistentes en todo el sistema. El color se asigna al
+# crear el usuario y se persiste; los usuarios pre-existentes lo obtienen
+# perezosamente la primera vez que _to_user_response los sirve.
+AVATAR_PALETTE: tuple[str, ...] = (
+    "oklch(0.74 0.16 25)",   # salmon
+    "oklch(0.78 0.15 55)",   # naranja
+    "oklch(0.76 0.15 150)",  # verde
+    "oklch(0.73 0.13 245)",  # azul
+    "oklch(0.72 0.17 295)",  # violeta
+    "oklch(0.73 0.18 330)",  # rosa
+    "oklch(0.75 0.14 200)",  # turquesa
+    "oklch(0.78 0.15 90)",   # amarillo
+)
+
+
+def _generate_avatar_color(seed: str | None = None) -> str:
+    """Color de avatar. Si se pasa seed se elige deterministicamente (util para
+    backfill estable); sin seed elige aleatorio (al crear usuario).
+    """
+    if seed:
+        # Hash simple para que el color sea estable para el mismo id/email.
+        h = 0
+        for ch in seed:
+            h = (h * 31 + ord(ch)) & 0xFFFFFFFF
+        return AVATAR_PALETTE[h % len(AVATAR_PALETTE)]
+    return random.choice(AVATAR_PALETTE)
 
 
 def _current_user(
@@ -33,6 +63,12 @@ def _current_user(
 
 def _to_user_response(db: Session, user: User) -> UserResponse:
     roles = _get_active_roles(db, user.id)
+    if not user.color:
+        # Backfill perezoso: usuarios pre-existentes (o creados antes de esta
+        # feature) reciben un color deterministico desde su id la primera vez
+        # que se sirven. Asi todas las llamadas devuelven el mismo valor.
+        user.color = _generate_avatar_color(seed=user.id)
+        db.commit()
     return UserResponse(
         id=user.id,
         email=user.email,
@@ -41,6 +77,7 @@ def _to_user_response(db: Session, user: User) -> UserResponse:
         status=user.status,
         is_superuser=user.is_superuser,
         roles=roles,
+        color=user.color,
     )
 
 
@@ -69,6 +106,7 @@ def create_user(
         last_name=body.last_name,
         status=body.status,
         is_superuser=role.code == "admin",
+        color=_generate_avatar_color(),
     )
     db.add(user)
     db.flush()

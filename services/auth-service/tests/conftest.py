@@ -61,5 +61,17 @@ def admin_token(client):
     return response.json()["access_token"]
 
 
+@pytest.fixture
+def db_session():
+    """Sesion directa para preparar/inspeccionar datos en los tests."""
+    from app.database import SessionLocal
+
+    session = SessionLocal()
+    try:
+        yield session
+    finally:
+        session.close()
+
+
 def auth_headers(token: str) -> dict:
     return {"Authorization": f"Bearer {token}"}
