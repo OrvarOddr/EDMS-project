@@ -2801,12 +2801,49 @@ function ApprovalsPanel({ onOpenDoc }: { onOpenDoc: (docId: string) => void }) {
   )
 }
 
+const ACTOR_AVATAR_PALETTE = [
+  'oklch(0.74 0.16 25)',   // salmon
+  'oklch(0.78 0.15 55)',   // orange
+  'oklch(0.76 0.15 150)',  // green
+  'oklch(0.73 0.13 245)',  // azul
+  'oklch(0.72 0.17 295)',  // violeta
+  'oklch(0.73 0.18 330)',  // rosa
+  'oklch(0.75 0.14 200)',  // turquesa
+  'oklch(0.78 0.15 90)',   // amarillo
+]
+
+function actorColorFromId(actorId: string | null | undefined): string {
+  if (!actorId) return 'var(--bg-elev-2)'
+  let hash = 0
+  for (let i = 0; i < actorId.length; i += 1) {
+    hash = (hash * 31 + actorId.charCodeAt(i)) >>> 0
+  }
+  return ACTOR_AVATAR_PALETTE[hash % ACTOR_AVATAR_PALETTE.length]
+}
+
+function activityVerb(type: string): string {
+  switch (type) {
+    case 'nuevo_comentario': return 'comentó en'
+    case 'mencion': return 'te mencionó en'
+    case 'cambio_estado': return 'movió a otro estado'
+    case 'asignacion_encargado': return 'te asignó como encargado de'
+    case 'asignacion_rol': return 'te asignó en'
+    case 'subio_version': return 'subió una versión de'
+    case 'firma_solicitud': return 'solicitó firma en'
+    case 'aprobacion': return 'aprobó'
+    case 'compartido': return 'compartió'
+    default: return ''
+  }
+}
+
 function ActivityPanel({
   items,
   onOpenDoc,
+  userLabel,
 }: {
   items: RecentActivityItem[]
   onOpenDoc: (documentId: string) => void
+  userLabel: (userId?: string | null) => string
 }) {
   return (
     <div style={{ background: 'var(--bg-elev)', border: '1px solid var(--border)', borderRadius: 10, overflow: 'hidden' }}>
@@ -2824,39 +2861,63 @@ function ActivityPanel({
         <div style={{ padding: '6px 0' }}>
           {items.map((item) => {
             const navigable = Boolean(item.document_id)
+            const actorName = item.actor_user_id ? userLabel(item.actor_user_id) : ''
+            const verb = activityVerb(item.type)
+            const target = item.document_name ?? item.body ?? ''
+            const initials = actorName ? initialsFromLabel(actorName) : '?'
+            const avatarColor = actorColorFromId(item.actor_user_id)
+            const showActorLine = Boolean(actorName)
             return (
               <div
                 key={item.id}
                 className={navigable ? 'edms-nav-item' : undefined}
                 onClick={() => item.document_id && onOpenDoc(item.document_id)}
                 style={{
-                  padding: '8px 14px',
+                  padding: '10px 14px',
                   display: 'flex',
-                  alignItems: 'center',
-                  gap: 10,
+                  alignItems: 'flex-start',
+                  gap: 12,
                   fontSize: 12.5,
                   cursor: navigable ? 'pointer' : 'default',
                 }}
               >
-                <div style={{ width: 24, height: 24, borderRadius: 12, background: 'var(--bg-elev-2)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-                  {notifIcon(item.type)}
-                </div>
+                <span
+                  title={actorName || undefined}
+                  style={{
+                    width: 32,
+                    height: 32,
+                    borderRadius: 16,
+                    background: avatarColor,
+                    color: '#0e0f12',
+                    fontSize: 12,
+                    fontWeight: 600,
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    flexShrink: 0,
+                    border: '1.5px solid var(--bg-elev)',
+                  }}
+                >
+                  {item.actor_user_id ? initials : notifIcon(item.type)}
+                </span>
                 <div style={{ flex: 1, minWidth: 0 }}>
-                  <div style={{ color: 'var(--fg)', fontWeight: 500, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                    {item.title}
+                  <div style={{ color: 'var(--fg)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                    {showActorLine ? (
+                      <>
+                        <span style={{ fontWeight: 600 }}>{actorName}</span>
+                        {verb && <span style={{ color: 'var(--fg-muted)', fontWeight: 400 }}> {verb}</span>}
+                      </>
+                    ) : (
+                      <span style={{ fontWeight: 500 }}>{item.title}</span>
+                    )}
                   </div>
-                  {item.document_name && (
-                    <div style={{ fontSize: 11.5, color: 'var(--accent)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                      {item.document_name}
-                    </div>
-                  )}
-                  {item.body && (
-                    <div style={{ fontSize: 11.5, color: 'var(--fg-muted)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                      {item.body}
+                  {target && (
+                    <div style={{ fontSize: 11.5, color: 'var(--fg-muted)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', marginTop: 1 }}>
+                      {target}
                     </div>
                   )}
                 </div>
-                <span style={{ fontSize: 11, color: 'var(--fg-dim)', flexShrink: 0 }}>{notifTimeAgo(item.created_at)}</span>
+                <span style={{ fontSize: 11, color: 'var(--fg-dim)', flexShrink: 0, alignSelf: 'flex-start', marginTop: 2 }}>{notifTimeAgo(item.created_at)}</span>
               </div>
             )
           })}
@@ -8850,7 +8911,7 @@ export default function DashboardPage() {
 
             <div style={{ display: 'grid', gridTemplateColumns: '1.5fr 1fr', gap: 12, padding: '4px 18px 12px' }}>
               <ApprovalsPanel onOpenDoc={openDoc} />
-              <ActivityPanel items={recentActivity} onOpenDoc={openDoc} />
+              <ActivityPanel items={recentActivity} onOpenDoc={openDoc} userLabel={labelForUserId} />
             </div>
 
             <div style={{ padding: '4px 18px 24px' }}>
