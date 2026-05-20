@@ -3058,6 +3058,7 @@ function DetailDrawer({
   const [commentText, setCommentText] = useState('')
   const [commentSending, setCommentSending] = useState(false)
   const [showFullTimeline, setShowFullTimeline] = useState(false)
+  const [viewVersionId, setViewVersionId] = useState<string | null>(null)
   const commentRef = useRef<HTMLTextAreaElement>(null)
   // Autocompletado de menciones: token "@..." activo bajo el cursor.
   const [mention, setMention] = useState<{ query: string; start: number } | null>(null)
@@ -3066,6 +3067,10 @@ function DetailDrawer({
   const [assigneeSaving, setAssigneeSaving] = useState(false)
   const [assigneeError, setAssigneeError] = useState<string | null>(null)
   const currentFile = detail?.files.find((file) => file.is_current) ?? detail?.files[0] ?? null
+  const selectedVersionFile = viewVersionId
+    ? (detail?.files.find((file) => file.id === viewVersionId) ?? null)
+    : null
+  const previewFile = selectedVersionFile ?? currentFile
 
   useEffect(() => {
     if (!doc) return
@@ -3077,21 +3082,21 @@ function DetailDrawer({
   }, [doc, onClose])
 
   useEffect(() => {
-    if (!currentFile) {
+    if (!previewFile) {
       return
     }
 
     const controller = new AbortController()
     let objectUrl: string | null = null
 
-    getFileContent(currentFile.file_id, controller.signal)
+    getFileContent(previewFile.file_id, controller.signal)
       .then((response) => {
         objectUrl = URL.createObjectURL(response.data)
-        setPreview({ fileId: currentFile.file_id, url: objectUrl })
+        setPreview({ fileId: previewFile.file_id, url: objectUrl })
       })
       .catch(() => {
         if (!controller.signal.aborted) {
-          setPreview({ fileId: currentFile.file_id, error: 'No se pudo cargar la vista previa' })
+          setPreview({ fileId: previewFile.file_id, error: 'No se pudo cargar la vista previa' })
         }
       })
 
@@ -3099,7 +3104,7 @@ function DetailDrawer({
       controller.abort()
       if (objectUrl) URL.revokeObjectURL(objectUrl)
     }
-  }, [currentFile])
+  }, [previewFile])
 
   if (!doc) return null
 
@@ -3115,7 +3120,8 @@ function DetailDrawer({
   const canDownloadFile = Boolean(currentFile) && (permissions?.can_download_file ?? true)
   const assignments = workflow?.assignments ?? []
   const assigneeId = workflow?.assignee_user_id ?? doc.owner
-  const activePreview = currentFile && preview?.fileId === currentFile.file_id ? preview : null
+  const activePreview = previewFile && preview?.fileId === previewFile.file_id ? preview : null
+  const viewingNonCurrent = Boolean(selectedVersionFile && !selectedVersionFile.is_current)
   const fallbackHistory: DocumentDetailTimelineItem[] = (doc.metadataActivity ?? []).map((item) => ({
     id: item.id,
     actor_user_id: item.actor_user_id,
@@ -3388,34 +3394,72 @@ function DetailDrawer({
         </button>
       </div>
 
-      <div style={{ flex: 1, overflow: 'auto', ...(fullScreen ? { display: 'flex', flexDirection: 'column', alignItems: 'center', padding: '8px 0 32px' } : {}) }}>
-        <div style={{ padding: '14px 14px 0', ...(fullScreen ? { width: 'min(900px, 96vw)' } : {}) }}>
+      <div
+        style={{
+          flex: 1,
+          overflow: 'auto',
+          ...(fullScreen
+            ? {
+                display: 'grid',
+                gridTemplateColumns: 'minmax(0, 1fr) minmax(340px, 400px)',
+                gridTemplateRows: 'auto auto 1fr',
+                columnGap: 28,
+                padding: '20px 28px 40px',
+                maxWidth: 1500,
+                margin: '0 auto',
+                width: '100%',
+              }
+            : {}),
+        }}
+      >
+        <div style={{ padding: '14px 14px 0', ...(fullScreen ? { gridColumn: 1, gridRow: 1, padding: 0, marginBottom: 16 } : {}) }}>
+          {viewingNonCurrent && selectedVersionFile && (
+            <div
+              style={{
+                display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8,
+                padding: '7px 10px', marginBottom: 8, borderRadius: 7,
+                border: '1px solid color-mix(in oklch, var(--warn) 45%, var(--border))',
+                background: 'var(--warn-soft)', color: 'var(--fg)', fontSize: 12,
+              }}
+            >
+              <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+                <Icon.Branch size={12} /> Viendo versión v{selectedVersionFile.version_number} (no actual)
+              </span>
+              <button
+                onClick={() => setViewVersionId(null)}
+                className="edms-button"
+                style={{ ...btnStyleGhost, padding: '3px 8px', fontSize: 11 }}
+              >
+                Ver actual
+              </button>
+            </div>
+          )}
           <div
             style={{
-              aspectRatio: '8.5 / 11',
+              ...(fullScreen ? { height: '78vh', minHeight: 460 } : { aspectRatio: '8.5 / 11' }),
               borderRadius: 8,
               overflow: 'hidden',
-              background: currentFile ? 'var(--bg-elev-2)' : `linear-gradient(135deg, color-mix(in oklch, ${kind.tone} 16%, var(--bg-elev-2)), var(--bg-elev-2))`,
+              background: previewFile ? 'var(--bg-elev-2)' : `linear-gradient(135deg, color-mix(in oklch, ${kind.tone} 16%, var(--bg-elev-2)), var(--bg-elev-2))`,
               border: '1px solid var(--border)',
               position: 'relative',
-              padding: currentFile ? 0 : 18,
+              padding: previewFile ? 0 : 18,
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'center',
             }}
           >
-            {currentFile ? (
+            {previewFile ? (
               activePreview?.url ? (
-                currentFile.mime_type?.startsWith('image/') ? (
+                previewFile.mime_type?.startsWith('image/') ? (
                   <img
                     src={activePreview.url}
-                    alt={`Vista previa de ${currentFile.original_filename ?? doc.name}`}
+                    alt={`Vista previa de ${previewFile.original_filename ?? doc.name}`}
                     style={{ width: '100%', height: '100%', objectFit: 'contain', background: '#05070a' }}
                   />
                 ) : (
                   <iframe
                     src={activePreview.url}
-                    title={`Vista previa de ${currentFile.original_filename ?? doc.name}`}
+                    title={`Vista previa de ${previewFile.original_filename ?? doc.name}`}
                     style={{ width: '100%', height: '100%', border: 0, background: '#05070a' }}
                   />
                 )
@@ -3468,8 +3512,8 @@ function DetailDrawer({
           </div>
         </div>
 
-        <div style={{ padding: '14px', ...(fullScreen ? { width: 'min(900px, 96vw)' } : {}) }}>
-          <div style={{ fontSize: fullScreen ? 19 : 15, fontWeight: 600, color: 'var(--fg)', marginBottom: 6, lineHeight: 1.3 }}>{doc.name}</div>
+        <div style={{ padding: '14px', ...(fullScreen ? { gridColumn: 1, gridRow: 2, padding: '0 0 8px' } : {}) }}>
+          <div style={{ fontSize: fullScreen ? 22 : 15, fontWeight: 600, color: 'var(--fg)', marginBottom: 6, lineHeight: 1.3 }}>{doc.name}</div>
           <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12 }}>
             <StatusPill status={doc.status} />
             <span style={{ color: 'var(--fg-dim)', fontSize: 11 }}>·</span>
@@ -3574,7 +3618,25 @@ function DetailDrawer({
           </div>
         </div>
 
-        <div style={{ padding: '0 14px 14px' }}>
+        <div
+          style={
+            fullScreen
+              ? {
+                  gridColumn: 2,
+                  gridRow: '1 / 4',
+                  position: 'sticky',
+                  top: 0,
+                  alignSelf: 'start',
+                  maxHeight: 'calc(100vh - 96px)',
+                  overflow: 'auto',
+                  background: 'var(--bg-elev-2)',
+                  border: '1px solid var(--border)',
+                  borderRadius: 10,
+                  padding: '16px 16px 18px',
+                }
+              : { padding: '0 14px 14px' }
+          }
+        >
           <div style={{ fontSize: 11, color: 'var(--fg-dim)', letterSpacing: '0.06em', textTransform: 'uppercase', fontWeight: 600, marginBottom: 8, display: 'flex', alignItems: 'center', gap: 6 }}>
             <Icon.Clock size={11} /> Comentarios e historial
           </div>
@@ -3689,7 +3751,7 @@ function DetailDrawer({
           )}
         </div>
 
-        <div style={{ padding: '0 14px 14px' }}>
+        <div style={{ padding: '0 14px 14px', ...(fullScreen ? { gridColumn: 1, gridRow: 3, padding: '8px 0 0', alignSelf: 'start' } : {}) }}>
           <div style={{ fontSize: 11, color: 'var(--fg-dim)', letterSpacing: '0.06em', textTransform: 'uppercase', fontWeight: 600, marginBottom: 8, display: 'flex', alignItems: 'center', gap: 6 }}>
             <Icon.Branch size={11} /> Historial de versiones
           </div>
@@ -3698,9 +3760,23 @@ function DetailDrawer({
               Aun no hay archivo principal ni versiones registradas.
             </div>
           )}
-          {(detail?.files ?? []).slice(0, 4).map((file, index) => {
+          {(detail?.files ?? []).slice(0, fullScreen ? 50 : 4).map((file, index) => {
+            const isPreviewed = previewFile?.id === file.id
             return (
-              <div key={file.id} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '7px 0', borderTop: index === 0 ? 'none' : '1px solid var(--border)' }}>
+              <button
+                key={file.id}
+                type="button"
+                onClick={() => setViewVersionId(file.is_current ? null : file.id)}
+                className="edms-nav-item"
+                title={file.is_current ? 'Ver versión actual' : `Previsualizar v${file.version_number}`}
+                style={{
+                  display: 'flex', alignItems: 'center', gap: 10, padding: '8px 8px',
+                  borderTop: index === 0 ? 'none' : '1px solid var(--border)',
+                  background: isPreviewed ? 'var(--accent-soft)' : 'transparent',
+                  border: 'none', borderRadius: 0, width: '100%', textAlign: 'left',
+                  cursor: 'pointer', color: 'var(--fg)',
+                }}
+              >
                 <span
                   style={{
                     width: 28,
@@ -3709,22 +3785,34 @@ function DetailDrawer({
                     fontFamily: "'JetBrains Mono', ui-monospace, monospace",
                     fontSize: 10.5,
                     fontWeight: 600,
-                    background: index === 0 ? 'var(--accent-soft)' : 'var(--bg-elev-2)',
-                    color: index === 0 ? 'var(--accent)' : 'var(--fg-muted)',
+                    background: file.is_current ? 'var(--accent-soft)' : 'var(--bg-elev-2)',
+                    color: file.is_current ? 'var(--accent)' : 'var(--fg-muted)',
                     display: 'flex',
                     alignItems: 'center',
                     justifyContent: 'center',
+                    flexShrink: 0,
                   }}
                 >
                   v{file.version_number}
                 </span>
-                <div style={{ flex: 1, fontSize: 12 }}>
-                  <div style={{ color: 'var(--fg)' }}>{file.is_current ? 'actual' : file.original_filename ?? 'version anterior'}</div>
+                <div style={{ flex: 1, fontSize: 12, minWidth: 0 }}>
+                  <div style={{ color: 'var(--fg)', display: 'flex', alignItems: 'center', gap: 6 }}>
+                    {file.is_current ? 'actual' : file.original_filename ?? 'version anterior'}
+                    {isPreviewed && !file.is_current && (
+                      <span style={{ fontSize: 10, color: 'var(--accent)', fontWeight: 600 }}>· en vista previa</span>
+                    )}
+                  </div>
                   <div style={{ color: 'var(--fg-dim)', fontSize: 11 }}>
                     {formatDocumentDate(file.created_at)} · {userLabel(file.uploaded_by_user_id)}
+                    {file.size_bytes ? ` · ${formatFileSize(file.size_bytes)}` : ''}
                   </div>
+                  {file.version_comment && (
+                    <div style={{ color: 'var(--fg-muted)', fontSize: 11, marginTop: 2, whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>
+                      "{file.version_comment}"
+                    </div>
+                  )}
                 </div>
-              </div>
+              </button>
             )
           })}
           {!detail && Array.from({ length: Math.min(doc.version, 4) }).map((_, index) => {
