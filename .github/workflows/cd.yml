@@ -29,8 +29,10 @@ jobs:
             set -e
             cd /home/alejandroortiz2101/EDMS-project
 
-            # Pull sin credenciales manuales
-            git pull https://$GH_TOKEN@github.com/OrvarOddr/EDMS-project.git develop
+            # Sincroniza con remoto descartando estado local divergente
+            # (squash-merges crean commits nuevos; fast-forward simple no basta).
+            git fetch https://$GH_TOKEN@github.com/OrvarOddr/EDMS-project.git develop
+            git reset --hard FETCH_HEAD
 
             # Completar variables nuevas del .env del servidor sin imprimir secretos
             touch .env
