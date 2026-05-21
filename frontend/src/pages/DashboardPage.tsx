@@ -3438,15 +3438,15 @@ function DetailDrawer({
     }
   }
 
-  async function handleDownloadCurrentFile() {
-    if (!currentFile) return
-    setDownloadingFileId(currentFile.file_id)
+  async function handleDownloadVersion(file: { file_id: string; original_filename?: string | null; version_number?: number | null }) {
+    setDownloadingFileId(file.file_id)
     try {
-      const response = await getFileContent(currentFile.file_id)
+      const response = await getFileContent(file.file_id)
       const objectUrl = URL.createObjectURL(response.data)
       const link = document.createElement('a')
       link.href = objectUrl
-      link.download = currentFile.original_filename || `${doc?.name ?? 'documento'}.bin`
+      const fallback = file.version_number ? `${doc?.name ?? 'documento'}-v${file.version_number}.bin` : `${doc?.name ?? 'documento'}.bin`
+      link.download = file.original_filename || fallback
       document.body.appendChild(link)
       link.click()
       link.remove()
@@ -3454,6 +3454,11 @@ function DetailDrawer({
     } finally {
       setDownloadingFileId(null)
     }
+  }
+
+  async function handleDownloadCurrentFile() {
+    if (!currentFile) return
+    await handleDownloadVersion(currentFile)
   }
 
   async function handleSaveAssignee() {
@@ -4118,57 +4123,82 @@ function DetailDrawer({
           )}
           {(detail?.files ?? []).slice(0, fullScreen ? 50 : 4).map((file, index) => {
             const isPreviewed = previewFile?.id === file.id
+            const isDownloading = downloadingFileId === file.file_id
             return (
-              <button
+              <div
                 key={file.id}
-                type="button"
-                onClick={() => setViewVersionId(file.is_current ? null : file.id)}
-                className="edms-nav-item"
-                title={file.is_current ? 'Ver versión actual' : `Previsualizar v${file.version_number}`}
                 style={{
                   display: 'flex', alignItems: 'center', gap: 10, padding: '8px 8px',
                   borderTop: index === 0 ? 'none' : '1px solid var(--border)',
                   background: isPreviewed ? 'var(--accent-soft)' : 'transparent',
-                  border: 'none', borderRadius: 0, width: '100%', textAlign: 'left',
-                  cursor: 'pointer', color: 'var(--fg)',
+                  color: 'var(--fg)',
                 }}
               >
-                <span
+                <button
+                  type="button"
+                  onClick={() => setViewVersionId(file.is_current ? null : file.id)}
+                  className="edms-nav-item"
+                  title={file.is_current ? 'Ver versión actual' : `Previsualizar v${file.version_number}`}
                   style={{
-                    width: 28,
-                    height: 18,
-                    borderRadius: 4,
-                    fontFamily: "'JetBrains Mono', ui-monospace, monospace",
-                    fontSize: 10.5,
-                    fontWeight: 600,
-                    background: file.is_current ? 'var(--accent-soft)' : 'var(--bg-elev-2)',
-                    color: file.is_current ? 'var(--accent)' : 'var(--fg-muted)',
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    flexShrink: 0,
+                    flex: 1, display: 'flex', alignItems: 'center', gap: 10, padding: 0,
+                    background: 'transparent', border: 'none', textAlign: 'left',
+                    cursor: 'pointer', color: 'inherit', minWidth: 0,
                   }}
                 >
-                  v{file.version_number}
-                </span>
-                <div style={{ flex: 1, fontSize: 12, minWidth: 0 }}>
-                  <div style={{ color: 'var(--fg)', display: 'flex', alignItems: 'center', gap: 6 }}>
-                    {file.is_current ? 'actual' : file.original_filename ?? 'version anterior'}
-                    {isPreviewed && !file.is_current && (
-                      <span style={{ fontSize: 10, color: 'var(--accent)', fontWeight: 600 }}>· en vista previa</span>
+                  <span
+                    style={{
+                      width: 28,
+                      height: 18,
+                      borderRadius: 4,
+                      fontFamily: "'JetBrains Mono', ui-monospace, monospace",
+                      fontSize: 10.5,
+                      fontWeight: 600,
+                      background: file.is_current ? 'var(--accent-soft)' : 'var(--bg-elev-2)',
+                      color: file.is_current ? 'var(--accent)' : 'var(--fg-muted)',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      flexShrink: 0,
+                    }}
+                  >
+                    v{file.version_number}
+                  </span>
+                  <div style={{ flex: 1, fontSize: 12, minWidth: 0 }}>
+                    <div style={{ color: 'var(--fg)', display: 'flex', alignItems: 'center', gap: 6 }}>
+                      {file.is_current ? 'actual' : file.original_filename ?? 'version anterior'}
+                      {isPreviewed && !file.is_current && (
+                        <span style={{ fontSize: 10, color: 'var(--accent)', fontWeight: 600 }}>· en vista previa</span>
+                      )}
+                    </div>
+                    <div style={{ color: 'var(--fg-dim)', fontSize: 11 }}>
+                      {formatDocumentDate(file.created_at)} · {userLabel(file.uploaded_by_user_id)}
+                      {file.size_bytes ? ` · ${formatFileSize(file.size_bytes)}` : ''}
+                    </div>
+                    {file.version_comment && (
+                      <div style={{ color: 'var(--fg-muted)', fontSize: 11, marginTop: 2, whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>
+                        "{file.version_comment}"
+                      </div>
                     )}
                   </div>
-                  <div style={{ color: 'var(--fg-dim)', fontSize: 11 }}>
-                    {formatDocumentDate(file.created_at)} · {userLabel(file.uploaded_by_user_id)}
-                    {file.size_bytes ? ` · ${formatFileSize(file.size_bytes)}` : ''}
-                  </div>
-                  {file.version_comment && (
-                    <div style={{ color: 'var(--fg-muted)', fontSize: 11, marginTop: 2, whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>
-                      "{file.version_comment}"
-                    </div>
-                  )}
-                </div>
-              </button>
+                </button>
+                {canDownloadFile && (
+                  <button
+                    type="button"
+                    onClick={() => handleDownloadVersion(file)}
+                    disabled={isDownloading}
+                    title={`Descargar v${file.version_number}`}
+                    className="edms-nav-item"
+                    style={{
+                      width: 26, height: 26, borderRadius: 5,
+                      display: 'flex', alignItems: 'center', justifyContent: 'center',
+                      color: 'var(--fg-muted)', background: 'transparent', border: 'none',
+                      cursor: isDownloading ? 'wait' : 'pointer', flexShrink: 0,
+                    }}
+                  >
+                    <Icon.Download size={13} />
+                  </button>
+                )}
+              </div>
             )
           })}
           {!detail && Array.from({ length: Math.min(doc.version, 4) }).map((_, index) => {
