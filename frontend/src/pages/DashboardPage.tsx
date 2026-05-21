@@ -3303,6 +3303,7 @@ function DetailDrawer({
   const [commentText, setCommentText] = useState('')
   const [commentSending, setCommentSending] = useState(false)
   const [showFullTimeline, setShowFullTimeline] = useState(false)
+  const [timelineFilter, setTimelineFilter] = useState<'todos' | 'estado' | 'asignaciones' | 'permisos' | 'versiones' | 'metadata'>('todos')
   const [viewVersionId, setViewVersionId] = useState<string | null>(null)
   const commentRef = useRef<HTMLTextAreaElement>(null)
   // Autocompletado de menciones: token "@..." activo bajo el cursor.
@@ -3541,6 +3542,18 @@ function DetailDrawer({
     if (item.action === 'assignee_changed' && item.body) {
       return `Encargado asignado: ${userLabel(item.body)}`
     }
+    if (item.action === 'assignment_added' && item.body) {
+      return `Asignó a ${userLabel(item.body)}${item.note ? ` como ${item.note}` : ''}`
+    }
+    if (item.action === 'assignment_removed' && item.body) {
+      return `Quitó a ${userLabel(item.body)}${item.note ? ` (${item.note})` : ''}`
+    }
+    if (item.action === 'permission_granted' && item.body) {
+      return `Otorgó permiso ${item.note ?? ''} a ${userLabel(item.body)}`.trim()
+    }
+    if (item.action === 'permission_revoked' && item.body) {
+      return `Revocó permiso ${item.note ?? ''} a ${userLabel(item.body)}`.trim()
+    }
     if (item.body) return item.body
     const labels: Record<string, string> = {
       metadata_updated: 'Metadata actualizada',
@@ -3548,8 +3561,22 @@ function DetailDrawer({
       comment: 'Comentario agregado',
       state_change: 'Estado cambiado',
       assignee_changed: 'Encargado actualizado',
+      assignment_added: 'Asignacion agregada',
+      assignment_removed: 'Asignacion revocada',
+      permission_granted: 'Permiso otorgado',
+      permission_revoked: 'Permiso revocado',
     }
     return labels[item.action] ?? item.action
+  }
+
+  // US-025: agrupacion por tipo para el filtro del historial.
+  function timelineCategory(action: string): 'estado' | 'asignaciones' | 'permisos' | 'versiones' | 'metadata' | 'otros' {
+    if (action === 'state_change') return 'estado'
+    if (action === 'assignee_changed' || action === 'assignment_added' || action === 'assignment_removed') return 'asignaciones'
+    if (action === 'permission_granted' || action === 'permission_revoked') return 'permisos'
+    if (action === 'version_uploaded') return 'versiones'
+    if (action === 'metadata_updated' || action === 'fecha_vencimiento') return 'metadata'
+    return 'otros'
   }
 
   function renderCommentBody(text: string) {
@@ -4396,27 +4423,57 @@ function DetailDrawer({
                   : undefined
               }
             >
-              <div style={{ fontSize: 11, color: 'var(--fg-dim)', letterSpacing: '0.06em', textTransform: 'uppercase', fontWeight: 600, margin: fullScreen ? '0 0 6px' : '10px 0 6px', display: 'flex', alignItems: 'center', gap: 6, flexShrink: 0 }}>
-                <Icon.Clock size={11} /> Actividad del documento
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, margin: fullScreen ? '0 0 6px' : '10px 0 6px', flexShrink: 0 }}>
+                <div style={{ fontSize: 11, color: 'var(--fg-dim)', letterSpacing: '0.06em', textTransform: 'uppercase', fontWeight: 600, display: 'flex', alignItems: 'center', gap: 6 }}>
+                  <Icon.Clock size={11} /> Actividad del documento
+                </div>
+                <select
+                  value={timelineFilter}
+                  onChange={(e) => setTimelineFilter(e.target.value as typeof timelineFilter)}
+                  title="Filtrar por tipo de evento"
+                  style={{
+                    fontSize: 11, padding: '2px 5px', borderRadius: 4,
+                    background: 'var(--bg-elev)', color: 'var(--fg)',
+                    border: '1px solid var(--border)', cursor: 'pointer',
+                  }}
+                >
+                  <option value="todos">Todos</option>
+                  <option value="estado">Estado</option>
+                  <option value="asignaciones">Asignaciones</option>
+                  <option value="permisos">Permisos</option>
+                  <option value="versiones">Versiones</option>
+                  <option value="metadata">Metadata</option>
+                </select>
               </div>
-              <div style={fullScreen ? { flex: 1, overflowY: 'auto', minHeight: 0 } : undefined}>
-                {(showFullTimeline ? historyItems : historyItems.slice(0, 5)).map((item) => (
-                  <div key={item.id} style={{ padding: '7px 0', borderTop: '1px solid var(--border)', fontSize: 12 }}>
-                    <div style={{ color: 'var(--fg)' }}>{timelineLabel(item)}</div>
-                    <div style={{ color: 'var(--fg-dim)', fontSize: 11 }}>
-                      {formatDocumentDate(item.created_at)} · {userLabel(item.actor_user_id)}
-                    </div>
+              {(() => {
+                const filtered = timelineFilter === 'todos'
+                  ? historyItems
+                  : historyItems.filter((item) => timelineCategory(item.action) === timelineFilter)
+                const visible = showFullTimeline ? filtered : filtered.slice(0, 5)
+                return (
+                  <div style={fullScreen ? { flex: 1, overflowY: 'auto', minHeight: 0 } : undefined}>
+                    {visible.length === 0 && (
+                      <div style={{ color: 'var(--fg-muted)', fontSize: 12, padding: '6px 0 4px' }}>Sin eventos para este filtro.</div>
+                    )}
+                    {visible.map((item) => (
+                      <div key={item.id} style={{ padding: '7px 0', borderTop: '1px solid var(--border)', fontSize: 12 }}>
+                        <div style={{ color: 'var(--fg)' }}>{timelineLabel(item)}</div>
+                        <div style={{ color: 'var(--fg-dim)', fontSize: 11 }}>
+                          {formatDocumentDate(item.created_at)} · {userLabel(item.actor_user_id)}
+                        </div>
+                      </div>
+                    ))}
+                    {filtered.length > 5 && (
+                      <button
+                        onClick={() => setShowFullTimeline((v) => !v)}
+                        style={{ marginTop: 6, fontSize: 11.5, color: 'var(--accent)', background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}
+                      >
+                        {showFullTimeline ? 'Ver menos' : `Ver todos (${filtered.length})`}
+                      </button>
+                    )}
                   </div>
-                ))}
-                {historyItems.length > 5 && (
-                  <button
-                    onClick={() => setShowFullTimeline((v) => !v)}
-                    style={{ marginTop: 6, fontSize: 11.5, color: 'var(--accent)', background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}
-                  >
-                    {showFullTimeline ? 'Ver menos' : `Ver todos (${historyItems.length})`}
-                  </button>
-                )}
-              </div>
+                )
+              })()}
             </div>
           )}
         </div>

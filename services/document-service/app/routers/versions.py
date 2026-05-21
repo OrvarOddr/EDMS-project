@@ -351,6 +351,25 @@ def _fetch_workflow_detail(document_id: str, actor_user_id: str) -> dict | None:
         return None
 
 
+def _fetch_permission_history(document_id: str) -> list[dict]:
+    """US-025: eventos de permission_granted/revoked desde collaboration-service.
+
+    Best-effort: si el servicio no responde retornamos lista vacia para no
+    romper la respuesta del detalle del documento.
+    """
+    try:
+        with httpx.Client(timeout=5.0) as client:
+            response = client.get(
+                f"{settings.COLLABORATION_SERVICE_URL}/internal/collaboration/documents/{document_id}/permissions/history",
+            )
+        if response.status_code >= 400:
+            return []
+        events = response.json().get("events") or []
+        return events if isinstance(events, list) else []
+    except httpx.HTTPError:
+        return []
+
+
 def _fetch_workflow_history(document_id: str) -> list[dict]:
     try:
         with httpx.Client(timeout=5.0) as client:
@@ -849,8 +868,10 @@ def get_document_detail(
     # de workflow (pierde `note`/comentario) y duplicaria eventos. El
     # historial de workflow se toma directo, que es la fuente autoritativa.
     workflow_history = _fetch_workflow_history(document.id)
+    permission_history = _fetch_permission_history(document.id)
     history_items = [
         *[DocumentDetailTimelineItemResponse(**item) for item in workflow_history if isinstance(item, dict)],
+        *[DocumentDetailTimelineItemResponse(**item) for item in permission_history if isinstance(item, dict)],
         *_metadata_history(document),
         *_version_history(versions),
     ]
