@@ -179,7 +179,9 @@ export interface DocumentMetricsResponse {
   proximos_7_dias: number
 }
 
-export async function getDocumentMetrics(): Promise<DocumentMetricsResponse> {
-  const { data } = await client.get<DocumentMetricsResponse>('/documents/metrics')
+export async function getDocumentMetrics(scope?: 'all'): Promise<DocumentMetricsResponse> {
+  const { data } = await client.get<DocumentMetricsResponse>('/documents/metrics', {
+    params: scope ? { scope } : undefined,
+  })
   return data
 }

@@ -94,6 +94,7 @@ type SelectedView =
   | 'aprobaciones'
   | 'papelera'
   | 'carpeta'
+  | 'admin'
 
 interface FolderItem {
   id: string
@@ -1887,6 +1888,7 @@ function Sidebar({
   onEditTag,
   onDeleteTag,
   userCount,
+  isAdmin = false,
 }: {
   collapsed: boolean
   selectedView: SelectedView
@@ -1903,6 +1905,7 @@ function Sidebar({
   onEditTag: (tag: ApiTag) => void
   onDeleteTag: (tagId: string) => void
   userCount?: number | null
+  isAdmin?: boolean
 }) {
   const [expanded, setExpanded] = useState(new Set(['root', 'legal', 'finanzas', 'producto']))
 
@@ -2070,6 +2073,14 @@ function Sidebar({
           <NavItem icon={<Icon.Star size={14} />} label="Favoritos" count={4} active={selectedView === 'favoritos'} onClick={() => onSelectView('favoritos')} />
           <NavItem icon={<Icon.Signature size={14} />} label="Aprobaciones" badge={dashboardData.approvals.length} active={selectedView === 'aprobaciones'} onClick={() => onSelectView('aprobaciones')} />
           <NavItem icon={<Icon.Trash size={14} />} label="Papelera" active={selectedView === 'papelera'} onClick={() => onSelectView('papelera')} />
+          {isAdmin && (
+            <NavItem
+              icon={<Icon.Lock size={14} />}
+              label="Panel admin"
+              active={selectedView === 'admin'}
+              onClick={() => onSelectView('admin')}
+            />
+          )}
         </div>
 
         <SectionLabel
@@ -7964,6 +7975,7 @@ export default function DashboardPage() {
   const [toast, setToast] = useState<string | null>(null)
   const [storage, setStorage] = useState({ used: 0, total: 0 })
   const [metrics, setMetrics] = useState<DocumentMetricsResponse | null>(null)
+  const [adminMetrics, setAdminMetrics] = useState<DocumentMetricsResponse | null>(null)
   const [tags, setTags] = useState<ApiTag[]>([])
   const [tagModalOpen, setTagModalOpen] = useState(false)
   const [editingTag, setEditingTag] = useState<ApiTag | null>(null)
@@ -8194,6 +8206,12 @@ export default function DashboardPage() {
       .then((data) => { if (mounted) setMetrics(data) })
       .catch(() => {})
 
+    if (user?.is_superuser) {
+      getDocumentMetrics('all')
+        .then((data) => { if (mounted) setAdminMetrics(data) })
+        .catch(() => {})
+    }
+
     listTags()
       .then((res) => { if (mounted) setTags(res.data) })
       .catch(() => {})
@@ -8201,7 +8219,7 @@ export default function DashboardPage() {
     return () => {
       mounted = false
     }
-  }, [])
+  }, [user?.is_superuser])
 
   useEffect(() => {
     if (!serverListActive) {
@@ -8316,11 +8334,13 @@ export default function DashboardPage() {
   const openDocDetail = openDocId ? documentDetails[openDocId] ?? null : null
   const isOpenDocFromBackend = openDocId ? createdDocs.some((doc) => doc.id === openDocId) : false
   const allSelected = visibleDocs.length > 0 && visibleDocs.every((doc) => selected.has(doc.id))
+  const showAdminPanel = selectedView === 'admin' && Boolean(user?.is_superuser)
   const showDashboard =
-    selectedView === 'inicio' &&
+    (selectedView === 'inicio' || showAdminPanel) &&
     search.trim() === '' &&
     !filtersActive &&
     !selectedTag
+  const dashboardMetrics = showAdminPanel ? adminMetrics : metrics
   const showKanban = selectedView === 'kanban'
   const kanbanDocs = useMemo(
     () => visibleDocs.filter((doc) => createdDocs.some((createdDoc) => createdDoc.id === doc.id)),
@@ -9133,6 +9153,7 @@ export default function DashboardPage() {
         onCreateTag={() => { setEditingTag(null); setTagForm({ label: '', color: '#6366f1' }); setTagModalOpen(true) }}
         onEditTag={(tag) => { setEditingTag(tag); setTagForm({ label: tag.label, color: tag.color }); setTagModalOpen(true) }}
         userCount={workspaceUserCount}
+        isAdmin={Boolean(user?.is_superuser)}
         onDeleteTag={async (tagId) => {
           await deleteTag(tagId)
           setTags((prev) => prev.filter((t) => t.id !== tagId))
@@ -9174,11 +9195,28 @@ export default function DashboardPage() {
 
         <div style={{ padding: '18px 18px 8px', display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between', gap: 16 }}>
           <div>
-            <h1 style={{ fontSize: 22, fontWeight: 600, margin: '0 0 2px', letterSpacing: '-0.01em' }}>
-              {searchActive ? 'Resultados de búsqueda' : showDashboard ? `Buenos días, ${firstName}` : breadcrumb[breadcrumb.length - 1]?.label}
+            <h1 style={{ fontSize: 22, fontWeight: 600, margin: '0 0 2px', letterSpacing: '-0.01em', display: 'flex', alignItems: 'center', gap: 10 }}>
+              {searchActive
+                ? 'Resultados de búsqueda'
+                : showAdminPanel
+                  ? 'Panel administrador'
+                  : showDashboard
+                    ? `Buenos días, ${firstName}`
+                    : breadcrumb[breadcrumb.length - 1]?.label}
+              {showAdminPanel && (
+                <span style={{
+                  fontSize: 10.5, padding: '2px 8px', borderRadius: 999,
+                  background: 'var(--warn-soft)', color: 'var(--warn)',
+                  border: '1px solid var(--warn)', fontWeight: 600, letterSpacing: '0.04em', textTransform: 'uppercase',
+                }}>
+                  vista global
+                </span>
+              )}
             </h1>
             <div style={{ fontSize: 12.5, color: 'var(--fg-muted)' }}>
-              {showDashboard
+              {showAdminPanel
+                ? `Métricas globales del workspace · ${adminMetrics ? `${adminMetrics.total} documento${adminMetrics.total === 1 ? '' : 's'} activo${adminMetrics.total === 1 ? '' : 's'}` : 'cargando...'}`
+                : showDashboard
                 ? 'Tienes 3 documentos que requieren tu firma hoy.'
                 : showKanban
                   ? `${kanbanDocs.length} documento${kanbanDocs.length !== 1 ? 's' : ''} en el pipeline · arrastra para cambiar estado`
@@ -9263,7 +9301,7 @@ export default function DashboardPage() {
           </>
         ) : showDashboard ? (
           <div style={{ flex: 1, overflow: 'auto' }}>
-            <OverviewCards storage={storage} metrics={metrics} />
+            <OverviewCards storage={storage} metrics={dashboardMetrics} />
             <div style={{ padding: '14px 18px 10px' }}>
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
                 <h2 style={{ fontSize: 14, fontWeight: 600, margin: 0 }}>Recientes</h2>
@@ -9332,7 +9370,7 @@ export default function DashboardPage() {
 
             <div style={{ padding: '4px 18px 24px', display: 'grid', gridTemplateColumns: '1.5fr 1fr', gap: 12 }}>
               <DueSoonPanel docs={dueSoonDocs} onOpenDoc={openDoc} userLabel={labelForUserId} />
-              <StateBreakdownPanel metrics={metrics} userLabel={labelForUserId} userColor={colorForUserId} />
+              <StateBreakdownPanel metrics={dashboardMetrics} userLabel={labelForUserId} userColor={colorForUserId} />
             </div>
 
           </div>

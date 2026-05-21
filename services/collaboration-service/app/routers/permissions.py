@@ -65,18 +65,21 @@ def _require(value: str, field: str) -> str:
     return cleaned
 
 
-def _assert_can_manage(document_id: str, user_id: str) -> None:
+def _assert_can_manage(document_id: str, user_id: str, x_user_roles: str | None = None) -> None:
     """El otorgante debe poder administrar permisos sobre el documento.
 
     Se delega en document-service /internal/documents/{id}/access con
     permission=manage_permissions. El owner ya pasa porque tiene todos los
-    permisos.
+    permisos; un admin tambien, gracias al bypass por X-User-Roles.
     """
+    headers = {"X-User-Id": user_id}
+    if x_user_roles:
+        headers["X-User-Roles"] = x_user_roles
     try:
         with httpx.Client(timeout=5.0) as client:
             response = client.get(
                 f"{settings.DOCUMENT_SERVICE_URL}/internal/documents/{document_id}/access",
-                headers={"X-User-Id": user_id},
+                headers=headers,
                 params={"permission": "manage_permissions"},
             )
     except httpx.HTTPError as exc:
@@ -142,6 +145,7 @@ def grant_permission(
     document_id: str,
     body: GrantPermissionRequest,
     x_user_id: str | None = Header(default=None, alias="X-User-Id"),
+    x_user_roles: str | None = Header(default=None, alias="X-User-Roles"),
     db: Session = Depends(get_db),
 ):
     if not x_user_id:
@@ -157,7 +161,7 @@ def grant_permission(
             detail=f"Permiso invalido: {permission}",
         )
 
-    _assert_can_manage(document_id, x_user_id)
+    _assert_can_manage(document_id, x_user_id, x_user_roles=x_user_roles)
 
     duplicate = (
         db.query(DocumentPermissionGrant)
@@ -200,6 +204,7 @@ def revoke_permission(
     document_id: str,
     grant_id: str,
     x_user_id: str | None = Header(default=None, alias="X-User-Id"),
+    x_user_roles: str | None = Header(default=None, alias="X-User-Roles"),
     db: Session = Depends(get_db),
 ):
     if not x_user_id:
@@ -207,7 +212,7 @@ def revoke_permission(
 
     document_id = _require(document_id, "Documento")
     grant_id = _require(grant_id, "Grant")
-    _assert_can_manage(document_id, x_user_id)
+    _assert_can_manage(document_id, x_user_id, x_user_roles=x_user_roles)
 
     grant = (
         db.query(DocumentPermissionGrant)
