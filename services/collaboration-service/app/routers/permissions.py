@@ -281,3 +281,42 @@ def list_permissions_for_user(
         .all()
     )
     return {"permissions": sorted({code for (code,) in rows})}
+
+
+@internal_router.get("/{document_id}/permissions/history")
+def list_permission_history(
+    document_id: str,
+    db: Session = Depends(get_db),
+):
+    """US-025: eventos de otorgamiento y revocacion para el historial del documento.
+
+    Consumido por document-service al armar el detalle. Devuelve dos tipos de
+    evento por cada grant cuando aplica: 'permission_granted' (granted_at) y
+    'permission_revoked' (revoked_at).
+    """
+    document_id = _require(document_id, "Documento")
+    grants = (
+        db.query(DocumentPermissionGrant)
+        .filter(DocumentPermissionGrant.document_id == document_id)
+        .all()
+    )
+    events: list[dict] = []
+    for grant in grants:
+        events.append({
+            "id": grant.id,
+            "actor_user_id": grant.granted_by_user_id,
+            "action": "permission_granted",
+            "body": grant.grantee_user_id,
+            "note": grant.permission_code,
+            "created_at": grant.granted_at.isoformat(),
+        })
+        if grant.revoked_at is not None:
+            events.append({
+                "id": f"{grant.id}-revoked",
+                "actor_user_id": grant.granted_by_user_id,
+                "action": "permission_revoked",
+                "body": grant.grantee_user_id,
+                "note": grant.permission_code,
+                "created_at": grant.revoked_at.isoformat(),
+            })
+    return {"events": events}
