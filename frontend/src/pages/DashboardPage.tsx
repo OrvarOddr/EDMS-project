@@ -2346,6 +2346,12 @@ function ListView({
   emptyTitle?: string
   emptySubtitle?: string
 }) {
+  const directory = useContext(UsersDirectoryContext)
+  const authorFirstName = (userId: string): string => {
+    const mock = findUserById(userId)
+    const label = mock?.name ?? directory?.resolveLabel(userId) ?? ''
+    return label.split(' ')[0] ?? ''
+  }
   return (
     <div style={{ flex: 1, overflow: 'auto', padding: '0 8px', position: 'relative', zIndex: 0 }}>
       <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
@@ -2478,7 +2484,7 @@ function ListView({
                 <td style={{ padding: '8px 12px', borderBottom: '1px solid var(--border)', color: 'var(--fg-muted)' }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 7 }}>
                     <OwnerAvatar userId={doc.owner} size={18} />
-                    <span>{findUserById(doc.owner)?.name.split(' ')[0]}</span>
+                    <span>{authorFirstName(doc.owner)}</span>
                   </div>
                 </td>
                 <td style={{ padding: '8px 12px', borderBottom: '1px solid var(--border)' }}>
