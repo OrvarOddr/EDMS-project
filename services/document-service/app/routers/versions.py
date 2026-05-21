@@ -80,6 +80,17 @@ def _require_user(x_user_id: str | None) -> str:
     return x_user_id
 
 
+def _is_admin(x_user_roles: str | None) -> bool:
+    """Detecta admin desde el header X-User-Roles seteado por api-gateway.
+
+    Modo admin: bypass de los chequeos de visibilidad y permisos; un admin
+    puede operar sobre cualquier documento del workspace.
+    """
+    if not x_user_roles:
+        return False
+    return "admin" in {role.strip() for role in x_user_roles.split(",") if role.strip()}
+
+
 def _can_upload_version(document: Document, user_id: str) -> bool:
     # Permisos documentales finos vendran en US-005/US-006; por ahora solo dueno/creador.
     return user_id in {document.owner_user_id, document.created_by_user_id}
@@ -92,7 +103,9 @@ def _workflow_assigned_user_ids(workflow: dict | None) -> list[str]:
     return [str(user_id) for user_id in assigned] if isinstance(assigned, list) else []
 
 
-def _can_view_document(document: Document, user_id: str, workflow: dict | None = None) -> bool:
+def _can_view_document(document: Document, user_id: str, workflow: dict | None = None, is_admin: bool = False) -> bool:
+    if is_admin:
+        return True
     if _can_upload_version(document, user_id):
         return True
     if workflow and workflow.get("assignee_user_id") == user_id:
@@ -143,14 +156,20 @@ def _has_document_permission(
     permission: str,
     workflow: dict | None = None,
     grants: set[str] | None = None,
+    is_admin: bool = False,
 ) -> bool:
     if permission not in _SUPPORTED_PERMISSIONS:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Permiso documental no soportado")
 
+    # Bypass admin: puede operar sobre cualquier documento del workspace.
+    # En documentos archivados solo permitimos lectura (igual que para el resto).
+    if is_admin:
+        if document.archived_at is not None and permission not in {"view", "download", "comment"}:
+            return False
+        return True
+
     # US-005: permisos explicitos otorgados via collaboration-service.
     if grants and permission in grants:
-        # Para permisos sobre el contenido, un documento archivado sigue siendo
-        # solo de lectura, asi que ignoramos grants de escritura.
         if document.archived_at is not None and permission not in {"view", "download", "comment"}:
             return False
         return True
@@ -174,10 +193,16 @@ def _has_document_permission(
     return False
 
 
-def _document_for_actor(db: Session, document_id: str, user_id: str, permission: str = "view") -> Document:
+def _document_for_actor(db: Session, document_id: str, user_id: str, permission: str = "view", x_user_roles: str | None = None) -> Document:
     document = db.query(Document).filter(Document.id == document_id).first()
     if not document:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Documento no encontrado")
+    is_admin = _is_admin(x_user_roles)
+    if is_admin:
+        # El admin pasa todo (excepto escritura sobre archivado, ya manejado en _has_document_permission).
+        if _has_document_permission(document, user_id, permission, None, None, is_admin=True):
+            return document
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="No puedes operar sobre este documento")
     workflow = None
     if permission in {"view", "download", "comment"}:
         workflow = _fetch_batch_workflow_summaries([document.id]).get(document.id, {})
@@ -192,8 +217,8 @@ def _document_for_actor(db: Session, document_id: str, user_id: str, permission:
     return document
 
 
-def _document_exists_for_actor(db: Session, document_id: str, user_id: str, permission: str = "view") -> Document:
-    return _document_for_actor(db, document_id, user_id, permission=permission)
+def _document_exists_for_actor(db: Session, document_id: str, user_id: str, permission: str = "view", x_user_roles: str | None = None) -> Document:
+    return _document_for_actor(db, document_id, user_id, permission=permission, x_user_roles=x_user_roles)
 
 
 def _clean_required(value: str, field_name: str) -> str:
@@ -548,11 +573,12 @@ def _filter_visible_documents(
     state_filter: str | None = None,
     assignee_filter: str | None = None,
     assigned_filter: str | None = None,
+    is_admin: bool = False,
 ) -> list[Document]:
     visible_documents: list[Document] = []
     for document in documents:
         workflow = workflow_map.get(document.id, {})
-        if not _can_view_document(document, actor_user_id, workflow):
+        if not _can_view_document(document, actor_user_id, workflow, is_admin=is_admin):
             continue
         if not _matches_workflow_filters(workflow, state_filter, assignee_filter, assigned_filter):
             continue
@@ -571,9 +597,11 @@ def list_documents(
     due_within_days: int | None = Query(default=None, ge=1, le=365),
     due_soon: bool = Query(default=False),
     x_user_id: str | None = Header(default=None, alias="X-User-Id"),
+    x_user_roles: str | None = Header(default=None, alias="X-User-Roles"),
     db: Session = Depends(get_db),
 ):
     actor_user_id = _require_user(x_user_id)
+    is_admin = _is_admin(x_user_roles)
     type_filter = _clean_optional(document_type_id)
     state_filter = _clean_optional(state_code)
     assignee_filter = _clean_optional(assignee_user_id)
@@ -623,6 +651,7 @@ def list_documents(
         state_filter=state_filter,
         assignee_filter=assignee_filter,
         assigned_filter=assigned_filter,
+        is_admin=is_admin,
     )
     ids = [d.id for d in documents]
 
@@ -640,18 +669,16 @@ def list_documents(
 @router.get("/trash", response_model=list[DocumentResponse])
 def list_trashed_documents(
     x_user_id: str | None = Header(default=None, alias="X-User-Id"),
+    x_user_roles: str | None = Header(default=None, alias="X-User-Roles"),
     db: Session = Depends(get_db),
 ):
     actor_user_id = _require_user(x_user_id)
-    documents = (
-        db.query(Document)
-        .filter(
-            Document.archived_at.is_not(None),
+    base_query = db.query(Document).filter(Document.archived_at.is_not(None))
+    if not _is_admin(x_user_roles):
+        base_query = base_query.filter(
             (Document.owner_user_id == actor_user_id) | (Document.created_by_user_id == actor_user_id),
         )
-        .order_by(Document.archived_at.desc())
-        .all()
-    )
+    documents = base_query.order_by(Document.archived_at.desc()).all()
     ids = [d.id for d in documents]
     mime_map = _current_mime_map(db, ids)
     state_map = _fetch_batch_workflow_states(ids)
@@ -688,27 +715,29 @@ def _aggregate_from_summaries(document_ids: list[str]) -> dict:
 
 @router.get("/metrics")
 def get_document_metrics(
+    scope: str | None = Query(default=None, max_length=10),
     x_user_id: str | None = Header(default=None, alias="X-User-Id"),
+    x_user_roles: str | None = Header(default=None, alias="X-User-Roles"),
     db: Session = Depends(get_db),
 ):
-    """US-027: metricas del dashboard, acotadas al alcance del usuario.
+    """US-027: metricas del dashboard.
 
-    Cuenta solo los documentos en los que el usuario esta involucrado
-    (owner, creador, encargado de workflow o asignado activo) y que no
-    estan archivados. Asi los counts del dashboard coinciden con lo que
-    se ve en Pipeline / Recientes y un documento de otro equipo no infla
-    los KPIs.
+    Por defecto se acotan al alcance del usuario (owner, creador, encargado
+    o asignado). Si el caller es admin y pasa ?scope=all, se devuelven las
+    metricas globales del workspace (todos los documentos activos). Para
+    cualquier otro caller, scope=all → 403.
     """
     actor_user_id = _require_user(x_user_id)
+    is_admin = _is_admin(x_user_roles)
+    want_global = (scope or "").strip().lower() == "all"
+    if want_global and not is_admin:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Solo administradores pueden consultar metricas globales")
 
     now = datetime.now(timezone.utc)
     today_start = datetime(now.year, now.month, now.day, tzinfo=timezone.utc)
     tomorrow_start = today_start + timedelta(days=1)
     week_end = today_start + timedelta(days=7)
 
-    # Scope: documentos donde el usuario esta involucrado. Asi las metricas
-    # del dashboard coinciden con lo que se ve en Pipeline / Recientes, y un
-    # documento de otro equipo no infla los KPIs.
     active_rows = (
         db.query(Document.id, Document.owner_user_id, Document.created_by_user_id, Document.due_at)
         .filter(Document.archived_at.is_(None))
@@ -717,16 +746,20 @@ def get_document_metrics(
     active_ids_all = [row.id for row in active_rows]
     summaries_all = _fetch_batch_workflow_summaries(active_ids_all)
 
-    user_doc_ids: set[str] = set()
-    for row in active_rows:
-        if row.owner_user_id == actor_user_id or row.created_by_user_id == actor_user_id:
-            user_doc_ids.add(row.id)
-    for doc_id, summary in summaries_all.items():
-        summary = summary or {}
-        if summary.get("assignee_user_id") == actor_user_id:
-            user_doc_ids.add(doc_id)
-        elif actor_user_id in (summary.get("assigned_user_ids") or []):
-            user_doc_ids.add(doc_id)
+    user_doc_ids: set[str]
+    if want_global:
+        user_doc_ids = set(active_ids_all)
+    else:
+        user_doc_ids = set()
+        for row in active_rows:
+            if row.owner_user_id == actor_user_id or row.created_by_user_id == actor_user_id:
+                user_doc_ids.add(row.id)
+        for doc_id, summary in summaries_all.items():
+            summary = summary or {}
+            if summary.get("assignee_user_id") == actor_user_id:
+                user_doc_ids.add(doc_id)
+            elif actor_user_id in (summary.get("assigned_user_ids") or []):
+                user_doc_ids.add(doc_id)
 
     total = len(user_doc_ids)
 
@@ -778,10 +811,11 @@ def get_document_metrics(
 def get_document_detail(
     document_id: str,
     x_user_id: str | None = Header(default=None, alias="X-User-Id"),
+    x_user_roles: str | None = Header(default=None, alias="X-User-Roles"),
     db: Session = Depends(get_db),
 ):
     actor_user_id = _require_user(x_user_id)
-    document = _document_for_actor(db, document_id.strip(), actor_user_id)
+    document = _document_for_actor(db, document_id.strip(), actor_user_id, x_user_roles=x_user_roles)
     workflow_raw = _fetch_workflow_detail(document.id, actor_user_id) or {}
     workflow = DocumentDetailWorkflowResponse(
         state_code=workflow_raw.get("state_code"),
@@ -912,10 +946,11 @@ def update_document_metadata(
     document_id: str,
     body: UpdateDocumentMetadataRequest,
     x_user_id: str | None = Header(default=None, alias="X-User-Id"),
+    x_user_roles: str | None = Header(default=None, alias="X-User-Roles"),
     db: Session = Depends(get_db),
 ):
     actor_user_id = _require_user(x_user_id)
-    document = _document_for_actor(db, document_id.strip(), actor_user_id, permission="edit_metadata")
+    document = _document_for_actor(db, document_id.strip(), actor_user_id, permission="edit_metadata", x_user_roles=x_user_roles)
     if document.archived_at is not None:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="No puedes editar un documento en papelera")
 
@@ -973,10 +1008,11 @@ def update_document_metadata(
 def move_document_to_trash(
     document_id: str,
     x_user_id: str | None = Header(default=None, alias="X-User-Id"),
+    x_user_roles: str | None = Header(default=None, alias="X-User-Roles"),
     db: Session = Depends(get_db),
 ):
     actor_user_id = _require_user(x_user_id)
-    document = _document_for_actor(db, document_id.strip(), actor_user_id, permission="move_to_trash")
+    document = _document_for_actor(db, document_id.strip(), actor_user_id, permission="move_to_trash", x_user_roles=x_user_roles)
     if document.archived_at is None:
         document.archived_at = datetime.now(timezone.utc)
         db.commit()
@@ -988,10 +1024,11 @@ def move_document_to_trash(
 def restore_document_from_trash(
     document_id: str,
     x_user_id: str | None = Header(default=None, alias="X-User-Id"),
+    x_user_roles: str | None = Header(default=None, alias="X-User-Roles"),
     db: Session = Depends(get_db),
 ):
     actor_user_id = _require_user(x_user_id)
-    document = _document_for_actor(db, document_id.strip(), actor_user_id, permission="restore")
+    document = _document_for_actor(db, document_id.strip(), actor_user_id, permission="restore", x_user_roles=x_user_roles)
     if document.archived_at is not None:
         document.archived_at = None
         db.commit()
@@ -1003,10 +1040,11 @@ def restore_document_from_trash(
 def delete_trashed_document(
     document_id: str,
     x_user_id: str | None = Header(default=None, alias="X-User-Id"),
+    x_user_roles: str | None = Header(default=None, alias="X-User-Roles"),
     db: Session = Depends(get_db),
 ):
     actor_user_id = _require_user(x_user_id)
-    document = _document_for_actor(db, document_id.strip(), actor_user_id, permission="delete")
+    document = _document_for_actor(db, document_id.strip(), actor_user_id, permission="delete", x_user_roles=x_user_roles)
     if document.archived_at is None:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Envia el documento a papelera antes de eliminarlo")
 
@@ -1021,6 +1059,7 @@ def register_document_version(
     document_id: str,
     body: RegisterDocumentVersionRequest,
     x_user_id: str | None = Header(default=None, alias="X-User-Id"),
+    x_user_roles: str | None = Header(default=None, alias="X-User-Roles"),
     db: Session = Depends(get_db),
 ):
     actor_user_id = _require_user(x_user_id)
@@ -1033,7 +1072,7 @@ def register_document_version(
     document = db.query(Document).filter(Document.id == document_id).first()
     if not document:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Documento no encontrado")
-    if not _can_upload_version(document, actor_user_id):
+    if not _can_upload_version(document, actor_user_id) and not _is_admin(x_user_roles):
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="No puedes subir versiones de este documento")
 
     current_versions = db.query(DocumentVersion).filter(
@@ -1143,6 +1182,7 @@ def check_document_access(
     permission: str = "view",
     version_id: str | None = None,
     x_user_id: str | None = Header(default=None, alias="X-User-Id"),
+    x_user_roles: str | None = Header(default=None, alias="X-User-Roles"),
     db: Session = Depends(get_db),
 ):
     actor_user_id = _require_user(x_user_id)
@@ -1152,6 +1192,7 @@ def check_document_access(
         document_id.strip(),
         actor_user_id,
         permission=permission_code,
+        x_user_roles=x_user_roles,
     )
     if version_id:
         version = (
@@ -1171,10 +1212,11 @@ def check_document_access(
 def list_document_versions(
     document_id: str,
     x_user_id: str | None = Header(default=None, alias="X-User-Id"),
+    x_user_roles: str | None = Header(default=None, alias="X-User-Roles"),
     db: Session = Depends(get_db),
 ):
     actor_user_id = _require_user(x_user_id)
-    _document_for_actor(db, document_id.strip(), actor_user_id)
+    _document_for_actor(db, document_id.strip(), actor_user_id, x_user_roles=x_user_roles)
     versions = (
         db.query(DocumentVersion)
         .filter(DocumentVersion.document_id == document_id.strip())

@@ -109,12 +109,21 @@ def _assert_document_access(document_id: str, user_id: str) -> None:
         )
 
 
-def _assert_document_permission(document_id: str, user_id: str, permission: str) -> None:
+def _is_admin(x_user_roles: str | None) -> bool:
+    if not x_user_roles:
+        return False
+    return "admin" in {role.strip() for role in x_user_roles.split(",") if role.strip()}
+
+
+def _assert_document_permission(document_id: str, user_id: str, permission: str, x_user_roles: str | None = None) -> None:
     try:
         with httpx.Client(timeout=5.0) as client:
+            headers = {"X-User-Id": user_id}
+            if x_user_roles:
+                headers["X-User-Roles"] = x_user_roles
             response = client.get(
                 f"{settings.DOCUMENT_SERVICE_URL}/internal/documents/{document_id}/access",
-                headers={"X-User-Id": user_id},
+                headers=headers,
                 params={"permission": permission},
             )
     except httpx.HTTPError as exc:
@@ -183,8 +192,12 @@ def _notify_role_assignment(
         pass
 
 
-def _assert_actor_is_owner(db: Session, document_id: str, user_id: str) -> None:
-    """Solo el encargado activo puede gestionar otras asignaciones del documento."""
+def _assert_actor_is_owner(db: Session, document_id: str, user_id: str, x_user_roles: str | None = None) -> None:
+    """Solo el encargado activo puede gestionar otras asignaciones del documento.
+
+    Admin bypass: si el caller es admin, puede gestionar asignaciones de
+    cualquier documento del workspace.
+    """
     owner = (
         db.query(DocumentAssignment)
         .filter(
@@ -196,6 +209,8 @@ def _assert_actor_is_owner(db: Session, document_id: str, user_id: str) -> None:
     )
     if not owner:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Documento sin workflow")
+    if _is_admin(x_user_roles):
+        return
     if owner.user_id != user_id:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
@@ -520,6 +535,7 @@ def assign_document_assignee(
     document_id: str,
     body: AssignDocumentAssigneeRequest,
     x_user_id: str | None = Header(default=None, alias="X-User-Id"),
+    x_user_roles: str | None = Header(default=None, alias="X-User-Roles"),
     db: Session = Depends(get_db),
 ):
     if not x_user_id:
@@ -527,7 +543,7 @@ def assign_document_assignee(
 
     document_id = _require_value(document_id, "Documento")
     new_assignee_id = _require_value(body.user_id, "Encargado")
-    _assert_document_permission(document_id, x_user_id, "assign_assignee")
+    _assert_document_permission(document_id, x_user_id, "assign_assignee", x_user_roles=x_user_roles)
 
     active_owner_assignments = (
         db.query(DocumentAssignment)
@@ -583,6 +599,7 @@ def change_document_state(
     document_id: str,
     body: ChangeDocumentStateRequest,
     x_user_id: str | None = Header(default=None, alias="X-User-Id"),
+    x_user_roles: str | None = Header(default=None, alias="X-User-Roles"),
     db: Session = Depends(get_db),
 ):
     if not x_user_id:
@@ -609,17 +626,18 @@ def change_document_state(
             detail=f"Transición no permitida: {current_state.state_code} → {new_state}",
         )
 
-    has_assignment = (
-        db.query(DocumentAssignment)
-        .filter(
-            DocumentAssignment.document_id == document_id,
-            DocumentAssignment.user_id == x_user_id,
-            DocumentAssignment.is_active.is_(True),
+    if not _is_admin(x_user_roles):
+        has_assignment = (
+            db.query(DocumentAssignment)
+            .filter(
+                DocumentAssignment.document_id == document_id,
+                DocumentAssignment.user_id == x_user_id,
+                DocumentAssignment.is_active.is_(True),
+            )
+            .first()
         )
-        .first()
-    )
-    if not has_assignment:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="No tienes asignación activa en este documento")
+        if not has_assignment:
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="No tienes asignación activa en este documento")
 
     comment = body.comment.strip() if body.comment and body.comment.strip() else None
     if new_state in STATES_REQUIRING_COMMENT and not comment:
@@ -678,6 +696,7 @@ def add_document_assignment(
     document_id: str,
     body: AddAssignmentRequest,
     x_user_id: str | None = Header(default=None, alias="X-User-Id"),
+    x_user_roles: str | None = Header(default=None, alias="X-User-Roles"),
     db: Session = Depends(get_db),
 ):
     """Agrega una asignacion no-owner (revisor/aprobador/lector) al documento."""
@@ -699,7 +718,7 @@ def add_document_assignment(
             detail=f"Rol invalido: {role_code}",
         )
 
-    _assert_actor_is_owner(db, document_id, x_user_id)
+    _assert_actor_is_owner(db, document_id, x_user_id, x_user_roles)
 
     duplicate = (
         db.query(DocumentAssignment)
@@ -747,6 +766,7 @@ def remove_document_assignment(
     document_id: str,
     assignment_id: str,
     x_user_id: str | None = Header(default=None, alias="X-User-Id"),
+    x_user_roles: str | None = Header(default=None, alias="X-User-Roles"),
     db: Session = Depends(get_db),
 ):
     """Revoca una asignacion no-owner del documento (soft-delete)."""
@@ -756,7 +776,7 @@ def remove_document_assignment(
     document_id = _require_value(document_id, "Documento")
     assignment_id = _require_value(assignment_id, "Asignacion")
 
-    _assert_actor_is_owner(db, document_id, x_user_id)
+    _assert_actor_is_owner(db, document_id, x_user_id, x_user_roles)
 
     assignment = (
         db.query(DocumentAssignment)
@@ -790,6 +810,7 @@ def update_document_assignment_role(
     assignment_id: str,
     body: UpdateAssignmentRoleRequest,
     x_user_id: str | None = Header(default=None, alias="X-User-Id"),
+    x_user_roles: str | None = Header(default=None, alias="X-User-Roles"),
     db: Session = Depends(get_db),
 ):
     """Cambia el rol de una asignacion no-owner.
@@ -815,7 +836,7 @@ def update_document_assignment_role(
             detail=f"Rol invalido: {new_role}",
         )
 
-    _assert_actor_is_owner(db, document_id, x_user_id)
+    _assert_actor_is_owner(db, document_id, x_user_id, x_user_roles)
 
     assignment = (
         db.query(DocumentAssignment)
