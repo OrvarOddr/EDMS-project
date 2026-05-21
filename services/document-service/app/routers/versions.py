@@ -665,22 +665,25 @@ def list_trashed_documents(
     ]
 
 
-def _fetch_workflow_aggregates() -> dict:
-    """US-027: trae los agregados por estado y encargado desde workflow-service.
-    Best-effort: si el servicio no responde, retornamos diccionarios vacios.
+def _aggregate_from_summaries(document_ids: list[str]) -> dict:
+    """US-027: agregados por estado y encargado para una lista de doc IDs.
+
+    Usa batch-summaries del workflow-service, asi solo se cuentan los
+    documentos que realmente existen y estan activos en document-service.
     """
-    try:
-        with httpx.Client(timeout=5.0) as client:
-            response = client.get(f"{settings.WORKFLOW_SERVICE_URL}/internal/workflow/documents/metrics/aggregates")
-        if response.status_code >= 400:
-            return {"by_state": {}, "by_owner": {}}
-        data = response.json()
-        return {
-            "by_state": dict(data.get("by_state") or {}),
-            "by_owner": dict(data.get("by_owner") or {}),
-        }
-    except httpx.HTTPError:
+    if not document_ids:
         return {"by_state": {}, "by_owner": {}}
+    summaries = _fetch_batch_workflow_summaries(document_ids)
+    by_state: dict[str, int] = {}
+    by_owner: dict[str, int] = {}
+    for summary in summaries.values():
+        state = (summary or {}).get("state_code")
+        if state:
+            by_state[state] = by_state.get(state, 0) + 1
+        assignee = (summary or {}).get("assignee_user_id")
+        if assignee:
+            by_owner[assignee] = by_owner.get(assignee, 0) + 1
+    return {"by_state": by_state, "by_owner": by_owner}
 
 
 @router.get("/metrics")
@@ -702,11 +705,11 @@ def get_document_metrics(
     tomorrow_start = today_start + timedelta(days=1)
     week_end = today_start + timedelta(days=7)
 
-    total = (
-        db.query(Document)
-        .filter(Document.archived_at.is_(None))
-        .count()
-    )
+    active_ids = [
+        row.id
+        for row in db.query(Document.id).filter(Document.archived_at.is_(None)).all()
+    ]
+    total = len(active_ids)
 
     vencen_hoy = (
         db.query(Document)
@@ -738,7 +741,7 @@ def get_document_metrics(
         .count()
     )
 
-    aggregates = _fetch_workflow_aggregates()
+    aggregates = _aggregate_from_summaries(active_ids)
     by_state = aggregates["by_state"]
     by_owner = aggregates["by_owner"]
 
