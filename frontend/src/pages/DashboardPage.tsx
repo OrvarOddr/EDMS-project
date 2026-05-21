@@ -19,6 +19,7 @@ import {
   createComment,
   createDocument,
   getDocumentDetail,
+  getDocumentMetrics,
   listDocuments,
   listTrashedDocuments,
   moveDocumentToTrash,
@@ -29,6 +30,7 @@ import {
   type DocumentDetailResponse,
   type DocumentDetailTimelineItem,
   type DocumentItemResponse,
+  type DocumentMetricsResponse,
   type ListDocumentsParams,
 } from '../api/documents'
 import {
@@ -2707,12 +2709,45 @@ function GridView({
   )
 }
 
-function OverviewCards({ storage }: { storage: { used: number; total: number } }) {
+function OverviewCards({ storage, metrics }: { storage: { used: number; total: number }; metrics: DocumentMetricsResponse | null }) {
+  const total = metrics?.total ?? 0
+  const pendientesFirma = metrics?.pendientes_firma ?? 0
+  const vencenHoy = metrics?.vencen_hoy ?? 0
+  const vencidos = metrics?.vencidos ?? 0
+  const pendientesRevision = metrics?.pendientes_revision ?? 0
   const cards = [
-    { label: 'Documentos totales', value: dashboardData.stats.total.toLocaleString('es-ES'), delta: `+${dashboardData.stats.deltaWeek} esta semana`, deltaTone: 'var(--ok)', accent: 'var(--accent)', icon: <Icon.File size={15} /> },
-    { label: 'Pendientes de firma', value: dashboardData.stats.pendientes, delta: '3 vencen hoy', deltaTone: 'var(--warn)', accent: 'var(--warn)', icon: <Icon.Signature size={15} /> },
-    { label: 'Compartidos externos', value: dashboardData.stats.compartidos, delta: '12 con acceso expirado', deltaTone: 'var(--fg-muted)', accent: 'var(--accent)', icon: <Icon.Users size={15} /> },
-    { label: 'Almacenamiento', value: `${storage.used} GB`, delta: `${storage.total > 0 ? Math.round((storage.used / storage.total) * 100) : 0}% usado`, deltaTone: 'var(--fg-muted)', accent: 'var(--ok)', icon: <Icon.Folder size={15} /> },
+    {
+      label: 'Documentos totales',
+      value: total.toLocaleString('es-ES'),
+      delta: metrics ? `${total} activos` : 'cargando...',
+      deltaTone: 'var(--fg-muted)',
+      accent: 'var(--accent)',
+      icon: <Icon.File size={15} />,
+    },
+    {
+      label: 'Pendientes de firma',
+      value: pendientesFirma,
+      delta: vencenHoy > 0 ? `${vencenHoy} vencen hoy` : 'al dia',
+      deltaTone: vencenHoy > 0 ? 'var(--warn)' : 'var(--ok)',
+      accent: 'var(--warn)',
+      icon: <Icon.Signature size={15} />,
+    },
+    {
+      label: 'En revision',
+      value: pendientesRevision,
+      delta: vencidos > 0 ? `${vencidos} vencidos` : 'sin vencidos',
+      deltaTone: vencidos > 0 ? 'var(--danger)' : 'var(--fg-muted)',
+      accent: 'var(--accent)',
+      icon: <Icon.Eye size={15} />,
+    },
+    {
+      label: 'Almacenamiento',
+      value: `${storage.used} GB`,
+      delta: `${storage.total > 0 ? Math.round((storage.used / storage.total) * 100) : 0}% usado`,
+      deltaTone: 'var(--fg-muted)',
+      accent: 'var(--ok)',
+      icon: <Icon.Folder size={15} />,
+    },
   ]
 
   return (
@@ -2971,6 +3006,81 @@ function ActivityPanel({
               </div>
             )
           })}
+        </div>
+      )}
+    </div>
+  )
+}
+
+function StateBreakdownPanel({
+  metrics,
+  userLabel,
+  userColor,
+}: {
+  metrics: DocumentMetricsResponse | null
+  userLabel: (userId?: string | null) => string
+  userColor: (userId?: string | null) => string
+}) {
+  const byState = metrics?.by_state ?? {}
+  const byOwner = metrics?.by_owner ?? {}
+  const totalState = Object.values(byState).reduce((acc, n) => acc + n, 0)
+  const states = Object.entries(byState)
+    .sort((a, b) => b[1] - a[1])
+  const topOwners = Object.entries(byOwner)
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, 5)
+
+  return (
+    <div style={{ background: 'var(--bg-elev)', border: '1px solid var(--border)', borderRadius: 10, overflow: 'hidden' }}>
+      <div style={{ padding: '12px 14px', borderBottom: '1px solid var(--border)', display: 'flex', alignItems: 'center', gap: 8 }}>
+        <Icon.Branch size={14} style={{ color: 'var(--fg-muted)' }} />
+        <span style={{ fontSize: 13, fontWeight: 600 }}>Documentos por estado</span>
+      </div>
+      {!metrics ? (
+        <div style={{ padding: '24px 14px', fontSize: 12, color: 'var(--fg-muted)', textAlign: 'center' }}>Cargando metricas...</div>
+      ) : states.length === 0 ? (
+        <div style={{ padding: '24px 14px', fontSize: 12, color: 'var(--fg-muted)', textAlign: 'center' }}>Sin documentos</div>
+      ) : (
+        <div style={{ padding: '8px 14px 6px', display: 'flex', flexDirection: 'column', gap: 8 }}>
+          {states.map(([code, count]) => {
+            const pct = totalState > 0 ? Math.round((count / totalState) * 100) : 0
+            return (
+              <div key={code} style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                <span style={{ flex: 1, minWidth: 0 }}>
+                  <StateBadge state={code} />
+                </span>
+                <div style={{ width: 80, height: 6, borderRadius: 3, background: 'var(--bg-elev-2)', position: 'relative', overflow: 'hidden' }}>
+                  <div style={{ position: 'absolute', left: 0, top: 0, bottom: 0, width: `${pct}%`, background: 'var(--accent)', borderRadius: 3 }} />
+                </div>
+                <span style={{ fontSize: 12, color: 'var(--fg)', minWidth: 24, textAlign: 'right' }}>{count}</span>
+              </div>
+            )
+          })}
+        </div>
+      )}
+      {topOwners.length > 0 && (
+        <div style={{ padding: '8px 14px 14px', borderTop: '1px solid var(--border)' }}>
+          <div style={{ fontSize: 11, color: 'var(--fg-dim)', letterSpacing: '0.06em', textTransform: 'uppercase', fontWeight: 600, marginBottom: 6 }}>
+            Por encargado
+          </div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
+            {topOwners.map(([uid, count]) => (
+              <div key={uid} style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12.5 }}>
+                <span style={{
+                  width: 20, height: 20, borderRadius: 10,
+                  background: userColor(uid), color: '#0e0f12',
+                  fontSize: 10, fontWeight: 600,
+                  display: 'inline-flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0,
+                }}>
+                  {initialsFromLabel(userLabel(uid))}
+                </span>
+                <span style={{ color: 'var(--fg)', flex: 1, minWidth: 0, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                  {userLabel(uid)}
+                </span>
+                <span style={{ color: 'var(--fg-muted)', fontSize: 12 }}>{count}</span>
+              </div>
+            ))}
+          </div>
         </div>
       )}
     </div>
@@ -7853,6 +7963,7 @@ export default function DashboardPage() {
   const [dragging, setDragging] = useState(false)
   const [toast, setToast] = useState<string | null>(null)
   const [storage, setStorage] = useState({ used: 0, total: 0 })
+  const [metrics, setMetrics] = useState<DocumentMetricsResponse | null>(null)
   const [tags, setTags] = useState<ApiTag[]>([])
   const [tagModalOpen, setTagModalOpen] = useState(false)
   const [editingTag, setEditingTag] = useState<ApiTag | null>(null)
@@ -8077,6 +8188,10 @@ export default function DashboardPage() {
         if (!mounted) return
         setStorage(summary)
       })
+      .catch(() => {})
+
+    getDocumentMetrics()
+      .then((data) => { if (mounted) setMetrics(data) })
       .catch(() => {})
 
     listTags()
@@ -9148,7 +9263,7 @@ export default function DashboardPage() {
           </>
         ) : showDashboard ? (
           <div style={{ flex: 1, overflow: 'auto' }}>
-            <OverviewCards storage={storage} />
+            <OverviewCards storage={storage} metrics={metrics} />
             <div style={{ padding: '14px 18px 10px' }}>
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
                 <h2 style={{ fontSize: 14, fontWeight: 600, margin: 0 }}>Recientes</h2>
@@ -9215,8 +9330,9 @@ export default function DashboardPage() {
               <ActivityPanel items={recentActivity} onOpenDoc={openDoc} userLabel={labelForUserId} userColor={colorForUserId} />
             </div>
 
-            <div style={{ padding: '4px 18px 24px' }}>
+            <div style={{ padding: '4px 18px 24px', display: 'grid', gridTemplateColumns: '1.5fr 1fr', gap: 12 }}>
               <DueSoonPanel docs={dueSoonDocs} onOpenDoc={openDoc} userLabel={labelForUserId} />
+              <StateBreakdownPanel metrics={metrics} userLabel={labelForUserId} userColor={colorForUserId} />
             </div>
 
           </div>

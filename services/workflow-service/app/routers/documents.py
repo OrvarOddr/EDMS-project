@@ -882,3 +882,37 @@ def update_document_assignment_role(
         assigned_by_user_id=new_assignment.assigned_by_user_id,
         assigned_at=new_assignment.assigned_at.isoformat(),
     )
+
+
+@router.get("/metrics/aggregates")
+def get_workflow_metrics_aggregates(db: Session = Depends(get_db)):
+    """US-027: agregados por estado actual y por encargado activo.
+
+    Devuelve dos diccionarios:
+    - by_state: { state_code: cantidad_de_documentos } usando DocumentState.is_current.
+    - by_owner: { user_id_encargado: cantidad_de_documentos } usando
+      DocumentAssignment.role_code='encargado' y is_active.
+    """
+    # Agregamos en Python para no agregar imports.
+    state_pairs = (
+        db.query(DocumentState.document_id, DocumentState.state_code)
+        .filter(DocumentState.is_current.is_(True))
+        .all()
+    )
+    by_state: dict[str, int] = {}
+    for _, code in state_pairs:
+        by_state[code] = by_state.get(code, 0) + 1
+
+    owner_pairs = (
+        db.query(DocumentAssignment.user_id, DocumentAssignment.document_id)
+        .filter(
+            DocumentAssignment.role_code == OWNER_ROLE,
+            DocumentAssignment.is_active.is_(True),
+        )
+        .all()
+    )
+    by_owner: dict[str, int] = {}
+    for user_id, _ in owner_pairs:
+        by_owner[user_id] = by_owner.get(user_id, 0) + 1
+
+    return {"by_state": by_state, "by_owner": by_owner}
