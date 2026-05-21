@@ -3917,6 +3917,7 @@ function DetailDrawer({
               ['Tamaño', currentFile?.size_bytes ? formatFileSize(currentFile.size_bytes) : doc.size],
               ['Tipo', currentFile?.mime_type ? fileKindLabel(currentFile.mime_type) : kind.label],
               [doc.pages ? 'Páginas' : 'Filas', doc.pages ?? doc.rows?.toLocaleString('es-ES') ?? '—'],
+              ['Compartido', doc.shared.length > 0 ? <AvatarStack ids={doc.shared} max={5} /> : <span style={{ color: 'var(--fg-dim)' }}>Solo tú</span>],
               ['Etiquetas', doc.tags.length > 0 ? <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>{doc.tags.map((tag) => <TagChip key={tag} id={tag} tags={tags} />)}</div> : <span style={{ color: 'var(--fg-dim)' }}>—</span>],
             ].map(([label, value], index) => (
               <div
