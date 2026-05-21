@@ -163,3 +163,23 @@ export const createComment = (
     version_id: versionId ?? null,
     mentioned_user_ids: mentionedUserIds,
   })
+
+export interface DocumentMetricsResponse {
+  total: number
+  by_state: Record<string, number>
+  by_owner: Record<string, number>
+  pendientes_revision: number
+  pendientes_firma: number
+  borradores: number
+  aprobados: number
+  rechazados: number
+  observados: number
+  vencen_hoy: number
+  vencidos: number
+  proximos_7_dias: number
+}
+
+export async function getDocumentMetrics(): Promise<DocumentMetricsResponse> {
+  const { data } = await client.get<DocumentMetricsResponse>('/documents/metrics')
+  return data
+}

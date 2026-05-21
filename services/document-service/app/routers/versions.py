@@ -665,6 +665,94 @@ def list_trashed_documents(
     ]
 
 
+def _fetch_workflow_aggregates() -> dict:
+    """US-027: trae los agregados por estado y encargado desde workflow-service.
+    Best-effort: si el servicio no responde, retornamos diccionarios vacios.
+    """
+    try:
+        with httpx.Client(timeout=5.0) as client:
+            response = client.get(f"{settings.WORKFLOW_SERVICE_URL}/internal/workflow/documents/metrics/aggregates")
+        if response.status_code >= 400:
+            return {"by_state": {}, "by_owner": {}}
+        data = response.json()
+        return {
+            "by_state": dict(data.get("by_state") or {}),
+            "by_owner": dict(data.get("by_owner") or {}),
+        }
+    except httpx.HTTPError:
+        return {"by_state": {}, "by_owner": {}}
+
+
+@router.get("/metrics")
+def get_document_metrics(
+    x_user_id: str | None = Header(default=None, alias="X-User-Id"),
+    db: Session = Depends(get_db),
+):
+    """US-027: metricas agregadas para el dashboard.
+
+    Cualquier usuario autenticado puede consultarlas (las cantidades son
+    globales del workspace, no filtradas por permisos por documento; eso es
+    intencional para una vista operativa).
+    """
+    actor_user_id = _require_user(x_user_id)
+    _ = actor_user_id  # solo exigimos JWT
+
+    today = datetime.now(timezone.utc).date()
+
+    total = (
+        db.query(Document)
+        .filter(Document.archived_at.is_(None))
+        .count()
+    )
+
+    vencen_hoy = (
+        db.query(Document)
+        .filter(
+            Document.archived_at.is_(None),
+            Document.due_date == today,
+        )
+        .count()
+    )
+    vencidos = (
+        db.query(Document)
+        .filter(
+            Document.archived_at.is_(None),
+            Document.due_date.is_not(None),
+            Document.due_date < today,
+        )
+        .count()
+    )
+    proximos_7 = (
+        db.query(Document)
+        .filter(
+            Document.archived_at.is_(None),
+            Document.due_date.is_not(None),
+            Document.due_date >= today,
+            Document.due_date <= today + timedelta(days=7),
+        )
+        .count()
+    )
+
+    aggregates = _fetch_workflow_aggregates()
+    by_state = aggregates["by_state"]
+    by_owner = aggregates["by_owner"]
+
+    return {
+        "total": total,
+        "by_state": by_state,
+        "by_owner": by_owner,
+        "pendientes_revision": int(by_state.get("en_revision", 0)),
+        "pendientes_firma": int(by_state.get("pendiente_firma", 0)),
+        "borradores": int(by_state.get("borrador", 0)),
+        "aprobados": int(by_state.get("aprobado", 0)),
+        "rechazados": int(by_state.get("rechazado", 0)),
+        "observados": int(by_state.get("observado", 0)),
+        "vencen_hoy": vencen_hoy,
+        "vencidos": vencidos,
+        "proximos_7_dias": proximos_7,
+    }
+
+
 @router.get("/{document_id}", response_model=DocumentDetailResponse)
 def get_document_detail(
     document_id: str,
