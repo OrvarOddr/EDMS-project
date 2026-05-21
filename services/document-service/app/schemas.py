@@ -130,6 +130,7 @@ class DocumentDetailPermissionsResponse(BaseModel):
     can_download_file: bool
     can_comment: bool
     can_assign_assignee: bool
+    can_manage_permissions: bool = False
 
 
 class DocumentDetailResponse(BaseModel):
