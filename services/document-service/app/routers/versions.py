@@ -691,59 +691,72 @@ def get_document_metrics(
     x_user_id: str | None = Header(default=None, alias="X-User-Id"),
     db: Session = Depends(get_db),
 ):
-    """US-027: metricas agregadas para el dashboard.
+    """US-027: metricas del dashboard, acotadas al alcance del usuario.
 
-    Cualquier usuario autenticado puede consultarlas (las cantidades son
-    globales del workspace, no filtradas por permisos por documento; eso es
-    intencional para una vista operativa).
+    Cuenta solo los documentos en los que el usuario esta involucrado
+    (owner, creador, encargado de workflow o asignado activo) y que no
+    estan archivados. Asi los counts del dashboard coinciden con lo que
+    se ve en Pipeline / Recientes y un documento de otro equipo no infla
+    los KPIs.
     """
     actor_user_id = _require_user(x_user_id)
-    _ = actor_user_id  # solo exigimos JWT
 
     now = datetime.now(timezone.utc)
     today_start = datetime(now.year, now.month, now.day, tzinfo=timezone.utc)
     tomorrow_start = today_start + timedelta(days=1)
     week_end = today_start + timedelta(days=7)
 
-    active_ids = [
-        row.id
-        for row in db.query(Document.id).filter(Document.archived_at.is_(None)).all()
-    ]
-    total = len(active_ids)
+    # Scope: documentos donde el usuario esta involucrado. Asi las metricas
+    # del dashboard coinciden con lo que se ve en Pipeline / Recientes, y un
+    # documento de otro equipo no infla los KPIs.
+    active_rows = (
+        db.query(Document.id, Document.owner_user_id, Document.created_by_user_id, Document.due_at)
+        .filter(Document.archived_at.is_(None))
+        .all()
+    )
+    active_ids_all = [row.id for row in active_rows]
+    summaries_all = _fetch_batch_workflow_summaries(active_ids_all)
 
-    vencen_hoy = (
-        db.query(Document)
-        .filter(
-            Document.archived_at.is_(None),
-            Document.due_at.is_not(None),
-            Document.due_at >= today_start,
-            Document.due_at < tomorrow_start,
-        )
-        .count()
+    user_doc_ids: set[str] = set()
+    for row in active_rows:
+        if row.owner_user_id == actor_user_id or row.created_by_user_id == actor_user_id:
+            user_doc_ids.add(row.id)
+    for doc_id, summary in summaries_all.items():
+        summary = summary or {}
+        if summary.get("assignee_user_id") == actor_user_id:
+            user_doc_ids.add(doc_id)
+        elif actor_user_id in (summary.get("assigned_user_ids") or []):
+            user_doc_ids.add(doc_id)
+
+    total = len(user_doc_ids)
+
+    # Vencimientos del usuario (sobre los mismos doc IDs).
+    due_at_by_id = {row.id: row.due_at for row in active_rows if row.id in user_doc_ids}
+    vencen_hoy = sum(
+        1 for due in due_at_by_id.values()
+        if due is not None and today_start <= due < tomorrow_start
     )
-    vencidos = (
-        db.query(Document)
-        .filter(
-            Document.archived_at.is_(None),
-            Document.due_at.is_not(None),
-            Document.due_at < today_start,
-        )
-        .count()
+    vencidos = sum(
+        1 for due in due_at_by_id.values()
+        if due is not None and due < today_start
     )
-    proximos_7 = (
-        db.query(Document)
-        .filter(
-            Document.archived_at.is_(None),
-            Document.due_at.is_not(None),
-            Document.due_at >= today_start,
-            Document.due_at < week_end,
-        )
-        .count()
+    proximos_7 = sum(
+        1 for due in due_at_by_id.values()
+        if due is not None and today_start <= due < week_end
     )
 
-    aggregates = _aggregate_from_summaries(active_ids)
-    by_state = aggregates["by_state"]
-    by_owner = aggregates["by_owner"]
+    by_state: dict[str, int] = {}
+    by_owner: dict[str, int] = {}
+    for doc_id, summary in summaries_all.items():
+        if doc_id not in user_doc_ids:
+            continue
+        summary = summary or {}
+        state = summary.get("state_code")
+        if state:
+            by_state[state] = by_state.get(state, 0) + 1
+        assignee = summary.get("assignee_user_id")
+        if assignee:
+            by_owner[assignee] = by_owner.get(assignee, 0) + 1
 
     return {
         "total": total,
