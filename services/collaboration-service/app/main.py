@@ -2,7 +2,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from sqlalchemy import text
 from app.database import engine, Base
-from app.routers import health, documents, notifications, activity
+from app.routers import health, documents, notifications, activity, permissions
 
 
 @asynccontextmanager
@@ -23,3 +23,5 @@ app.include_router(documents.router)
 app.include_router(notifications.router)
 app.include_router(notifications.internal_router)
 app.include_router(activity.router)
+app.include_router(permissions.router)
+app.include_router(permissions.internal_router)

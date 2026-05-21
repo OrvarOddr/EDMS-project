@@ -100,7 +100,61 @@ def _can_view_document(document: Document, user_id: str, workflow: dict | None =
     return user_id in _workflow_assigned_user_ids(workflow)
 
 
-def _has_document_permission(document: Document, user_id: str, permission: str, workflow: dict | None = None) -> bool:
+_SUPPORTED_PERMISSIONS: frozenset[str] = frozenset({
+    "view",
+    "download",
+    "comment",
+    "edit_metadata",
+    "upload_version",
+    "move_state",
+    "move_to_trash",
+    "restore",
+    "delete",
+    "assign_assignee",
+    "approve",
+    "manage_permissions",
+    "share",
+})
+
+
+def _fetch_user_grants(document_id: str, user_id: str) -> set[str]:
+    """US-005: permisos explicitos otorgados al usuario sobre el documento.
+
+    Best-effort: si collaboration-service no responde, devuelve un set vacio
+    para no romper la operacion (los caminos de owner / workflow siguen
+    funcionando).
+    """
+    try:
+        with httpx.Client(timeout=3.0) as client:
+            response = client.get(
+                f"{settings.COLLABORATION_SERVICE_URL}/internal/collaboration/documents/{document_id}/permissions",
+                params={"user_id": user_id},
+            )
+        if response.status_code >= 400:
+            return set()
+        return set(response.json().get("permissions", []))
+    except httpx.HTTPError:
+        return set()
+
+
+def _has_document_permission(
+    document: Document,
+    user_id: str,
+    permission: str,
+    workflow: dict | None = None,
+    grants: set[str] | None = None,
+) -> bool:
+    if permission not in _SUPPORTED_PERMISSIONS:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Permiso documental no soportado")
+
+    # US-005: permisos explicitos otorgados via collaboration-service.
+    if grants and permission in grants:
+        # Para permisos sobre el contenido, un documento archivado sigue siendo
+        # solo de lectura, asi que ignoramos grants de escritura.
+        if document.archived_at is not None and permission not in {"view", "download", "comment"}:
+            return False
+        return True
+
     if permission in {"view", "download", "comment"}:
         return document.archived_at is None and _can_view_document(document, user_id, workflow)
     if permission in {
@@ -110,11 +164,14 @@ def _has_document_permission(document: Document, user_id: str, permission: str, 
         "move_to_trash",
         "restore",
         "delete",
+        "approve",
+        "manage_permissions",
+        "share",
     }:
         return _can_upload_version(document, user_id)
     if permission == "assign_assignee":
         return document.archived_at is None and _can_upload_version(document, user_id)
-    raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Permiso documental no soportado")
+    return False
 
 
 def _document_for_actor(db: Session, document_id: str, user_id: str, permission: str = "view") -> Document:
@@ -124,8 +181,14 @@ def _document_for_actor(db: Session, document_id: str, user_id: str, permission:
     workflow = None
     if permission in {"view", "download", "comment"}:
         workflow = _fetch_batch_workflow_summaries([document.id]).get(document.id, {})
+    grants: set[str] = set()
+    # Si los checks locales no autorizan, consultamos los grants explicitos
+    # (US-005). Lo hacemos solo cuando hace falta para no pagar el RTT en
+    # cada operacion del owner.
     if not _has_document_permission(document, user_id, permission, workflow):
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="No puedes operar sobre este documento")
+        grants = _fetch_user_grants(document_id, user_id)
+        if not _has_document_permission(document, user_id, permission, workflow, grants):
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="No puedes operar sobre este documento")
     return document
 
 
@@ -651,6 +714,8 @@ def get_document_detail(
     history_items.sort(key=lambda item: item.created_at, reverse=True)
 
     can_operate = document.archived_at is None and _can_upload_version(document, actor_user_id)
+    # US-005: tomamos en cuenta los grants explicitos para los can_* del frontend.
+    grants = _fetch_user_grants(document.id, actor_user_id) if not can_operate else set()
     return DocumentDetailResponse(
         document=_to_document_response(document, workflow_raw),
         workflow=workflow,
@@ -658,12 +723,13 @@ def get_document_detail(
         comments=[DocumentDetailTimelineItemResponse(**item) for item in comments if isinstance(item, dict)],
         history=history_items,
         permissions=DocumentDetailPermissionsResponse(
-            can_edit_metadata=can_operate,
-            can_upload_version=can_operate,
+            can_edit_metadata=can_operate or "edit_metadata" in grants,
+            can_upload_version=can_operate or "upload_version" in grants,
             can_move_to_trash=can_operate,
-            can_download_file=document.archived_at is None,
-            can_comment=document.archived_at is None,
+            can_download_file=document.archived_at is None and (can_operate or "download" in grants or "view" in grants or _can_view_document(document, actor_user_id, workflow_raw if isinstance(workflow_raw, dict) else None)),
+            can_comment=document.archived_at is None and (can_operate or "comment" in grants or _can_view_document(document, actor_user_id, workflow_raw if isinstance(workflow_raw, dict) else None)),
             can_assign_assignee=can_operate,
+            can_manage_permissions=can_operate or "manage_permissions" in grants,
         ),
     )
 

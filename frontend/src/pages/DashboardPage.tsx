@@ -72,6 +72,13 @@ import {
   type NotificationItem,
 } from '../api/notifications'
 import { getRecentActivity, type ActivityItem as RecentActivityItem } from '../api/activity'
+import {
+  grantDocumentPermission,
+  listDocumentPermissions,
+  revokeDocumentPermission,
+  PERMISSION_CODES,
+  type DocumentPermissionGrant,
+} from '../api/permissions'
 
 type ViewMode = 'list' | 'grid'
 type DocKind = 'pdf' | 'doc' | 'sheet' | 'slide' | 'image' | 'sig'
@@ -3188,6 +3195,14 @@ function DetailDrawer({
   const [addAssignRole, setAddAssignRole] = useState('revisor')
   const [assignmentBusy, setAssignmentBusy] = useState<string | null>(null)
   const [assignmentError, setAssignmentError] = useState<string | null>(null)
+  // US-005: permisos explicitos otorgados al documento.
+  const [grants, setGrants] = useState<DocumentPermissionGrant[]>([])
+  const [grantsLoaded, setGrantsLoaded] = useState(false)
+  const [addingGrant, setAddingGrant] = useState(false)
+  const [grantUserDraft, setGrantUserDraft] = useState('')
+  const [grantCodeDraft, setGrantCodeDraft] = useState<string>('view')
+  const [grantBusy, setGrantBusy] = useState<string | null>(null)
+  const [grantError, setGrantError] = useState<string | null>(null)
   const currentFile = detail?.files.find((file) => file.is_current) ?? detail?.files[0] ?? null
   const selectedVersionFile = viewVersionId
     ? (detail?.files.find((file) => file.id === viewVersionId) ?? null)
@@ -3202,6 +3217,23 @@ function DetailDrawer({
     document.addEventListener('keydown', handleEscape)
     return () => document.removeEventListener('keydown', handleEscape)
   }, [doc, onClose])
+
+  // US-005: cargar grants explicitos del documento.
+  useEffect(() => {
+    if (!doc?.id) return
+    let cancelled = false
+    listDocumentPermissions(doc.id)
+      .then((list) => {
+        if (!cancelled) {
+          setGrants(list)
+          setGrantsLoaded(true)
+        }
+      })
+      .catch(() => {
+        if (!cancelled) setGrantsLoaded(true)
+      })
+    return () => { cancelled = true }
+  }, [doc?.id])
 
   useEffect(() => {
     if (!previewFile) {
@@ -3259,6 +3291,7 @@ function DetailDrawer({
   const availableUsersForNewAssignment = assigneeOptions.filter(
     ([id]) => id !== assigneeId,
   )
+  const canManagePermissions = Boolean(permissions?.can_manage_permissions)
 
   async function handleAddAssignment() {
     if (!onAddAssignment || !doc) return
@@ -3292,6 +3325,42 @@ function DetailDrawer({
       setAssignmentError(detail ?? 'No se pudo quitar la asignacion')
     } finally {
       setAssignmentBusy(null)
+    }
+  }
+
+  async function handleGrantPermission() {
+    if (!doc) return
+    if (!grantUserDraft) {
+      setGrantError('Selecciona un usuario')
+      return
+    }
+    setGrantBusy('add')
+    setGrantError(null)
+    try {
+      const grant = await grantDocumentPermission(doc.id, grantUserDraft, grantCodeDraft)
+      setGrants((current) => [grant, ...current])
+      setGrantUserDraft('')
+      setAddingGrant(false)
+    } catch (err) {
+      const detail = (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail
+      setGrantError(detail ?? 'No se pudo otorgar el permiso')
+    } finally {
+      setGrantBusy(null)
+    }
+  }
+
+  async function handleRevokePermission(grantId: string) {
+    if (!doc) return
+    setGrantBusy(`remove-${grantId}`)
+    setGrantError(null)
+    try {
+      await revokeDocumentPermission(doc.id, grantId)
+      setGrants((current) => current.filter((g) => g.id !== grantId))
+    } catch (err) {
+      const detail = (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail
+      setGrantError(detail ?? 'No se pudo revocar el permiso')
+    } finally {
+      setGrantBusy(null)
     }
   }
 
@@ -3892,6 +3961,125 @@ function DetailDrawer({
               <div style={{ color: 'var(--danger)', fontSize: 11.5 }}>{assignmentError}</div>
             )}
           </div>
+
+          {(canManagePermissions || grants.length > 0) && (
+            <div style={{ border: '1px solid var(--border)', borderRadius: 8, background: 'var(--bg-elev-2)', padding: '10px 12px', marginBottom: 14, display: 'flex', flexDirection: 'column', gap: 8 }}>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
+                <div style={{ fontSize: 11, color: 'var(--fg-dim)', letterSpacing: '0.06em', textTransform: 'uppercase', fontWeight: 600, display: 'flex', alignItems: 'center', gap: 6 }}>
+                  <Icon.Lock size={11} /> Permisos
+                </div>
+                {canManagePermissions && !addingGrant && (
+                  <button
+                    type="button"
+                    onClick={() => setAddingGrant(true)}
+                    className="edms-button"
+                    style={{ ...btnStyleGhost, padding: '3px 8px', fontSize: 11 }}
+                  >
+                    <Icon.Plus size={11} /> Otorgar
+                  </button>
+                )}
+              </div>
+
+              {!grantsLoaded ? (
+                <div style={{ color: 'var(--fg-muted)', fontSize: 12 }}>Cargando permisos...</div>
+              ) : grants.length === 0 ? (
+                <div style={{ color: 'var(--fg-muted)', fontSize: 12 }}>Sin permisos otorgados todavia.</div>
+              ) : (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                  {grants.map((grant) => {
+                    const removeBusy = grantBusy === `remove-${grant.id}`
+                    return (
+                      <div key={grant.id} style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12.5, flexWrap: 'wrap' }}>
+                        <OwnerAvatar userId={grant.grantee_user_id} size={20} />
+                        <span style={{ color: 'var(--fg)', flex: 1, minWidth: 0 }}>{userLabel(grant.grantee_user_id)}</span>
+                        <span style={{
+                          fontSize: 11, padding: '1px 8px', borderRadius: 999,
+                          background: 'var(--accent-soft)', color: 'var(--accent)',
+                          border: '1px solid var(--accent)', fontWeight: 500,
+                        }}>
+                          {grant.permission_code}
+                        </span>
+                        {canManagePermissions && (
+                          <button
+                            type="button"
+                            onClick={() => handleRevokePermission(grant.id)}
+                            disabled={removeBusy}
+                            title="Revocar permiso"
+                            className="edms-nav-item"
+                            style={{
+                              width: 22, height: 22, borderRadius: 4,
+                              display: 'flex', alignItems: 'center', justifyContent: 'center',
+                              color: 'var(--fg-muted)', background: 'transparent', border: 'none',
+                              cursor: removeBusy ? 'wait' : 'pointer',
+                            }}
+                          >
+                            <Icon.Close size={12} />
+                          </button>
+                        )}
+                      </div>
+                    )
+                  })}
+                </div>
+              )}
+
+              {canManagePermissions && addingGrant && (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 6, padding: '6px 0 0', borderTop: '1px solid var(--border)' }}>
+                  <div style={{ display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap', paddingTop: 6 }}>
+                    <select
+                      value={grantUserDraft}
+                      onChange={(e) => setGrantUserDraft(e.target.value)}
+                      style={{
+                        flex: 1, minWidth: 140, fontSize: 12, padding: '4px 6px', borderRadius: 4,
+                        background: 'var(--bg-elev)', color: 'var(--fg)',
+                        border: '1px solid var(--border)',
+                      }}
+                    >
+                      <option value="">Selecciona usuario...</option>
+                      {assigneeOptions.map(([id, label]) => (
+                        <option key={id} value={id}>{label}</option>
+                      ))}
+                    </select>
+                    <select
+                      value={grantCodeDraft}
+                      onChange={(e) => setGrantCodeDraft(e.target.value)}
+                      style={{
+                        fontSize: 12, padding: '4px 6px', borderRadius: 4,
+                        background: 'var(--bg-elev)', color: 'var(--fg)',
+                        border: '1px solid var(--border)',
+                      }}
+                    >
+                      {PERMISSION_CODES.map((code) => (
+                        <option key={code} value={code}>{code}</option>
+                      ))}
+                    </select>
+                  </div>
+                  <div style={{ display: 'flex', gap: 6 }}>
+                    <button
+                      type="button"
+                      onClick={handleGrantPermission}
+                      disabled={grantBusy === 'add' || !grantUserDraft}
+                      className="edms-button edms-button-primary"
+                      style={{ ...btnStylePrimary, padding: '5px 10px', fontSize: 12 }}
+                    >
+                      {grantBusy === 'add' ? 'Otorgando...' : 'Otorgar'}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => { setAddingGrant(false); setGrantError(null); setGrantUserDraft('') }}
+                      className="edms-button"
+                      style={{ ...btnStyleGhost, padding: '5px 10px', fontSize: 12 }}
+                    >
+                      Cancelar
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              {grantError && (
+                <div style={{ color: 'var(--danger)', fontSize: 11.5 }}>{grantError}</div>
+              )}
+            </div>
+          )}
 
           <div style={{ display: 'flex', flexDirection: 'column', gap: 0 }}>
             {[
