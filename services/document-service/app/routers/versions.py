@@ -697,7 +697,10 @@ def get_document_metrics(
     actor_user_id = _require_user(x_user_id)
     _ = actor_user_id  # solo exigimos JWT
 
-    today = datetime.now(timezone.utc).date()
+    now = datetime.now(timezone.utc)
+    today_start = datetime(now.year, now.month, now.day, tzinfo=timezone.utc)
+    tomorrow_start = today_start + timedelta(days=1)
+    week_end = today_start + timedelta(days=7)
 
     total = (
         db.query(Document)
@@ -709,7 +712,9 @@ def get_document_metrics(
         db.query(Document)
         .filter(
             Document.archived_at.is_(None),
-            Document.due_date == today,
+            Document.due_at.is_not(None),
+            Document.due_at >= today_start,
+            Document.due_at < tomorrow_start,
         )
         .count()
     )
@@ -717,8 +722,8 @@ def get_document_metrics(
         db.query(Document)
         .filter(
             Document.archived_at.is_(None),
-            Document.due_date.is_not(None),
-            Document.due_date < today,
+            Document.due_at.is_not(None),
+            Document.due_at < today_start,
         )
         .count()
     )
@@ -726,9 +731,9 @@ def get_document_metrics(
         db.query(Document)
         .filter(
             Document.archived_at.is_(None),
-            Document.due_date.is_not(None),
-            Document.due_date >= today,
-            Document.due_date <= today + timedelta(days=7),
+            Document.due_at.is_not(None),
+            Document.due_at >= today_start,
+            Document.due_at < week_end,
         )
         .count()
     )
