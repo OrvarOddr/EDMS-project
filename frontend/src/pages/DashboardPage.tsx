@@ -781,27 +781,6 @@ const Icon = {
   Kanban: (props: Partial<Parameters<typeof Ic>[0]>) => <Ic {...props} d="M3 3h5v18H3zM10 3h5v11h-5zM17 3h5v14h-5z" />,
 } as const
 
-function SectionLabel({ children, action }: { children: ReactNode; action?: ReactNode }) {
-  return (
-    <div
-      style={{
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'space-between',
-        padding: '12px 14px 6px',
-        color: 'var(--fg-dim)',
-        fontSize: 10.5,
-        letterSpacing: '0.08em',
-        textTransform: 'uppercase',
-        fontWeight: 600,
-      }}
-    >
-      <span>{children}</span>
-      {action}
-    </div>
-  )
-}
-
 function KindBadge({ kind, small = false }: { kind: DocKind; small?: boolean }) {
   const item = findKind(kind)
   return (
@@ -1788,106 +1767,11 @@ function NavItem({
   )
 }
 
-function FolderNode({
-  node,
-  depth,
-  selectedFolder,
-  onSelect,
-  expanded,
-  onToggle,
-}: {
-  node: FolderItem
-  depth: number
-  selectedFolder: string
-  onSelect: (id: string) => void
-  expanded: Set<string>
-  onToggle: (id: string) => void
-}) {
-  const open = expanded.has(node.id)
-  const hasKids = Boolean(node.children?.length)
-  const active = selectedFolder === node.id
-
-  return (
-    <div>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 2, margin: '0 6px' }}>
-        {hasKids ? (
-          <button
-            onClick={() => onToggle(node.id)}
-            style={{
-              width: 18,
-              height: 22,
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              marginLeft: depth * 14,
-              color: 'var(--fg-dim)',
-              borderRadius: 4,
-            }}
-          >
-            <Icon.Chev
-              size={11}
-              stroke={2}
-              style={{ transform: open ? 'rotate(90deg)' : 'none', transition: 'transform 0.12s' }}
-            />
-          </button>
-        ) : (
-          <span style={{ width: 18, marginLeft: depth * 14 }} />
-        )}
-        <button
-          onClick={() => onSelect(node.id)}
-          data-active={active || undefined}
-          className="edms-nav-item"
-          style={{
-            flex: 1,
-            display: 'flex',
-            alignItems: 'center',
-            gap: 8,
-            padding: '6px 10px',
-            borderRadius: 6,
-            color: active ? 'var(--fg)' : 'var(--fg-muted)',
-            background: active ? 'var(--bg-active)' : 'transparent',
-            fontSize: 13,
-            textAlign: 'left',
-            fontWeight: active ? 500 : 400,
-          }}
-        >
-          {open && hasKids ? (
-            <Icon.FolderOpen size={14} />
-          ) : node.icon === 'Home' ? (
-            <Icon.Home size={14} />
-          ) : (
-            <Icon.Folder size={14} />
-          )}
-          <span style={{ flex: 1, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{node.name}</span>
-          {node.shared && <Icon.Users size={11} style={{ color: 'var(--fg-dim)' }} />}
-          {node.count != null && (
-            <span style={{ fontSize: 11, color: 'var(--fg-dim)', fontVariantNumeric: 'tabular-nums' }}>{node.count}</span>
-          )}
-        </button>
-      </div>
-      {open &&
-        hasKids &&
-        node.children?.map((child) => (
-          <FolderNode
-            key={child.id}
-            node={child}
-            depth={depth + 1}
-            selectedFolder={selectedFolder}
-            onSelect={onSelect}
-            expanded={expanded}
-            onToggle={onToggle}
-          />
-        ))}
-    </div>
-  )
-}
 
 function Sidebar({
   collapsed,
   selectedView,
   onSelectView,
-  selectedFolder,
-  onSelectFolder,
   selectedTag,
   onSelectTag,
   unassignedCount,
@@ -1907,8 +1791,6 @@ function Sidebar({
   collapsed: boolean
   selectedView: SelectedView
   onSelectView: (view: SelectedView) => void
-  selectedFolder: string
-  onSelectFolder: (folderId: string) => void
   selectedTag: string | null
   onSelectTag: (tagId: string | null) => void
   unassignedCount: number
@@ -1925,14 +1807,6 @@ function Sidebar({
   userCount?: number | null
   isAdmin?: boolean
 }) {
-  const [expanded, setExpanded] = useState(new Set(['root', 'legal', 'finanzas', 'producto']))
-
-  function toggleFolder(id: string) {
-    const next = new Set(expanded)
-    if (next.has(id)) next.delete(id)
-    else next.add(id)
-    setExpanded(next)
-  }
 
   if (collapsed) {
     return (
@@ -2100,42 +1974,6 @@ function Sidebar({
             />
           )}
         </div>
-
-        <SectionLabel
-          action={
-            <button
-              title="Nueva carpeta"
-              style={{
-                color: 'var(--fg-dim)',
-                width: 18,
-                height: 18,
-                borderRadius: 4,
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-              }}
-            >
-              <Icon.Plus size={12} />
-            </button>
-          }
-        >
-          Carpetas
-        </SectionLabel>
-
-        {dashboardData.folders.map((folder) => (
-          <FolderNode
-            key={folder.id}
-            node={folder}
-            depth={0}
-            selectedFolder={selectedFolder}
-            onSelect={(id) => {
-              onSelectFolder(id)
-              onSelectView('carpeta')
-            }}
-            expanded={expanded}
-            onToggle={toggleFolder}
-          />
-        ))}
 
         <div style={{ display: 'flex', alignItems: 'center', padding: '12px 14px 6px', justifyContent: 'space-between' }}>
           <span style={{ color: 'var(--fg-dim)', fontSize: 10.5, letterSpacing: '0.08em', textTransform: 'uppercase', fontWeight: 600 }}>Etiquetas</span>
@@ -9695,8 +9533,6 @@ export default function DashboardPage() {
           if (view !== 'archivos-sin-asignar') setSelectedUnassignedFileId(null)
           if (view !== 'papelera') clearTrashSelection()
         }}
-        selectedFolder={selectedFolder}
-        onSelectFolder={setSelectedFolder}
         selectedTag={selectedTag}
         onSelectTag={setSelectedTag}
         unassignedCount={unassignedFiles.length}
