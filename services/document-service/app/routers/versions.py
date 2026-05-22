@@ -1061,7 +1061,8 @@ def move_document_to_trash(
         document.archived_at = datetime.now(timezone.utc)
         db.commit()
         db.refresh(document)
-    return _to_document_response(document)
+    current_mime_type = _current_mime_map(db, [document.id]).get(document.id)
+    return _to_document_response(document, current_mime_type=current_mime_type)
 
 
 @router.patch("/{document_id}/restore", response_model=DocumentResponse)
@@ -1077,7 +1078,8 @@ def restore_document_from_trash(
         document.archived_at = None
         db.commit()
         db.refresh(document)
-    return _to_document_response(document)
+    current_mime_type = _current_mime_map(db, [document.id]).get(document.id)
+    return _to_document_response(document, current_mime_type=current_mime_type)
 
 
 @router.delete("/{document_id}", response_model=DocumentDeleteResponse)
