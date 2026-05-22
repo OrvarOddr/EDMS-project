@@ -3275,6 +3275,7 @@ function DetailDrawer({
   onRemoveAssignment,
   onUpdateAssignmentRole,
   onCommentPosted,
+  onVersionUploaded,
   fullScreen = false,
   onToggleFull,
 }: {
@@ -3293,6 +3294,7 @@ function DetailDrawer({
   onRemoveAssignment?: (docId: string, assignmentId: string) => Promise<void>
   onUpdateAssignmentRole?: (docId: string, assignmentId: string, roleCode: string) => Promise<void>
   onCommentPosted?: (item: DocumentDetailTimelineItem) => void
+  onVersionUploaded?: (docId: string) => Promise<void>
   fullScreen?: boolean
   onToggleFull?: () => void
 }) {
@@ -3305,6 +3307,9 @@ function DetailDrawer({
   const [commentText, setCommentText] = useState('')
   const [commentSending, setCommentSending] = useState(false)
   const [commentResolveBusy, setCommentResolveBusy] = useState<string | null>(null)
+  const versionFileInputRef = useRef<HTMLInputElement | null>(null)
+  const [versionUploading, setVersionUploading] = useState(false)
+  const [versionUploadError, setVersionUploadError] = useState<string | null>(null)
   // US-022: pueden quedar comentarios resueltos en el detalle local cuando el
   // usuario marca/desmarca, sin refetch completo. Guardamos delta aqui.
   const [commentResolutionOverrides, setCommentResolutionOverrides] = useState<Record<string, { resolved_at: string | null; resolved_by_user_id: string | null }>>({})
@@ -3717,6 +3722,34 @@ function DetailDrawer({
     await handleDownloadVersion(currentFile)
   }
 
+  function handleUploadVersionClick() {
+    setVersionUploadError(null)
+    versionFileInputRef.current?.click()
+  }
+
+  async function handleVersionFileChange(event: React.ChangeEvent<HTMLInputElement>) {
+    const file = event.target.files?.[0]
+    event.target.value = ''
+    if (!file || !doc) return
+    const comment = window.prompt('Comentario para esta versión (opcional)') ?? ''
+    setVersionUploading(true)
+    setVersionUploadError(null)
+    try {
+      await uploadDocumentFile({
+        file,
+        document_id: doc.id,
+        version_comment: comment.trim() ? comment.trim() : undefined,
+      })
+      if (onVersionUploaded) {
+        await onVersionUploaded(doc.id)
+      }
+    } catch (err) {
+      setVersionUploadError(getApiErrorMessage(err, 'No se pudo subir la nueva versión'))
+    } finally {
+      setVersionUploading(false)
+    }
+  }
+
   async function handleSaveAssignee() {
     if (!doc || !onAssignAssignee) return
     const nextAssignee = assigneeDraft.trim()
@@ -3983,10 +4016,38 @@ function DetailDrawer({
             <button className="edms-button" style={btnStyleGhost} disabled={!canDownloadFile || downloadingFileId === currentFile?.file_id} onClick={handleDownloadCurrentFile}>
               <Icon.Download size={13} /> {downloadingFileId === currentFile?.file_id ? 'Descargando' : 'Descargar'}
             </button>
-            <button className="edms-button" style={btnStyleGhost} disabled={!canDownloadFile || (permissions ? !permissions.can_upload_version : false)}>
-              <Icon.Signature size={13} /> Firmar
+            <button
+              className="edms-button"
+              style={btnStyleGhost}
+              disabled={versionUploading || (permissions ? !permissions.can_upload_version : false)}
+              onClick={handleUploadVersionClick}
+              title="Sube un archivo nuevo como versión vigente; el historial anterior se conserva"
+            >
+              <Icon.Upload size={13} /> {versionUploading ? 'Subiendo...' : 'Subir versión'}
             </button>
+            <input
+              ref={versionFileInputRef}
+              type="file"
+              style={{ display: 'none' }}
+              onChange={handleVersionFileChange}
+            />
           </div>
+
+          {versionUploadError && (
+            <div
+              style={{
+                border: '1px solid color-mix(in oklch, var(--danger) 55%, var(--border))',
+                background: 'color-mix(in oklch, var(--danger) 10%, var(--bg-elev-2))',
+                color: 'var(--danger)',
+                borderRadius: 8,
+                padding: '8px 10px',
+                marginBottom: 12,
+                fontSize: 12,
+              }}
+            >
+              {versionUploadError}
+            </div>
+          )}
 
           {(loading || error) && (
             <div
@@ -9128,6 +9189,11 @@ export default function DashboardPage() {
     setToast(`Rol actualizado: ${roleCode}`)
   }
 
+  async function handleVersionUploaded(documentId: string) {
+    await refreshDetailAndCounts(documentId)
+    setToast('Nueva versión registrada')
+  }
+
   async function handleAction(action: string, docId?: string) {
     if (action === 'team') {
       if (!user?.is_superuser) {
@@ -9649,6 +9715,7 @@ export default function DashboardPage() {
         onAddAssignment={handleAddAssignment}
         onRemoveAssignment={handleRemoveAssignment}
         onUpdateAssignmentRole={handleUpdateAssignmentRole}
+        onVersionUploaded={handleVersionUploaded}
         onCommentPosted={(item) => {
           if (!openDocId) return
           setDocumentDetails((current) => {
