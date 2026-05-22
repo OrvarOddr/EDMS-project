@@ -178,3 +178,17 @@ class ExpedientResponse(BaseModel):
 
 class ExpedientDetailResponse(ExpedientResponse):
     documents: list[DocumentResponse] = Field(default_factory=list)
+
+
+class AttachDocumentsToExpedientRequest(BaseModel):
+    document_ids: list[str] = Field(default_factory=list)
+
+
+class AttachDocumentsSkippedItem(BaseModel):
+    document_id: str
+    reason: str
+
+
+class AttachDocumentsToExpedientResponse(BaseModel):
+    attached: list[str] = Field(default_factory=list)
+    skipped: list[AttachDocumentsSkippedItem] = Field(default_factory=list)
