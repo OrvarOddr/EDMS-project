@@ -83,6 +83,13 @@ import {
   PERMISSION_CODES,
   type DocumentPermissionGrant,
 } from '../api/permissions'
+import {
+  createExpedient,
+  getExpedient,
+  listExpedients,
+  type ExpedientDetail,
+  type ExpedientItem,
+} from '../api/expedients'
 
 type ViewMode = 'list' | 'grid'
 type DocKind = 'pdf' | 'doc' | 'sheet' | 'slide' | 'image' | 'sig'
@@ -97,6 +104,7 @@ type SelectedView =
   | 'papelera'
   | 'carpeta'
   | 'admin'
+  | 'expediente'
 
 interface FolderItem {
   id: string
@@ -1889,6 +1897,10 @@ function Sidebar({
   onCreateTag,
   onEditTag,
   onDeleteTag,
+  expedients,
+  selectedExpedientId,
+  onSelectExpedient,
+  onCreateExpedient,
   userCount,
   isAdmin = false,
 }: {
@@ -1906,6 +1918,10 @@ function Sidebar({
   onCreateTag: () => void
   onEditTag: (tag: ApiTag) => void
   onDeleteTag: (tagId: string) => void
+  expedients: ExpedientItem[]
+  selectedExpedientId: string | null
+  onSelectExpedient: (expedientId: string) => void
+  onCreateExpedient: () => void
   userCount?: number | null
   isAdmin?: boolean
 }) {
@@ -2171,6 +2187,50 @@ function Sidebar({
           ))}
           {tags.length === 0 && (
             <div style={{ padding: '6px 10px', fontSize: 12, color: 'var(--fg-dim)' }}>Sin etiquetas</div>
+          )}
+        </div>
+
+        <div style={{ display: 'flex', alignItems: 'center', padding: '12px 14px 6px', justifyContent: 'space-between' }}>
+          <span style={{ color: 'var(--fg-dim)', fontSize: 10.5, letterSpacing: '0.08em', textTransform: 'uppercase', fontWeight: 600 }}>Expedientes</span>
+          <button
+            onClick={onCreateExpedient}
+            style={{ background: 'none', color: 'var(--fg-muted)', fontSize: 16, lineHeight: 1, padding: '0 2px', borderRadius: 4 }}
+            title="Nuevo expediente"
+          >+</button>
+        </div>
+        <div style={{ padding: '0 6px' }}>
+          {expedients.map((exp) => {
+            const active = selectedView === 'expediente' && selectedExpedientId === exp.id
+            return (
+              <button
+                key={exp.id}
+                onClick={() => onSelectExpedient(exp.id)}
+                className="edms-nav-item"
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 9,
+                  width: '100%',
+                  padding: '6px 10px',
+                  borderRadius: 6,
+                  background: active ? 'var(--bg-active)' : 'transparent',
+                  color: active ? 'var(--fg)' : 'var(--fg-muted)',
+                  fontSize: 13,
+                  textAlign: 'left',
+                  marginBottom: 1,
+                }}
+                title={exp.code ? `${exp.name} (${exp.code})` : exp.name}
+              >
+                <Icon.Folder size={13} />
+                <span style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{exp.name}</span>
+                {exp.code && (
+                  <span style={{ fontSize: 10.5, color: 'var(--fg-dim)', fontFamily: "'JetBrains Mono', ui-monospace, monospace" }}>{exp.code}</span>
+                )}
+              </button>
+            )
+          })}
+          {expedients.length === 0 && (
+            <div style={{ padding: '6px 10px', fontSize: 12, color: 'var(--fg-dim)' }}>Sin expedientes</div>
           )}
         </div>
       </div>
@@ -3183,6 +3243,162 @@ function DueSoonPanel({
   )
 }
 
+function ExpedientDetailView({
+  expedient,
+  loading,
+  error,
+  userLabel,
+  onOpenDoc,
+}: {
+  expedient: ExpedientDetail | null
+  loading: boolean
+  error: string | null
+  userLabel: (userId?: string | null) => string
+  onOpenDoc: (docId: string) => void
+}) {
+  if (loading) {
+    return (
+      <div style={{ padding: '24px 22px', color: 'var(--fg-muted)', fontSize: 13 }}>
+        Cargando expediente...
+      </div>
+    )
+  }
+  if (error) {
+    return (
+      <div style={{ padding: '24px 22px', color: 'var(--danger)', fontSize: 13 }}>
+        {error}
+      </div>
+    )
+  }
+  if (!expedient) {
+    return (
+      <div style={{ padding: '24px 22px', color: 'var(--fg-muted)', fontSize: 13 }}>
+        Selecciona un expediente para ver sus documentos.
+      </div>
+    )
+  }
+
+  const createdAtLabel = formatDocumentDate(expedient.created_at)
+  return (
+    <div style={{ flex: 1, overflow: 'auto', padding: '14px 22px 24px' }}>
+      <div
+        style={{
+          background: 'var(--bg-elev)',
+          border: '1px solid var(--border)',
+          borderRadius: 10,
+          padding: '16px 18px',
+          marginBottom: 14,
+        }}
+      >
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 6 }}>
+          <Icon.Folder size={18} style={{ color: 'var(--accent)' }} />
+          <h2 style={{ fontSize: 18, fontWeight: 600, margin: 0 }}>{expedient.name}</h2>
+          {expedient.code && (
+            <span
+              style={{
+                fontSize: 11,
+                padding: '2px 8px',
+                borderRadius: 6,
+                background: 'var(--bg-active)',
+                color: 'var(--fg-muted)',
+                fontFamily: "'JetBrains Mono', ui-monospace, monospace",
+              }}
+            >
+              {expedient.code}
+            </span>
+          )}
+        </div>
+        {expedient.description && (
+          <div style={{ fontSize: 13, color: 'var(--fg)', marginBottom: 8, whiteSpace: 'pre-wrap' }}>
+            {expedient.description}
+          </div>
+        )}
+        <div style={{ fontSize: 11.5, color: 'var(--fg-muted)' }}>
+          Creado por {userLabel(expedient.created_by_user_id)} · {createdAtLabel}
+        </div>
+      </div>
+
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
+        <h3 style={{ fontSize: 14, fontWeight: 600, margin: 0 }}>Documentos asociados</h3>
+        <span style={{ fontSize: 11, color: 'var(--fg-muted)' }}>
+          {expedient.documents.length} {expedient.documents.length === 1 ? 'documento' : 'documentos'}
+        </span>
+      </div>
+
+      <div style={{ background: 'var(--bg-elev)', border: '1px solid var(--border)', borderRadius: 10, overflow: 'hidden' }}>
+        {expedient.documents.length === 0 ? (
+          <div style={{ padding: '28px 14px', fontSize: 12, color: 'var(--fg-muted)', textAlign: 'center' }}>
+            Este expediente todavía no tiene documentos asociados visibles para ti.
+          </div>
+        ) : (
+          <div>
+            {expedient.documents.map((doc, index) => {
+              const kind = doc.current_file_mime_type
+                ? docKindFromMime(doc.current_file_mime_type)
+                : docKindFromType(doc.document_type_id)
+              const kindInfo = findKind(kind)
+              return (
+                <button
+                  key={doc.id}
+                  onClick={() => onOpenDoc(doc.id)}
+                  className="edms-nav-item"
+                  style={{
+                    width: '100%',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 12,
+                    padding: '12px 14px',
+                    background: 'transparent',
+                    color: 'var(--fg)',
+                    borderBottom: index < expedient.documents.length - 1 ? '1px solid var(--border)' : 'none',
+                    textAlign: 'left',
+                  }}
+                >
+                  <div
+                    style={{
+                      width: 32,
+                      height: 32,
+                      borderRadius: 6,
+                      flexShrink: 0,
+                      background: `color-mix(in oklch, ${kindInfo.tone} 16%, var(--bg-elev-2))`,
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      color: kindInfo.tone,
+                      fontSize: 9,
+                      fontFamily: "'JetBrains Mono', ui-monospace, monospace",
+                      fontWeight: 600,
+                    }}
+                  >
+                    {kindInfo.label}
+                  </div>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ fontSize: 13, fontWeight: 500, marginBottom: 2, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                      {doc.title}
+                    </div>
+                    <div style={{ fontSize: 11, color: 'var(--fg-dim)', display: 'flex', alignItems: 'center', gap: 8 }}>
+                      <span style={{ fontFamily: "'JetBrains Mono', ui-monospace, monospace" }}>{doc.code}</span>
+                      <span>·</span>
+                      <span>{userLabel(doc.owner_user_id)}</span>
+                      {doc.due_date && (
+                        <>
+                          <span>·</span>
+                          <span style={{ color: dueUrgency(doc.due_date).color }}>{dueUrgency(doc.due_date).label}</span>
+                        </>
+                      )}
+                    </div>
+                  </div>
+                  <StateBadge state={doc.workflow_state_code} />
+                </button>
+              )
+            })}
+          </div>
+        )}
+      </div>
+    </div>
+  )
+}
+
 function BulkBar({
   count,
   onClear,
@@ -3276,6 +3492,8 @@ function DetailDrawer({
   onUpdateAssignmentRole,
   onCommentPosted,
   onVersionUploaded,
+  expedients = [],
+  onOpenExpedient,
   fullScreen = false,
   onToggleFull,
 }: {
@@ -3295,6 +3513,8 @@ function DetailDrawer({
   onUpdateAssignmentRole?: (docId: string, assignmentId: string, roleCode: string) => Promise<void>
   onCommentPosted?: (item: DocumentDetailTimelineItem) => void
   onVersionUploaded?: (docId: string) => Promise<void>
+  expedients?: ExpedientItem[]
+  onOpenExpedient?: (expedientId: string) => void
   fullScreen?: boolean
   onToggleFull?: () => void
 }) {
@@ -4367,7 +4587,24 @@ function DetailDrawer({
               ['Autor', <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}><OwnerAvatar userId={doc.owner} size={18} /><span>{owner?.name ?? userLabel(doc.owner)}</span></div>],
               ['Encargado', assigneeField],
               ['Estado workflow', <StateBadge state={workflow?.state_code ?? detail?.document.workflow_state_code} />],
-              ['Carpeta', <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5 }}><Icon.Folder size={12} style={{ color: 'var(--fg-dim)' }} />{doc.folder}</span>],
+              ['Expediente', (() => {
+                if (doc.folder === 'root' || !doc.folder) {
+                  return <span style={{ color: 'var(--fg-dim)' }}>Sin expediente</span>
+                }
+                const exp = expedients.find((item) => item.id === doc.folder)
+                if (exp && onOpenExpedient) {
+                  return (
+                    <button
+                      onClick={() => onOpenExpedient(exp.id)}
+                      style={{ display: 'inline-flex', alignItems: 'center', gap: 5, background: 'none', color: 'var(--accent)', cursor: 'pointer', padding: 0, fontSize: 'inherit' }}
+                    >
+                      <Icon.Folder size={12} />
+                      {exp.code ? `${exp.name} (${exp.code})` : exp.name}
+                    </button>
+                  )
+                }
+                return <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5 }}><Icon.Folder size={12} style={{ color: 'var(--fg-dim)' }} />{exp?.name ?? doc.folder}</span>
+              })()],
               ['Tipo documental', doc.documentTypeId ?? kind.label],
               ['Confidencialidad', confidentialityLabel(doc.confidentialityLevel)],
               ['Vence', doc.dueDate ? (() => {
@@ -5697,12 +5934,14 @@ function CreateDocumentModal({
   initialUnassignedFile,
   unassignedFiles,
   assigneeOptions,
+  expedients,
   onClose,
   onCreated,
 }: {
   initialUnassignedFile?: StoredFileItem | null
   unassignedFiles: StoredFileItem[]
   assigneeOptions: [string, string][]
+  expedients: ExpedientItem[]
   onClose: () => void
   onCreated: (document: DocumentItemResponse, attachment?: DocumentAttachmentResult) => void
 }) {
@@ -5922,11 +6161,10 @@ function CreateDocumentModal({
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
               <label style={{ display: 'grid', gap: 6 }}>
                 <span style={{ color: 'var(--fg-muted)', fontSize: 12 }}>Expediente opcional</span>
-                <input
+                <select
                   value={expedientId}
                   disabled={submitting}
                   onChange={(event) => setExpedientId(event.target.value)}
-                  placeholder="Ej: legal"
                   style={{
                     border: '1px solid var(--border)',
                     borderRadius: 8,
@@ -5936,7 +6174,14 @@ function CreateDocumentModal({
                     fontSize: 13,
                     outline: 'none',
                   }}
-                />
+                >
+                  <option value="">Sin expediente</option>
+                  {expedients.map((exp) => (
+                    <option key={exp.id} value={exp.id}>
+                      {exp.code ? `${exp.name} (${exp.code})` : exp.name}
+                    </option>
+                  ))}
+                </select>
               </label>
 
               <label style={{ display: 'grid', gap: 6 }}>
@@ -6170,6 +6415,7 @@ function EditMetadataModal({
   document,
   unassignedFiles,
   assigneeOptions,
+  expedients,
   onClose,
   onUpdated,
   onAssignAssignee,
@@ -6177,6 +6423,7 @@ function EditMetadataModal({
   document: DocumentItem
   unassignedFiles: StoredFileItem[]
   assigneeOptions: [string, string][]
+  expedients: ExpedientItem[]
   onClose: () => void
   onUpdated: (document: DocumentItemResponse, attachment?: DocumentAttachmentResult) => void
   onAssignAssignee: (documentId: string, userId: string) => Promise<void>
@@ -6373,12 +6620,11 @@ function EditMetadataModal({
             </div>
 
             <label style={{ display: 'grid', gap: 6 }}>
-              <span style={{ color: 'var(--fg-muted)', fontSize: 12 }}>Expediente o carpeta</span>
-              <input
+              <span style={{ color: 'var(--fg-muted)', fontSize: 12 }}>Expediente</span>
+              <select
                 value={expedientId}
                 disabled={submitting}
                 onChange={(event) => setExpedientId(event.target.value)}
-                placeholder="Ej: contratos"
                 style={{
                   border: '1px solid var(--border)',
                   borderRadius: 8,
@@ -6388,7 +6634,20 @@ function EditMetadataModal({
                   fontSize: 13,
                   outline: 'none',
                 }}
-              />
+              >
+                <option value="">Sin expediente</option>
+                {/* Si el documento referencia un expediente que no esta en la lista
+                    (eliminado o creado externamente), mantenemos la opcion vigente
+                    para no perderla en el guardado. */}
+                {expedientId && !expedients.some((exp) => exp.id === expedientId) && (
+                  <option value={expedientId}>{expedientId}</option>
+                )}
+                {expedients.map((exp) => (
+                  <option key={exp.id} value={exp.id}>
+                    {exp.code ? `${exp.name} (${exp.code})` : exp.name}
+                  </option>
+                ))}
+              </select>
             </label>
 
             <label style={{ display: 'grid', gap: 6 }}>
@@ -8206,6 +8465,15 @@ export default function DashboardPage() {
   const [metrics, setMetrics] = useState<DocumentMetricsResponse | null>(null)
   const [adminMetrics, setAdminMetrics] = useState<DocumentMetricsResponse | null>(null)
   const [tags, setTags] = useState<ApiTag[]>([])
+  const [expedients, setExpedients] = useState<ExpedientItem[]>([])
+  const [selectedExpedientId, setSelectedExpedientId] = useState<string | null>(null)
+  const [expedientDetail, setExpedientDetail] = useState<ExpedientDetail | null>(null)
+  const [expedientLoading, setExpedientLoading] = useState(false)
+  const [expedientError, setExpedientError] = useState<string | null>(null)
+  const [expedientModalOpen, setExpedientModalOpen] = useState(false)
+  const [expedientForm, setExpedientForm] = useState<{ name: string; code: string; description: string }>({ name: '', code: '', description: '' })
+  const [expedientFormBusy, setExpedientFormBusy] = useState(false)
+  const [expedientFormError, setExpedientFormError] = useState<string | null>(null)
   const [tagModalOpen, setTagModalOpen] = useState(false)
   const [editingTag, setEditingTag] = useState<ApiTag | null>(null)
   const [tagForm, setTagForm] = useState({ label: '', color: '#6366f1' })
@@ -8445,10 +8713,56 @@ export default function DashboardPage() {
       .then((res) => { if (mounted) setTags(res.data) })
       .catch(() => {})
 
+    listExpedients()
+      .then((res) => { if (mounted) setExpedients(res.data) })
+      .catch(() => {})
+
     return () => {
       mounted = false
     }
   }, [user?.is_superuser])
+
+  // Cargar detalle del expediente seleccionado. El reset cuando se deselecciona
+  // lo hacemos por handler (setSelectedExpedientId) — aqui solo respondemos a
+  // ids con valor para evitar setState sincrono en el cuerpo del efecto.
+  useEffect(() => {
+    if (!selectedExpedientId) return
+    let mounted = true
+    queueMicrotask(() => {
+      if (!mounted) return
+      setExpedientLoading(true)
+      setExpedientError(null)
+    })
+    getExpedient(selectedExpedientId)
+      .then((res) => {
+        if (!mounted) return
+        setExpedientDetail(res.data)
+      })
+      .catch((err) => {
+        if (!mounted) return
+        setExpedientError(getApiErrorMessage(err, 'No se pudo cargar el expediente'))
+      })
+      .finally(() => {
+        if (mounted) setExpedientLoading(false)
+      })
+    return () => {
+      mounted = false
+    }
+  }, [selectedExpedientId])
+
+  useEffect(() => {
+    if (selectedExpedientId) return
+    let mounted = true
+    queueMicrotask(() => {
+      if (!mounted) return
+      setExpedientDetail(null)
+      setExpedientError(null)
+      setExpedientLoading(false)
+    })
+    return () => {
+      mounted = false
+    }
+  }, [selectedExpedientId])
 
   useEffect(() => {
     if (!serverListActive) {
@@ -8555,9 +8869,14 @@ export default function DashboardPage() {
     if (selectedView === 'favoritos') return [{ id: 'favoritos', label: 'Favoritos' }]
     if (selectedView === 'aprobaciones') return [{ id: 'aprobaciones', label: 'Aprobaciones' }]
     if (selectedView === 'papelera') return [{ id: 'papelera', label: 'Papelera' }]
+    if (selectedView === 'expediente') {
+      const exp = expedients.find((item) => item.id === selectedExpedientId)
+      const name = expedientDetail?.name ?? exp?.name ?? 'Expediente'
+      return [{ id: 'expedientes', label: 'Expedientes' }, { id: selectedExpedientId ?? 'expediente', label: name }]
+    }
     const path = getFolderPath(dashboardData.folders, selectedFolder)
     return path ? path.map((node) => ({ id: node.id, label: node.name })) : [{ id: 'root', label: 'Archivo' }]
-  }, [selectedView, selectedFolder])
+  }, [selectedView, selectedFolder, selectedExpedientId, expedientDetail?.name, expedients])
 
   const openDocObj = openDocId ? allDocs.find((doc) => doc.id === openDocId) ?? null : null
   const openDocDetail = openDocId ? documentDetails[openDocId] ?? null : null
@@ -9393,6 +9712,19 @@ export default function DashboardPage() {
           setTags((prev) => prev.filter((t) => t.id !== tagId))
           if (selectedTag === tagId) setSelectedTag(null)
         }}
+        expedients={expedients}
+        selectedExpedientId={selectedExpedientId}
+        onSelectExpedient={(expedientId) => {
+          setSelectedExpedientId(expedientId)
+          setSelectedView('expediente')
+          setSelected(new Set())
+          setSearch('')
+        }}
+        onCreateExpedient={() => {
+          setExpedientForm({ name: '', code: '', description: '' })
+          setExpedientFormError(null)
+          setExpedientModalOpen(true)
+        }}
       />
 
       <main style={{ flex: 1, display: 'flex', flexDirection: 'column', minWidth: 0, position: 'relative' }}>
@@ -9506,7 +9838,15 @@ export default function DashboardPage() {
           )}
         </div>
 
-        {showKanban ? (
+        {selectedView === 'expediente' ? (
+          <ExpedientDetailView
+            expedient={expedientDetail}
+            loading={expedientLoading}
+            error={expedientError}
+            userLabel={labelForUserId}
+            onOpenDoc={openDoc}
+          />
+        ) : showKanban ? (
           <>
             <FiltersRow
               filters={filters}
@@ -9716,6 +10056,13 @@ export default function DashboardPage() {
         onRemoveAssignment={handleRemoveAssignment}
         onUpdateAssignmentRole={handleUpdateAssignmentRole}
         onVersionUploaded={handleVersionUploaded}
+        expedients={expedients}
+        onOpenExpedient={(expedientId) => {
+          setSelectedExpedientId(expedientId)
+          setSelectedView('expediente')
+          setOpenDocId(null)
+          setFullDocId(null)
+        }}
         onCommentPosted={(item) => {
           if (!openDocId) return
           setDocumentDetails((current) => {
@@ -9846,6 +10193,84 @@ export default function DashboardPage() {
         </div>
       )}
 
+      {expedientModalOpen && (
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000 }}>
+          <div style={{ background: 'var(--bg-elev)', borderRadius: 12, padding: 24, width: 380, display: 'flex', flexDirection: 'column', gap: 14 }}>
+            <h3 style={{ margin: 0, fontSize: 15 }}>Nuevo expediente</h3>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+              <label style={{ fontSize: 12, color: 'var(--fg-muted)' }}>Nombre</label>
+              <input
+                autoFocus
+                value={expedientForm.name}
+                disabled={expedientFormBusy}
+                onChange={(e) => setExpedientForm((f) => ({ ...f, name: e.target.value }))}
+                placeholder="Ej: Contratos 2026"
+                style={{ padding: '8px 10px', borderRadius: 7, border: '1px solid var(--border)', background: 'var(--bg)', color: 'var(--fg)', fontSize: 13 }}
+              />
+            </div>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+              <label style={{ fontSize: 12, color: 'var(--fg-muted)' }}>Código (opcional, único)</label>
+              <input
+                value={expedientForm.code}
+                disabled={expedientFormBusy}
+                onChange={(e) => setExpedientForm((f) => ({ ...f, code: e.target.value }))}
+                placeholder="Ej: EXP-2026-001"
+                style={{ padding: '8px 10px', borderRadius: 7, border: '1px solid var(--border)', background: 'var(--bg)', color: 'var(--fg)', fontSize: 13, fontFamily: "'JetBrains Mono', ui-monospace, monospace" }}
+              />
+            </div>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+              <label style={{ fontSize: 12, color: 'var(--fg-muted)' }}>Descripción (opcional)</label>
+              <textarea
+                value={expedientForm.description}
+                disabled={expedientFormBusy}
+                onChange={(e) => setExpedientForm((f) => ({ ...f, description: e.target.value }))}
+                rows={3}
+                placeholder="Resumen del agrupador"
+                style={{ padding: '8px 10px', borderRadius: 7, border: '1px solid var(--border)', background: 'var(--bg)', color: 'var(--fg)', fontSize: 13, resize: 'vertical', fontFamily: 'inherit' }}
+              />
+            </div>
+            {expedientFormError && (
+              <div style={{ color: 'var(--danger)', fontSize: 12 }}>{expedientFormError}</div>
+            )}
+            <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
+              <button
+                onClick={() => setExpedientModalOpen(false)}
+                disabled={expedientFormBusy}
+                style={{ padding: '7px 16px', borderRadius: 7, border: '1px solid var(--border)', background: 'transparent', color: 'var(--fg)', fontSize: 13, cursor: 'pointer' }}
+              >
+                Cancelar
+              </button>
+              <button
+                disabled={!expedientForm.name.trim() || expedientFormBusy}
+                onClick={async () => {
+                  setExpedientFormBusy(true)
+                  setExpedientFormError(null)
+                  try {
+                    const res = await createExpedient({
+                      name: expedientForm.name.trim(),
+                      code: expedientForm.code.trim() || null,
+                      description: expedientForm.description.trim() || null,
+                    })
+                    setExpedients((prev) => [res.data, ...prev])
+                    setExpedientModalOpen(false)
+                    setSelectedExpedientId(res.data.id)
+                    setSelectedView('expediente')
+                    setToast(`Expediente "${res.data.name}" creado`)
+                  } catch (err) {
+                    setExpedientFormError(getApiErrorMessage(err, 'No se pudo crear el expediente'))
+                  } finally {
+                    setExpedientFormBusy(false)
+                  }
+                }}
+                style={{ padding: '7px 16px', borderRadius: 7, background: 'var(--accent)', color: 'var(--accent-fg)', fontSize: 13, cursor: 'pointer', opacity: expedientForm.name.trim() && !expedientFormBusy ? 1 : 0.5 }}
+              >
+                {expedientFormBusy ? 'Creando...' : 'Crear'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {teamModalOpen && (
         <TeamManagerModal
           onClose={() => setTeamModalOpen(false)}
@@ -9860,6 +10285,7 @@ export default function DashboardPage() {
           initialUnassignedFile={createDocumentInitialFile}
           unassignedFiles={unassignedFiles}
           assigneeOptions={filterUserOptions}
+          expedients={expedients}
           onClose={() => {
             setCreateDocumentModalOpen(false)
             setCreateDocumentInitialFile(null)
@@ -9897,6 +10323,7 @@ export default function DashboardPage() {
           document={editingMetadataDoc}
           unassignedFiles={unassignedFiles}
           assigneeOptions={filterUserOptions}
+          expedients={expedients}
           onClose={() => setEditingMetadataDocId(null)}
           onUpdated={handleMetadataUpdated}
           onAssignAssignee={handleAssignAssignee}

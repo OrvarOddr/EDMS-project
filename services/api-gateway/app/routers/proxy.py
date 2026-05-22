@@ -11,6 +11,7 @@ SERVICE_MAP = {
     "/roles":         settings.AUTH_SERVICE_URL,
     "/documents":     settings.DOCUMENT_SERVICE_URL,
     "/tags":          settings.DOCUMENT_SERVICE_URL,
+    "/expedients":    settings.DOCUMENT_SERVICE_URL,
     "/files":         settings.FILE_SERVICE_URL,
     "/workflow":      settings.WORKFLOW_SERVICE_URL,
     "/collaboration": settings.COLLABORATION_SERVICE_URL,
