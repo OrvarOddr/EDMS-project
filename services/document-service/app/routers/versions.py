@@ -869,11 +869,31 @@ def get_document_detail(
     # historial de workflow se toma directo, que es la fuente autoritativa.
     workflow_history = _fetch_workflow_history(document.id)
     permission_history = _fetch_permission_history(document.id)
+    # US-022: emite un evento sintetico 'comment_resolved' por cada comentario
+    # resuelto, leyendo del propio timeline para no agregar otra llamada HTTP.
+    comment_resolution_events: list[DocumentDetailTimelineItemResponse] = []
+    for item in comments:
+        if not isinstance(item, dict):
+            continue
+        resolved_at = item.get("resolved_at")
+        if not resolved_at:
+            continue
+        comment_resolution_events.append(
+            DocumentDetailTimelineItemResponse(
+                id=f"{item.get('id')}-resolved",
+                actor_user_id=item.get("resolved_by_user_id"),
+                action="comment_resolved",
+                body=item.get("id"),
+                created_at=resolved_at,
+            )
+        )
+
     history_items = [
         *[DocumentDetailTimelineItemResponse(**item) for item in workflow_history if isinstance(item, dict)],
         *[DocumentDetailTimelineItemResponse(**item) for item in permission_history if isinstance(item, dict)],
         *_metadata_history(document),
         *_version_history(versions),
+        *comment_resolution_events,
     ]
     history_items.sort(key=lambda item: item.created_at, reverse=True)
 

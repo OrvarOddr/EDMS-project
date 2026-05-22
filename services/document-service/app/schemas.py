@@ -121,6 +121,8 @@ class DocumentDetailTimelineItemResponse(BaseModel):
     body: str | None = None
     note: str | None = None
     created_at: str
+    resolved_at: str | None = None
+    resolved_by_user_id: str | None = None
 
 
 class DocumentDetailPermissionsResponse(BaseModel):

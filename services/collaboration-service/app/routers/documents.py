@@ -1,5 +1,7 @@
 import json
 import re
+from datetime import datetime, timezone
+
 import httpx
 from fastapi import APIRouter, Depends, Header, HTTPException, status
 from pydantic import BaseModel, Field
@@ -18,6 +20,8 @@ class TimelineItemResponse(BaseModel):
     action: str
     body: str | None = None
     created_at: str
+    resolved_at: str | None = None
+    resolved_by_user_id: str | None = None
 
 
 class DocumentTimelineResponse(BaseModel):
@@ -257,6 +261,8 @@ def get_document_timeline(
             action="comment",
             body=c.body,
             created_at=c.created_at.isoformat(),
+            resolved_at=c.resolved_at.isoformat() if c.resolved_at else None,
+            resolved_by_user_id=c.resolved_by_user_id,
         )
         for c in comments_rows
     ]
@@ -270,6 +276,8 @@ def get_document_timeline(
             action="comment",
             body=c.body,
             created_at=c.created_at.isoformat(),
+            resolved_at=c.resolved_at.isoformat() if c.resolved_at else None,
+            resolved_by_user_id=c.resolved_by_user_id,
         )
         for c in comments_rows
     ]
@@ -280,3 +288,97 @@ def get_document_timeline(
     )
 
     return DocumentTimelineResponse(comments=comments, history=history)
+
+
+@router.post("/{document_id}/comments/{comment_id}/resolve", response_model=TimelineItemResponse)
+def resolve_comment(
+    document_id: str,
+    comment_id: str,
+    x_user_id: str | None = Header(default=None, alias="X-User-Id"),
+    x_user_roles: str | None = Header(default=None, alias="X-User-Roles"),
+    db: Session = Depends(get_db),
+):
+    """US-022: marcar un comentario como resuelto.
+
+    Permite resolverlo al autor del comentario o a cualquier usuario con
+    permiso `comment` sobre el documento (que incluye encargado, asignados
+    y, por bypass, admin). Conserva el comentario y agrega resolved_at +
+    resolved_by_user_id.
+    """
+    if not x_user_id:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Usuario autenticado requerido")
+    document_id = document_id.strip()
+    comment_id = comment_id.strip()
+    if not document_id or not comment_id:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Documento y comentario requeridos")
+
+    comment = (
+        db.query(Comment)
+        .filter(Comment.id == comment_id, Comment.document_id == document_id)
+        .first()
+    )
+    if not comment:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Comentario no encontrado")
+
+    # Autor puede resolver su propio comentario sin pedirle permiso al gateway.
+    if comment.author_user_id != x_user_id:
+        _assert_document_permission(document_id, x_user_id, permission="comment")
+
+    if comment.resolved_at is None:
+        comment.resolved_at = datetime.now(timezone.utc)
+        comment.resolved_by_user_id = x_user_id
+        db.commit()
+        db.refresh(comment)
+
+    return TimelineItemResponse(
+        id=comment.id,
+        actor_user_id=comment.author_user_id,
+        action="comment",
+        body=comment.body,
+        created_at=comment.created_at.isoformat(),
+        resolved_at=comment.resolved_at.isoformat() if comment.resolved_at else None,
+        resolved_by_user_id=comment.resolved_by_user_id,
+    )
+
+
+@router.post("/{document_id}/comments/{comment_id}/unresolve", response_model=TimelineItemResponse)
+def unresolve_comment(
+    document_id: str,
+    comment_id: str,
+    x_user_id: str | None = Header(default=None, alias="X-User-Id"),
+    x_user_roles: str | None = Header(default=None, alias="X-User-Roles"),
+    db: Session = Depends(get_db),
+):
+    """US-022: reabrir un comentario resuelto."""
+    if not x_user_id:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Usuario autenticado requerido")
+    document_id = document_id.strip()
+    comment_id = comment_id.strip()
+    if not document_id or not comment_id:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Documento y comentario requeridos")
+
+    comment = (
+        db.query(Comment)
+        .filter(Comment.id == comment_id, Comment.document_id == document_id)
+        .first()
+    )
+    if not comment:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Comentario no encontrado")
+    if comment.author_user_id != x_user_id:
+        _assert_document_permission(document_id, x_user_id, permission="comment")
+
+    if comment.resolved_at is not None:
+        comment.resolved_at = None
+        comment.resolved_by_user_id = None
+        db.commit()
+        db.refresh(comment)
+
+    return TimelineItemResponse(
+        id=comment.id,
+        actor_user_id=comment.author_user_id,
+        action="comment",
+        body=comment.body,
+        created_at=comment.created_at.isoformat(),
+        resolved_at=None,
+        resolved_by_user_id=None,
+    )

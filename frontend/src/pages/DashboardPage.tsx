@@ -24,7 +24,9 @@ import {
   listTrashedDocuments,
   moveDocumentToTrash,
   permanentlyDeleteDocument,
+  resolveComment,
   restoreDocumentFromTrash,
+  unresolveComment,
   updateDocumentMetadata,
   type DocumentActivityItem,
   type DocumentDetailResponse,
@@ -3302,6 +3304,10 @@ function DetailDrawer({
   const [downloadingFileId, setDownloadingFileId] = useState<string | null>(null)
   const [commentText, setCommentText] = useState('')
   const [commentSending, setCommentSending] = useState(false)
+  const [commentResolveBusy, setCommentResolveBusy] = useState<string | null>(null)
+  // US-022: pueden quedar comentarios resueltos en el detalle local cuando el
+  // usuario marca/desmarca, sin refetch completo. Guardamos delta aqui.
+  const [commentResolutionOverrides, setCommentResolutionOverrides] = useState<Record<string, { resolved_at: string | null; resolved_by_user_id: string | null }>>({})
   const [showFullTimeline, setShowFullTimeline] = useState(false)
   const [timelineFilter, setTimelineFilter] = useState<'todos' | 'estado' | 'asignaciones' | 'permisos' | 'versiones' | 'metadata'>('todos')
   const [viewVersionId, setViewVersionId] = useState<string | null>(null)
@@ -3564,6 +3570,9 @@ function DetailDrawer({
     if (item.action === 'permission_expired' && item.body) {
       return `Expiró permiso ${item.note ?? ''} de ${userLabel(item.body)}`.trim()
     }
+    if (item.action === 'comment_resolved') {
+      return 'Resolvió un comentario'
+    }
     if (item.body) return item.body
     const labels: Record<string, string> = {
       metadata_updated: 'Metadata actualizada',
@@ -3651,6 +3660,25 @@ function DetailDrawer({
         el.setSelectionRange(pos, pos)
       }
     })
+  }
+
+  async function handleToggleResolveComment(commentId: string, currentlyResolved: boolean) {
+    if (!doc) return
+    setCommentResolveBusy(commentId)
+    try {
+      const result = currentlyResolved
+        ? (await unresolveComment(doc.id, commentId)).data
+        : (await resolveComment(doc.id, commentId)).data
+      setCommentResolutionOverrides((prev) => ({
+        ...prev,
+        [commentId]: {
+          resolved_at: result.resolved_at ?? null,
+          resolved_by_user_id: result.resolved_by_user_id ?? null,
+        },
+      }))
+    } finally {
+      setCommentResolveBusy(null)
+    }
   }
 
   async function handleSubmitComment() {
@@ -4436,14 +4464,53 @@ function DetailDrawer({
             <div style={fullScreen ? { flex: 1, overflowY: 'auto', minHeight: 0 } : undefined}>
               {(detail?.comments ?? []).length > 0 ? (
                 <div style={{ marginBottom: 8 }}>
-                  {detail!.comments.map((item) => (
-                    <div key={item.id} style={{ padding: '7px 0', borderTop: '1px solid var(--border)', fontSize: 12 }}>
-                      <div style={{ color: 'var(--fg)', whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>{renderCommentBody(item.body ?? '')}</div>
-                      <div style={{ color: 'var(--fg-dim)', fontSize: 11, marginTop: 2 }}>
-                        {userLabel(item.actor_user_id)} · {formatDocumentDate(item.created_at)}
+                  {detail!.comments.map((item) => {
+                    const override = commentResolutionOverrides[item.id]
+                    const resolvedAt = override ? override.resolved_at : (item.resolved_at ?? null)
+                    const resolvedBy = override ? override.resolved_by_user_id : (item.resolved_by_user_id ?? null)
+                    const isResolved = Boolean(resolvedAt)
+                    const canToggle = item.actor_user_id === currentUserId || (detail?.permissions?.can_comment ?? false)
+                    const busy = commentResolveBusy === item.id
+                    return (
+                      <div key={item.id} style={{ padding: '7px 0', borderTop: '1px solid var(--border)', fontSize: 12, opacity: isResolved ? 0.7 : 1 }}>
+                        <div style={{ display: 'flex', alignItems: 'flex-start', gap: 6 }}>
+                          <div style={{ color: 'var(--fg)', whiteSpace: 'pre-wrap', wordBreak: 'break-word', flex: 1, textDecoration: isResolved ? 'line-through' : 'none' }}>
+                            {renderCommentBody(item.body ?? '')}
+                          </div>
+                          {isResolved && (
+                            <span style={{
+                              fontSize: 10, padding: '1px 6px', borderRadius: 999,
+                              background: 'var(--ok-soft)', color: 'var(--ok)',
+                              border: '1px solid var(--ok)', fontWeight: 600,
+                              textTransform: 'uppercase', letterSpacing: '0.04em',
+                              flexShrink: 0,
+                            }}>
+                              Resuelto
+                            </span>
+                          )}
+                        </div>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 6, color: 'var(--fg-dim)', fontSize: 11, marginTop: 2 }}>
+                          <span>{userLabel(item.actor_user_id)} · {formatDocumentDate(item.created_at)}</span>
+                          {isResolved && resolvedBy && (
+                            <span>· resuelto por {userLabel(resolvedBy)}</span>
+                          )}
+                          {canToggle && (
+                            <button
+                              type="button"
+                              onClick={() => handleToggleResolveComment(item.id, isResolved)}
+                              disabled={busy}
+                              style={{
+                                marginLeft: 'auto', background: 'none', border: 'none', padding: 0,
+                                color: 'var(--accent)', fontSize: 11, cursor: busy ? 'wait' : 'pointer',
+                              }}
+                            >
+                              {busy ? '…' : isResolved ? 'Reabrir' : 'Marcar resuelto'}
+                            </button>
+                          )}
+                        </div>
                       </div>
-                    </div>
-                  ))}
+                    )
+                  })}
                 </div>
               ) : (
                 <div style={{ color: 'var(--fg-muted)', fontSize: 12, padding: '6px 0 4px' }}>Sin comentarios aún.</div>
