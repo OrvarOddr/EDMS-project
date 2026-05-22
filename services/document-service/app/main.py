@@ -5,6 +5,7 @@ from fastapi import FastAPI
 from app.config import settings
 from app.database import engine, Base, SessionLocal
 from app.models import DocumentVersion
+from app.routers import expedients
 from app.routers import health
 from app.routers import versions
 from app.routers import tags
@@ -57,6 +58,11 @@ async def lifespan(app: FastAPI):
             "CREATE UNIQUE INDEX IF NOT EXISTS uq_document_versions_current "
             "ON documents.document_versions (document_id) WHERE is_current = true"
         ))
+        # US-029: code de expediente es opcional pero unico cuando se usa.
+        conn.execute(text(
+            "CREATE UNIQUE INDEX IF NOT EXISTS uq_expedients_code "
+            "ON documents.expedients (code) WHERE code IS NOT NULL"
+        ))
     _backfill_mime_types()
     yield
 
@@ -66,3 +72,4 @@ app.include_router(health.router)
 app.include_router(versions.router)
 app.include_router(versions.internal_router)
 app.include_router(tags.router)
+app.include_router(expedients.router)

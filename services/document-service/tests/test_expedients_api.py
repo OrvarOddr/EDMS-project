@@ -1,0 +1,122 @@
+"""Tests de integracion de expedientes (US-029/US-030).
+
+Requieren Postgres (lo provee el job de CI).
+"""
+import httpx
+import pytest
+import respx
+
+from tests.conftest import WORKFLOW_SERVICE_URL
+
+pytestmark = pytest.mark.integration
+
+USER = "user-1"
+OTHER = "user-2"
+BOOTSTRAP_URL = f"{WORKFLOW_SERVICE_URL}/internal/workflow/documents/bootstrap"
+SUMMARIES_URL = f"{WORKFLOW_SERVICE_URL}/internal/workflow/documents/batch-summaries"
+
+
+def test_crear_expediente_requiere_usuario(client):
+    res = client.post("/expedients", json={"name": "Contratos 2026"})
+    assert res.status_code == 401
+
+
+def test_crear_expediente_basico(client):
+    res = client.post(
+        "/expedients",
+        headers={"X-User-Id": USER},
+        json={"name": "Contratos 2026", "code": "EXP-2026-001", "description": "Contratos del año"},
+    )
+    assert res.status_code == 201, res.text
+    body = res.json()
+    assert body["name"] == "Contratos 2026"
+    assert body["code"] == "EXP-2026-001"
+    assert body["description"] == "Contratos del año"
+    assert body["created_by_user_id"] == USER
+    assert body["created_at"]
+
+
+def test_codigo_duplicado_devuelve_409(client):
+    payload = {"name": "Expediente A", "code": "DUP-001"}
+    first = client.post("/expedients", headers={"X-User-Id": USER}, json=payload)
+    assert first.status_code == 201
+    second = client.post(
+        "/expedients",
+        headers={"X-User-Id": USER},
+        json={"name": "Otro", "code": "DUP-001"},
+    )
+    assert second.status_code == 409
+
+
+def test_listar_expedientes(client):
+    client.post("/expedients", headers={"X-User-Id": USER}, json={"name": "Uno"})
+    client.post("/expedients", headers={"X-User-Id": USER}, json={"name": "Dos"})
+    listed = client.get("/expedients", headers={"X-User-Id": USER})
+    assert listed.status_code == 200
+    nombres = [item["name"] for item in listed.json()]
+    assert "Uno" in nombres and "Dos" in nombres
+
+
+@respx.mock
+def test_detalle_expediente_incluye_documentos_visibles(client):
+    respx.post(BOOTSTRAP_URL).mock(
+        return_value=httpx.Response(
+            201,
+            json={
+                "document_id": "x",
+                "state_code": "borrador",
+                "assignee_user_id": USER,
+                "assignment_role_code": "encargado",
+            },
+        )
+    )
+    respx.post(SUMMARIES_URL).mock(
+        return_value=httpx.Response(200, json={"summaries": {}})
+    )
+
+    exp = client.post(
+        "/expedients",
+        headers={"X-User-Id": USER},
+        json={"name": "Expediente Z"},
+    ).json()
+
+    # Documento del usuario asociado al expediente
+    own_doc = client.post(
+        "/documents",
+        headers={"X-User-Id": USER},
+        json={
+            "title": "Doc mio",
+            "document_type_id": "t1",
+            "description": "d",
+            "expedient_id": exp["id"],
+        },
+    ).json()
+    # Documento de OTRO usuario asociado al mismo expediente
+    other_doc = client.post(
+        "/documents",
+        headers={"X-User-Id": OTHER},
+        json={
+            "title": "Doc ajeno",
+            "document_type_id": "t1",
+            "description": "d",
+            "expedient_id": exp["id"],
+        },
+    ).json()
+
+    # USER ve solo el suyo
+    detail = client.get(f"/expedients/{exp['id']}", headers={"X-User-Id": USER}).json()
+    doc_ids = {d["id"] for d in detail["documents"]}
+    assert own_doc["id"] in doc_ids
+    assert other_doc["id"] not in doc_ids
+
+    # Admin ve ambos via X-User-Roles
+    detail_admin = client.get(
+        f"/expedients/{exp['id']}",
+        headers={"X-User-Id": USER, "X-User-Roles": "admin"},
+    ).json()
+    doc_ids_admin = {d["id"] for d in detail_admin["documents"]}
+    assert {own_doc["id"], other_doc["id"]}.issubset(doc_ids_admin)
+
+
+def test_detalle_de_expediente_inexistente_devuelve_404(client):
+    assert client.get("/expedients/no-existe", headers={"X-User-Id": USER}).status_code == 404

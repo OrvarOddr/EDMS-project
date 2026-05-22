@@ -159,3 +159,22 @@ class CreateTagRequest(BaseModel):
 class UpdateTagRequest(BaseModel):
     label: str
     color: str
+
+
+class CreateExpedientRequest(BaseModel):
+    name: str
+    code: str | None = None
+    description: str | None = None
+
+
+class ExpedientResponse(BaseModel):
+    id: str
+    name: str
+    code: str | None = None
+    description: str | None = None
+    created_by_user_id: str
+    created_at: str
+
+
+class ExpedientDetailResponse(ExpedientResponse):
+    documents: list[DocumentResponse] = Field(default_factory=list)
