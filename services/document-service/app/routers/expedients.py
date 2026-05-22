@@ -16,11 +16,16 @@ from app.models import Document, Expedient
 from app.routers.versions import (
     _can_view_document,
     _current_mime_map,
+    _document_for_actor,
     _fetch_batch_workflow_summaries,
     _is_admin,
+    _record_metadata_activity,
     _to_document_response,
 )
 from app.schemas import (
+    AttachDocumentsSkippedItem,
+    AttachDocumentsToExpedientRequest,
+    AttachDocumentsToExpedientResponse,
     CreateExpedientRequest,
     ExpedientDetailResponse,
     ExpedientResponse,
@@ -137,3 +142,63 @@ def get_expedient(
             for document in visible
         ],
     )
+
+
+@router.post(
+    "/{expedient_id}/documents",
+    response_model=AttachDocumentsToExpedientResponse,
+)
+def attach_documents_to_expedient(
+    expedient_id: str,
+    body: AttachDocumentsToExpedientRequest,
+    x_user_id: str | None = Header(default=None, alias="X-User-Id"),
+    x_user_roles: str | None = Header(default=None, alias="X-User-Roles"),
+    db: Session = Depends(get_db),
+):
+    """Asocia varios documentos al expediente en una sola llamada.
+
+    Requiere permiso `edit_metadata` por documento (admin bypass via roles).
+    Documentos archivados o que el actor no pueda editar quedan en `skipped`
+    para que el frontend pueda comunicar lo que no se pudo enlazar.
+    """
+    actor_user_id = _require_user(x_user_id)
+    expedient = db.query(Expedient).filter(Expedient.id == expedient_id.strip()).first()
+    if not expedient:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Expediente no encontrado")
+
+    seen: set[str] = set()
+    document_ids: list[str] = []
+    for raw in body.document_ids:
+        clean = (raw or "").strip()
+        if not clean or clean in seen:
+            continue
+        seen.add(clean)
+        document_ids.append(clean)
+
+    attached: list[str] = []
+    skipped: list[AttachDocumentsSkippedItem] = []
+    for document_id in document_ids:
+        try:
+            document = _document_for_actor(
+                db,
+                document_id,
+                actor_user_id,
+                permission="edit_metadata",
+                x_user_roles=x_user_roles,
+            )
+        except HTTPException as exc:
+            reason = exc.detail if isinstance(exc.detail, str) else "No autorizado"
+            skipped.append(AttachDocumentsSkippedItem(document_id=document_id, reason=reason))
+            continue
+        if document.archived_at is not None:
+            skipped.append(AttachDocumentsSkippedItem(document_id=document_id, reason="Documento en papelera"))
+            continue
+        if document.expedient_id == expedient.id:
+            # Ya esta asociado: lo reportamos como attached (idempotente).
+            attached.append(document.id)
+            continue
+        document.expedient_id = expedient.id
+        _record_metadata_activity(document, actor_user_id, ["expedient_id"])
+        attached.append(document.id)
+    db.commit()
+    return AttachDocumentsToExpedientResponse(attached=attached, skipped=skipped)

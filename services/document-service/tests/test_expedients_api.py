@@ -120,3 +120,128 @@ def test_detalle_expediente_incluye_documentos_visibles(client):
 
 def test_detalle_de_expediente_inexistente_devuelve_404(client):
     assert client.get("/expedients/no-existe", headers={"X-User-Id": USER}).status_code == 404
+
+
+@respx.mock
+def test_attach_documents_asocia_y_omite_no_autorizados(client):
+    respx.post(BOOTSTRAP_URL).mock(
+        return_value=httpx.Response(
+            201,
+            json={
+                "document_id": "x",
+                "state_code": "borrador",
+                "assignee_user_id": USER,
+                "assignment_role_code": "encargado",
+            },
+        )
+    )
+    respx.post(SUMMARIES_URL).mock(
+        return_value=httpx.Response(200, json={"summaries": {}})
+    )
+
+    exp = client.post(
+        "/expedients", headers={"X-User-Id": USER}, json={"name": "Bulk"}
+    ).json()
+
+    mio = client.post(
+        "/documents",
+        headers={"X-User-Id": USER},
+        json={"title": "Mio", "document_type_id": "t1", "description": "d"},
+    ).json()
+    ajeno = client.post(
+        "/documents",
+        headers={"X-User-Id": OTHER},
+        json={"title": "Ajeno", "document_type_id": "t1", "description": "d"},
+    ).json()
+
+    res = client.post(
+        f"/expedients/{exp['id']}/documents",
+        headers={"X-User-Id": USER},
+        json={"document_ids": [mio["id"], ajeno["id"]]},
+    )
+    assert res.status_code == 200, res.text
+    body = res.json()
+    assert mio["id"] in body["attached"]
+    assert ajeno["id"] not in body["attached"]
+    assert any(item["document_id"] == ajeno["id"] for item in body["skipped"])
+
+    # El documento propio quedo realmente asociado.
+    detail = client.get(f"/expedients/{exp['id']}", headers={"X-User-Id": USER}).json()
+    assert any(doc["id"] == mio["id"] for doc in detail["documents"])
+
+
+@respx.mock
+def test_attach_documents_admin_bypass(client):
+    respx.post(BOOTSTRAP_URL).mock(
+        return_value=httpx.Response(
+            201,
+            json={
+                "document_id": "x",
+                "state_code": "borrador",
+                "assignee_user_id": OTHER,
+                "assignment_role_code": "encargado",
+            },
+        )
+    )
+    respx.post(SUMMARIES_URL).mock(
+        return_value=httpx.Response(200, json={"summaries": {}})
+    )
+
+    exp = client.post(
+        "/expedients", headers={"X-User-Id": USER}, json={"name": "Admin"}
+    ).json()
+    ajeno = client.post(
+        "/documents",
+        headers={"X-User-Id": OTHER},
+        json={"title": "Ajeno", "document_type_id": "t1", "description": "d"},
+    ).json()
+
+    res = client.post(
+        f"/expedients/{exp['id']}/documents",
+        headers={"X-User-Id": USER, "X-User-Roles": "admin"},
+        json={"document_ids": [ajeno["id"]]},
+    )
+    assert res.status_code == 200, res.text
+    body = res.json()
+    assert ajeno["id"] in body["attached"]
+
+
+@respx.mock
+def test_attach_documents_idempotente(client):
+    respx.post(BOOTSTRAP_URL).mock(
+        return_value=httpx.Response(
+            201,
+            json={
+                "document_id": "x",
+                "state_code": "borrador",
+                "assignee_user_id": USER,
+                "assignment_role_code": "encargado",
+            },
+        )
+    )
+    respx.post(SUMMARIES_URL).mock(
+        return_value=httpx.Response(200, json={"summaries": {}})
+    )
+
+    exp = client.post(
+        "/expedients", headers={"X-User-Id": USER}, json={"name": "Idem"}
+    ).json()
+    doc = client.post(
+        "/documents",
+        headers={"X-User-Id": USER},
+        json={
+            "title": "Doc",
+            "document_type_id": "t1",
+            "description": "d",
+            "expedient_id": exp["id"],
+        },
+    ).json()
+
+    # Reasociar al mismo expediente no debe fallar; se reporta como attached.
+    res = client.post(
+        f"/expedients/{exp['id']}/documents",
+        headers={"X-User-Id": USER},
+        json={"document_ids": [doc["id"]]},
+    )
+    assert res.status_code == 200
+    assert doc["id"] in res.json()["attached"]

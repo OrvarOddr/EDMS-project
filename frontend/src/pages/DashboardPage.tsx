@@ -84,6 +84,7 @@ import {
   type DocumentPermissionGrant,
 } from '../api/permissions'
 import {
+  attachDocumentsToExpedient,
   createExpedient,
   getExpedient,
   listExpedients,
@@ -3087,12 +3088,14 @@ function ExpedientDetailView({
   error,
   userLabel,
   onOpenDoc,
+  onAddDocument,
 }: {
   expedient: ExpedientDetail | null
   loading: boolean
   error: string | null
   userLabel: (userId?: string | null) => string
   onOpenDoc: (docId: string) => void
+  onAddDocument?: () => void
 }) {
   if (loading) {
     return (
@@ -3157,10 +3160,32 @@ function ExpedientDetailView({
       </div>
 
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
-        <h3 style={{ fontSize: 14, fontWeight: 600, margin: 0 }}>Documentos asociados</h3>
-        <span style={{ fontSize: 11, color: 'var(--fg-muted)' }}>
-          {expedient.documents.length} {expedient.documents.length === 1 ? 'documento' : 'documentos'}
-        </span>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+          <h3 style={{ fontSize: 14, fontWeight: 600, margin: 0 }}>Documentos asociados</h3>
+          <span style={{ fontSize: 11, color: 'var(--fg-muted)' }}>
+            {expedient.documents.length} {expedient.documents.length === 1 ? 'documento' : 'documentos'}
+          </span>
+        </div>
+        {onAddDocument && (
+          <button
+            onClick={onAddDocument}
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: 6,
+              padding: '6px 11px',
+              borderRadius: 7,
+              border: '1px solid var(--border)',
+              background: 'var(--bg-elev)',
+              color: 'var(--fg)',
+              fontSize: 12.5,
+              cursor: 'pointer',
+            }}
+            title="Asociar documentos existentes a este expediente"
+          >
+            <Icon.Plus size={12} /> Agregar documento
+          </button>
+        )}
       </div>
 
       <div style={{ background: 'var(--bg-elev)', border: '1px solid var(--border)', borderRadius: 10, overflow: 'hidden' }}>
@@ -8312,6 +8337,11 @@ export default function DashboardPage() {
   const [expedientForm, setExpedientForm] = useState<{ name: string; code: string; description: string }>({ name: '', code: '', description: '' })
   const [expedientFormBusy, setExpedientFormBusy] = useState(false)
   const [expedientFormError, setExpedientFormError] = useState<string | null>(null)
+  const [attachDocsModalOpen, setAttachDocsModalOpen] = useState(false)
+  const [attachDocsSelected, setAttachDocsSelected] = useState<Set<string>>(new Set())
+  const [attachDocsBusy, setAttachDocsBusy] = useState(false)
+  const [attachDocsError, setAttachDocsError] = useState<string | null>(null)
+  const [attachDocsFilter, setAttachDocsFilter] = useState('')
   const [tagModalOpen, setTagModalOpen] = useState(false)
   const [editingTag, setEditingTag] = useState<ApiTag | null>(null)
   const [tagForm, setTagForm] = useState({ label: '', color: '#6366f1' })
@@ -9681,6 +9711,12 @@ export default function DashboardPage() {
             error={expedientError}
             userLabel={labelForUserId}
             onOpenDoc={openDoc}
+            onAddDocument={() => {
+              setAttachDocsSelected(new Set())
+              setAttachDocsFilter('')
+              setAttachDocsError(null)
+              setAttachDocsModalOpen(true)
+            }}
           />
         ) : showKanban ? (
           <>
@@ -10106,6 +10142,157 @@ export default function DashboardPage() {
           </div>
         </div>
       )}
+
+      {attachDocsModalOpen && expedientDetail && (() => {
+        const expId = expedientDetail.id
+        const filterText = attachDocsFilter.trim().toLowerCase()
+        const eligible = allDocs.filter((doc) => doc.folder !== expId && doc.folder !== `__archived__`)
+        const visible = filterText
+          ? eligible.filter((doc) =>
+              doc.name.toLowerCase().includes(filterText) ||
+              (doc.code ?? '').toLowerCase().includes(filterText),
+            )
+          : eligible
+        const toggle = (id: string) => {
+          setAttachDocsSelected((current) => {
+            const next = new Set(current)
+            if (next.has(id)) next.delete(id)
+            else next.add(id)
+            return next
+          })
+        }
+        return (
+          <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000 }}>
+            <div style={{ background: 'var(--bg-elev)', borderRadius: 12, padding: 22, width: 520, maxHeight: '80vh', display: 'flex', flexDirection: 'column', gap: 12 }}>
+              <div>
+                <h3 style={{ margin: 0, fontSize: 15 }}>Agregar documentos a {expedientDetail.name}</h3>
+                <div style={{ fontSize: 12, color: 'var(--fg-muted)', marginTop: 4 }}>
+                  Marca los documentos que quieras asociar. Solo se enlazarán aquellos sobre los que tengas permiso para editar metadata.
+                </div>
+              </div>
+              <input
+                value={attachDocsFilter}
+                onChange={(e) => setAttachDocsFilter(e.target.value)}
+                placeholder="Buscar por nombre o código"
+                style={{ padding: '8px 10px', borderRadius: 7, border: '1px solid var(--border)', background: 'var(--bg)', color: 'var(--fg)', fontSize: 13 }}
+              />
+              <div style={{ flex: 1, overflow: 'auto', border: '1px solid var(--border)', borderRadius: 8 }}>
+                {visible.length === 0 ? (
+                  <div style={{ padding: '24px 14px', fontSize: 12, color: 'var(--fg-muted)', textAlign: 'center' }}>
+                    {eligible.length === 0
+                      ? 'Todos tus documentos ya están en este expediente.'
+                      : 'No hay coincidencias para tu búsqueda.'}
+                  </div>
+                ) : (
+                  visible.map((doc, index) => {
+                    const checked = attachDocsSelected.has(doc.id)
+                    return (
+                      <label
+                        key={doc.id}
+                        style={{
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: 10,
+                          padding: '10px 12px',
+                          borderBottom: index < visible.length - 1 ? '1px solid var(--border)' : 'none',
+                          background: checked ? 'var(--bg-active)' : 'transparent',
+                          cursor: 'pointer',
+                        }}
+                      >
+                        <input
+                          type="checkbox"
+                          checked={checked}
+                          onChange={() => toggle(doc.id)}
+                          style={{ width: 16, height: 16, accentColor: 'var(--accent)' }}
+                        />
+                        <div style={{ flex: 1, minWidth: 0 }}>
+                          <div style={{ fontSize: 13, fontWeight: 500, color: 'var(--fg)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                            {doc.name}
+                          </div>
+                          <div style={{ fontSize: 11, color: 'var(--fg-dim)', display: 'flex', gap: 8 }}>
+                            <span style={{ fontFamily: "'JetBrains Mono', ui-monospace, monospace" }}>{doc.code ?? doc.id}</span>
+                            {doc.folder && doc.folder !== 'root' && (
+                              <>
+                                <span>·</span>
+                                <span>
+                                  {expedients.find((exp) => exp.id === doc.folder)?.name ?? doc.folder}
+                                </span>
+                              </>
+                            )}
+                          </div>
+                        </div>
+                      </label>
+                    )
+                  })
+                )}
+              </div>
+              {attachDocsError && (
+                <div style={{ color: 'var(--danger)', fontSize: 12 }}>{attachDocsError}</div>
+              )}
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
+                <span style={{ fontSize: 12, color: 'var(--fg-muted)' }}>
+                  {attachDocsSelected.size} seleccionado{attachDocsSelected.size === 1 ? '' : 's'}
+                </span>
+                <div style={{ display: 'flex', gap: 8 }}>
+                  <button
+                    onClick={() => setAttachDocsModalOpen(false)}
+                    disabled={attachDocsBusy}
+                    style={{ padding: '7px 16px', borderRadius: 7, border: '1px solid var(--border)', background: 'transparent', color: 'var(--fg)', fontSize: 13, cursor: 'pointer' }}
+                  >
+                    Cancelar
+                  </button>
+                  <button
+                    disabled={attachDocsSelected.size === 0 || attachDocsBusy}
+                    onClick={async () => {
+                      setAttachDocsBusy(true)
+                      setAttachDocsError(null)
+                      try {
+                        const ids = Array.from(attachDocsSelected)
+                        const res = await attachDocumentsToExpedient(expId, ids)
+                        // Refresca detalle + lista local de docs.
+                        const detail = await getExpedient(expId)
+                        setExpedientDetail(detail.data)
+                        if (res.data.attached.length > 0) {
+                          setCreatedDocs((current) =>
+                            current.map((doc) =>
+                              res.data.attached.includes(doc.id)
+                                ? { ...doc, folder: expId, updatedAt: new Date().toISOString(), modified: 'ahora' }
+                                : doc,
+                            ),
+                          )
+                        }
+                        setAttachDocsModalOpen(false)
+                        const okCount = res.data.attached.length
+                        const skipCount = res.data.skipped.length
+                        if (skipCount === 0) {
+                          setToast(`${okCount} documento${okCount === 1 ? '' : 's'} asociado${okCount === 1 ? '' : 's'} al expediente`)
+                        } else {
+                          setToast(`Asociados ${okCount}; ${skipCount} omitidos por permisos`)
+                        }
+                      } catch (err) {
+                        setAttachDocsError(getApiErrorMessage(err, 'No se pudieron asociar los documentos'))
+                      } finally {
+                        setAttachDocsBusy(false)
+                      }
+                    }}
+                    style={{
+                      padding: '7px 16px',
+                      borderRadius: 7,
+                      background: 'var(--accent)',
+                      color: 'var(--accent-fg)',
+                      fontSize: 13,
+                      cursor: 'pointer',
+                      opacity: attachDocsSelected.size === 0 || attachDocsBusy ? 0.5 : 1,
+                    }}
+                  >
+                    {attachDocsBusy ? 'Asociando...' : 'Agregar al expediente'}
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        )
+      })()}
 
       {teamModalOpen && (
         <TeamManagerModal

@@ -28,3 +28,14 @@ export const getExpedient = (id: string) =>
 
 export const createExpedient = (payload: CreateExpedientPayload) =>
   client.post<ExpedientItem>('/expedients', payload)
+
+export interface AttachDocumentsToExpedientResult {
+  attached: string[]
+  skipped: { document_id: string; reason: string }[]
+}
+
+export const attachDocumentsToExpedient = (expedientId: string, documentIds: string[]) =>
+  client.post<AttachDocumentsToExpedientResult>(
+    `/expedients/${expedientId}/documents`,
+    { document_ids: documentIds },
+  )
