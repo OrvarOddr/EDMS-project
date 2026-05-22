@@ -28,3 +28,7 @@ class DocumentPermissionGrant(Base):
     is_active = Column(Boolean, nullable=False, default=True, index=True)
     granted_at = Column(DateTime(timezone=True), nullable=False, default=utcnow)
     revoked_at = Column(DateTime(timezone=True), nullable=True)
+    # US-007: expiracion opcional. Un grant con expires_at <= now() se considera
+    # inactivo para autorizacion aunque is_active sea True. La UI lo muestra
+    # como "Expirado" en la lista del owner.
+    expires_at = Column(DateTime(timezone=True), nullable=True)
