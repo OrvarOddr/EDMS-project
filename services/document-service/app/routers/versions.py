@@ -162,15 +162,18 @@ def _has_document_permission(
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Permiso documental no soportado")
 
     # Bypass admin: puede operar sobre cualquier documento del workspace.
-    # En documentos archivados solo permitimos lectura (igual que para el resto).
+    # En documentos archivados se bloquea la edicion de contenido/metadata,
+    # pero restore/delete deben funcionar (son justamente las acciones que
+    # tienen sentido sobre un doc en papelera).
+    _ARCHIVED_BLOCKED_FOR_ADMIN = {"edit_metadata", "upload_version", "move_state", "move_to_trash", "approve", "share"}
     if is_admin:
-        if document.archived_at is not None and permission not in {"view", "download", "comment"}:
+        if document.archived_at is not None and permission in _ARCHIVED_BLOCKED_FOR_ADMIN:
             return False
         return True
 
     # US-005: permisos explicitos otorgados via collaboration-service.
     if grants and permission in grants:
-        if document.archived_at is not None and permission not in {"view", "download", "comment"}:
+        if document.archived_at is not None and permission in _ARCHIVED_BLOCKED_FOR_ADMIN:
             return False
         return True
 
