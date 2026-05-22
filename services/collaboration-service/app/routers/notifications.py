@@ -27,6 +27,7 @@ class NotificationResponse(BaseModel):
     recipient_user_id: str
     actor_user_id: str | None = None
     document_id: str | None = None
+    document_name: str | None = None
     source_id: str | None = None
     type: str
     title: str
@@ -47,6 +48,7 @@ def _serialize(notification: Notification) -> NotificationResponse:
         recipient_user_id=notification.recipient_user_id,
         actor_user_id=notification.actor_user_id,
         document_id=notification.document_id,
+        document_name=notification.document_name,
         source_id=notification.source_id,
         type=notification.type,
         title=notification.title,

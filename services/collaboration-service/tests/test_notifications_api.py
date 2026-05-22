@@ -13,6 +13,7 @@ def _create(client, **over):
         "title": "Nuevo comentario",
         "actor_user_id": "autor",
         "document_id": "doc-1",
+        "document_name": "Documento de prueba",
         "source_id": "src-1",
         "body": "hola",
     }
@@ -23,8 +24,10 @@ def _create(client, **over):
 def test_crear_notificacion_interna(client):
     r = _create(client)
     assert r.status_code == 201, r.text
-    assert r.json()["recipient_user_id"] == USER
-    assert r.json()["is_read"] is False
+    data = r.json()
+    assert data["recipient_user_id"] == USER
+    assert data["is_read"] is False
+    assert data["document_name"] == "Documento de prueba"
 
 
 def test_dedup_por_source_id(client):
