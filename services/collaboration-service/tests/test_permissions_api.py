@@ -160,3 +160,76 @@ def test_endpoint_interno_no_devuelve_permisos_revocados(client):
     )
     assert r.status_code == 200
     assert r.json()["permissions"] == []
+
+
+@respx.mock
+def test_otorgar_con_expiracion_persiste_y_marca_no_expirado(client, db_session):
+    _allow_manage()
+    from datetime import datetime, timedelta, timezone
+    future = (datetime.now(timezone.utc) + timedelta(hours=2)).isoformat()
+    r = client.post(
+        f"/collaboration/documents/{DOC}/permissions",
+        headers={"X-User-Id": OWNER},
+        json={"grantee_user_id": GRANTEE, "permission_code": "view", "expires_at": future},
+    )
+    assert r.status_code == 201, r.text
+    body = r.json()
+    assert body["expires_at"] is not None
+    assert body["is_expired"] is False
+
+
+@respx.mock
+def test_otorgar_con_expiracion_pasada_devuelve_422(client):
+    _allow_manage()
+    from datetime import datetime, timedelta, timezone
+    past = (datetime.now(timezone.utc) - timedelta(hours=1)).isoformat()
+    r = client.post(
+        f"/collaboration/documents/{DOC}/permissions",
+        headers={"X-User-Id": OWNER},
+        json={"grantee_user_id": GRANTEE, "permission_code": "view", "expires_at": past},
+    )
+    assert r.status_code == 422
+
+
+@respx.mock
+def test_endpoint_interno_excluye_grants_expirados(client, db_session):
+    """US-007: si el grant tiene expires_at pasada, no autoriza aunque siga is_active."""
+    _allow_manage()
+    gid = _grant(client, "view").json()["id"]
+
+    # Forzamos expires_at en el pasado directamente en la DB para simular
+    # que paso el tiempo, sin esperar.
+    from app.models import DocumentPermissionGrant
+    from datetime import datetime, timedelta, timezone
+    grant = db_session.query(DocumentPermissionGrant).filter(DocumentPermissionGrant.id == gid).first()
+    grant.expires_at = datetime.now(timezone.utc) - timedelta(seconds=10)
+    db_session.commit()
+
+    r = client.get(
+        f"/internal/collaboration/documents/{DOC}/permissions",
+        params={"user_id": GRANTEE},
+    )
+    assert r.status_code == 200
+    assert r.json()["permissions"] == []
+
+
+@respx.mock
+def test_revocar_permiso_notifica_al_grantee(client, db_session):
+    """US-006: revocar genera Notification 'permiso_revocado' para el afectado."""
+    _allow_manage()
+    gid = _grant(client, "view").json()["id"]
+
+    # Limpio notificaciones previas que ya genero el otorgamiento.
+    from app.models import Notification
+    db_session.query(Notification).delete()
+    db_session.commit()
+
+    r = client.delete(
+        f"/collaboration/documents/{DOC}/permissions/{gid}",
+        headers={"X-User-Id": OWNER},
+    )
+    assert r.status_code == 204
+
+    notifs = db_session.query(Notification).filter(Notification.recipient_user_id == GRANTEE).all()
+    assert len(notifs) == 1
+    assert notifs[0].type == "permiso_revocado"

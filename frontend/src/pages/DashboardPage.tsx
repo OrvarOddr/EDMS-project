@@ -3323,6 +3323,7 @@ function DetailDrawer({
   const [addingGrant, setAddingGrant] = useState(false)
   const [grantUserDraft, setGrantUserDraft] = useState('')
   const [grantCodeDraft, setGrantCodeDraft] = useState<string>('view')
+  const [grantExpiresDraft, setGrantExpiresDraft] = useState<string>('')
   const [grantBusy, setGrantBusy] = useState<string | null>(null)
   const [grantError, setGrantError] = useState<string | null>(null)
   const currentFile = detail?.files.find((file) => file.is_current) ?? detail?.files[0] ?? null
@@ -3459,9 +3460,15 @@ function DetailDrawer({
     setGrantBusy('add')
     setGrantError(null)
     try {
-      const grant = await grantDocumentPermission(doc.id, grantUserDraft, grantCodeDraft)
+      // Si el usuario eligio una fecha en el input datetime-local, asumimos
+      // que esta en hora local y la convertimos a ISO con tz.
+      const expiresAtIso = grantExpiresDraft
+        ? new Date(grantExpiresDraft).toISOString()
+        : null
+      const grant = await grantDocumentPermission(doc.id, grantUserDraft, grantCodeDraft, expiresAtIso)
       setGrants((current) => [grant, ...current])
       setGrantUserDraft('')
+      setGrantExpiresDraft('')
       setAddingGrant(false)
     } catch (err) {
       const detail = (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail
@@ -3554,6 +3561,9 @@ function DetailDrawer({
     if (item.action === 'permission_revoked' && item.body) {
       return `Revocó permiso ${item.note ?? ''} a ${userLabel(item.body)}`.trim()
     }
+    if (item.action === 'permission_expired' && item.body) {
+      return `Expiró permiso ${item.note ?? ''} de ${userLabel(item.body)}`.trim()
+    }
     if (item.body) return item.body
     const labels: Record<string, string> = {
       metadata_updated: 'Metadata actualizada',
@@ -3565,6 +3575,7 @@ function DetailDrawer({
       assignment_removed: 'Asignacion revocada',
       permission_granted: 'Permiso otorgado',
       permission_revoked: 'Permiso revocado',
+      permission_expired: 'Permiso expirado',
     }
     return labels[item.action] ?? item.action
   }
@@ -3573,7 +3584,7 @@ function DetailDrawer({
   function timelineCategory(action: string): 'estado' | 'asignaciones' | 'permisos' | 'versiones' | 'metadata' | 'otros' {
     if (action === 'state_change') return 'estado'
     if (action === 'assignee_changed' || action === 'assignment_added' || action === 'assignment_removed') return 'asignaciones'
-    if (action === 'permission_granted' || action === 'permission_revoked') return 'permisos'
+    if (action === 'permission_granted' || action === 'permission_revoked' || action === 'permission_expired') return 'permisos'
     if (action === 'version_uploaded') return 'versiones'
     if (action === 'metadata_updated' || action === 'fecha_vencimiento') return 'metadata'
     return 'otros'
@@ -4136,33 +4147,53 @@ function DetailDrawer({
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
                   {grants.map((grant) => {
                     const removeBusy = grantBusy === `remove-${grant.id}`
+                    const expired = Boolean(grant.is_expired)
                     return (
-                      <div key={grant.id} style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12.5, flexWrap: 'wrap' }}>
-                        <OwnerAvatar userId={grant.grantee_user_id} size={20} />
-                        <span style={{ color: 'var(--fg)', flex: 1, minWidth: 0 }}>{userLabel(grant.grantee_user_id)}</span>
-                        <span style={{
-                          fontSize: 11, padding: '1px 8px', borderRadius: 999,
-                          background: 'var(--accent-soft)', color: 'var(--accent)',
-                          border: '1px solid var(--accent)', fontWeight: 500,
-                        }}>
-                          {grant.permission_code}
-                        </span>
-                        {canManagePermissions && (
-                          <button
-                            type="button"
-                            onClick={() => handleRevokePermission(grant.id)}
-                            disabled={removeBusy}
-                            title="Revocar permiso"
-                            className="edms-nav-item"
-                            style={{
-                              width: 22, height: 22, borderRadius: 4,
-                              display: 'flex', alignItems: 'center', justifyContent: 'center',
-                              color: 'var(--fg-muted)', background: 'transparent', border: 'none',
-                              cursor: removeBusy ? 'wait' : 'pointer',
-                            }}
-                          >
-                            <Icon.Close size={12} />
-                          </button>
+                      <div key={grant.id} style={{ display: 'flex', flexDirection: 'column', gap: 2, fontSize: 12.5 }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                          <OwnerAvatar userId={grant.grantee_user_id} size={20} />
+                          <span style={{ color: 'var(--fg)', flex: 1, minWidth: 0 }}>{userLabel(grant.grantee_user_id)}</span>
+                          <span style={{
+                            fontSize: 11, padding: '1px 8px', borderRadius: 999,
+                            background: 'var(--accent-soft)', color: 'var(--accent)',
+                            border: '1px solid var(--accent)', fontWeight: 500,
+                            opacity: expired ? 0.55 : 1,
+                          }}>
+                            {grant.permission_code}
+                          </span>
+                          {expired && (
+                            <span style={{
+                              fontSize: 10, padding: '1px 6px', borderRadius: 999,
+                              background: 'var(--warn-soft)', color: 'var(--warn)',
+                              border: '1px solid var(--warn)', fontWeight: 600,
+                              textTransform: 'uppercase', letterSpacing: '0.04em',
+                            }}>
+                              Expirado
+                            </span>
+                          )}
+                          {canManagePermissions && (
+                            <button
+                              type="button"
+                              onClick={() => handleRevokePermission(grant.id)}
+                              disabled={removeBusy}
+                              title="Revocar permiso"
+                              className="edms-nav-item"
+                              style={{
+                                width: 22, height: 22, borderRadius: 4,
+                                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                                color: 'var(--fg-muted)', background: 'transparent', border: 'none',
+                                cursor: removeBusy ? 'wait' : 'pointer',
+                              }}
+                            >
+                              <Icon.Close size={12} />
+                            </button>
+                          )}
+                        </div>
+                        {grant.expires_at && (
+                          <div style={{ fontSize: 11, color: expired ? 'var(--warn)' : 'var(--fg-muted)', marginLeft: 28 }}>
+                            {expired ? 'Expiró el ' : 'Vence el '}
+                            {formatDocumentDate(grant.expires_at)}
+                          </div>
                         )}
                       </div>
                     )
@@ -4201,6 +4232,19 @@ function DetailDrawer({
                       ))}
                     </select>
                   </div>
+                  <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 11, color: 'var(--fg-muted)' }}>
+                    <span style={{ minWidth: 90 }}>Vence (opcional)</span>
+                    <input
+                      type="datetime-local"
+                      value={grantExpiresDraft}
+                      onChange={(e) => setGrantExpiresDraft(e.target.value)}
+                      style={{
+                        flex: 1, fontSize: 12, padding: '4px 6px', borderRadius: 4,
+                        background: 'var(--bg-elev)', color: 'var(--fg)',
+                        border: '1px solid var(--border)',
+                      }}
+                    />
+                  </label>
                   <div style={{ display: 'flex', gap: 6 }}>
                     <button
                       type="button"
@@ -4213,7 +4257,7 @@ function DetailDrawer({
                     </button>
                     <button
                       type="button"
-                      onClick={() => { setAddingGrant(false); setGrantError(null); setGrantUserDraft('') }}
+                      onClick={() => { setAddingGrant(false); setGrantError(null); setGrantUserDraft(''); setGrantExpiresDraft('') }}
                       className="edms-button"
                       style={{ ...btnStyleGhost, padding: '5px 10px', fontSize: 12 }}
                     >

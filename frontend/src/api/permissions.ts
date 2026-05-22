@@ -7,6 +7,8 @@ export interface DocumentPermissionGrant {
   permission_code: string
   granted_by_user_id: string
   granted_at: string
+  expires_at?: string | null
+  is_expired?: boolean
 }
 
 export const PERMISSION_CODES = [
@@ -34,10 +36,18 @@ export async function grantDocumentPermission(
   documentId: string,
   granteeUserId: string,
   permissionCode: string,
+  expiresAtIso?: string | null,
 ): Promise<DocumentPermissionGrant> {
+  const payload: Record<string, unknown> = {
+    grantee_user_id: granteeUserId,
+    permission_code: permissionCode,
+  }
+  if (expiresAtIso) {
+    payload.expires_at = expiresAtIso
+  }
   const { data } = await client.post<DocumentPermissionGrant>(
     `/collaboration/documents/${documentId}/permissions`,
-    { grantee_user_id: granteeUserId, permission_code: permissionCode },
+    payload,
   )
   return data
 }

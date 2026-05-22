@@ -43,6 +43,7 @@ VALID_PERMISSIONS: frozenset[str] = frozenset({
 class GrantPermissionRequest(BaseModel):
     grantee_user_id: str
     permission_code: str
+    expires_at: datetime | None = None
 
 
 class PermissionGrantResponse(BaseModel):
@@ -52,6 +53,8 @@ class PermissionGrantResponse(BaseModel):
     permission_code: str
     granted_by_user_id: str
     granted_at: str
+    expires_at: str | None = None
+    is_expired: bool = False
 
 
 class PermissionGrantListResponse(BaseModel):
@@ -125,6 +128,13 @@ def _notify_grant(
     )
 
 
+def _is_expired(grant: DocumentPermissionGrant, now: datetime | None = None) -> bool:
+    if grant.expires_at is None:
+        return False
+    reference = now or datetime.now(timezone.utc)
+    return grant.expires_at <= reference
+
+
 def _to_response(grant: DocumentPermissionGrant) -> PermissionGrantResponse:
     return PermissionGrantResponse(
         id=grant.id,
@@ -133,6 +143,30 @@ def _to_response(grant: DocumentPermissionGrant) -> PermissionGrantResponse:
         permission_code=grant.permission_code,
         granted_by_user_id=grant.granted_by_user_id,
         granted_at=grant.granted_at.isoformat(),
+        expires_at=grant.expires_at.isoformat() if grant.expires_at else None,
+        is_expired=_is_expired(grant),
+    )
+
+
+def _notify_revoke(
+    db: Session,
+    document_id: str,
+    recipient_user_id: str,
+    actor_user_id: str,
+    grant_id: str,
+    permission_code: str,
+) -> None:
+    """US-006: notifica al grantee cuando le revocan un permiso."""
+    db.add(
+        Notification(
+            recipient_user_id=recipient_user_id,
+            actor_user_id=actor_user_id,
+            document_id=document_id,
+            source_id=grant_id,
+            type="permiso_revocado",
+            title=f"Revocaron tu permiso de {permission_code}",
+            body=f"Perdiste el permiso de {permission_code} sobre el documento {document_id}.",
+        )
     )
 
 
@@ -161,6 +195,17 @@ def grant_permission(
             detail=f"Permiso invalido: {permission}",
         )
 
+    expires_at = body.expires_at
+    if expires_at is not None:
+        # Normalizar a UTC (Pydantic puede pasar naive si el cliente envia sin tz).
+        if expires_at.tzinfo is None:
+            expires_at = expires_at.replace(tzinfo=timezone.utc)
+        if expires_at <= datetime.now(timezone.utc):
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail="expires_at debe ser una fecha futura",
+            )
+
     _assert_can_manage(document_id, x_user_id, x_user_roles=x_user_roles)
 
     duplicate = (
@@ -184,6 +229,7 @@ def grant_permission(
         grantee_user_id=grantee,
         permission_code=permission,
         granted_by_user_id=x_user_id,
+        expires_at=expires_at,
     )
     db.add(grant)
     db.flush()
@@ -228,6 +274,10 @@ def revoke_permission(
 
     grant.is_active = False
     grant.revoked_at = datetime.now(timezone.utc)
+    # US-006: notificar al afectado (solo si no es el propio actor que se
+    # revoca a si mismo, caso poco habitual pero posible).
+    if grant.grantee_user_id != x_user_id:
+        _notify_revoke(db, document_id, grant.grantee_user_id, x_user_id, grant.id, grant.permission_code)
     db.commit()
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 
@@ -271,12 +321,15 @@ def list_permissions_for_user(
     """
     document_id = _require(document_id, "Documento")
     user_id = _require(user_id, "Usuario")
+    now = datetime.now(timezone.utc)
     rows = (
         db.query(DocumentPermissionGrant.permission_code)
         .filter(
             DocumentPermissionGrant.document_id == document_id,
             DocumentPermissionGrant.grantee_user_id == user_id,
             DocumentPermissionGrant.is_active.is_(True),
+            # US-007: excluimos grants expirados; siguen en DB pero no autorizan.
+            (DocumentPermissionGrant.expires_at.is_(None)) | (DocumentPermissionGrant.expires_at > now),
         )
         .all()
     )
@@ -318,5 +371,15 @@ def list_permission_history(
                 "body": grant.grantee_user_id,
                 "note": grant.permission_code,
                 "created_at": grant.revoked_at.isoformat(),
+            })
+        # US-007: si expiro sin revocacion manual, agregar evento sintetico.
+        if grant.expires_at is not None and grant.expires_at <= datetime.now(timezone.utc):
+            events.append({
+                "id": f"{grant.id}-expired",
+                "actor_user_id": grant.granted_by_user_id,
+                "action": "permission_expired",
+                "body": grant.grantee_user_id,
+                "note": grant.permission_code,
+                "created_at": grant.expires_at.isoformat(),
             })
     return {"events": events}
