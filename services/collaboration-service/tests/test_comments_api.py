@@ -59,11 +59,12 @@ def test_comentario_notifica_a_asignados_y_mencionados(client):
     assert r.status_code == 201, r.text
     assert r.json()["action"] == "comment"
 
-    # El asignado (distinto del autor) recibe "nuevo_comentario"
+    # El asignado (distinto del autor) recibe "nuevo_comentario" con nombre de documento
     asignado = client.get(
         "/collaboration/notifications", headers={"X-User-Id": "encargado-1"}
     ).json()
-    assert any(n["type"] == "nuevo_comentario" for n in asignado["items"])
+    notif_comentario = next(n for n in asignado["items"] if n["type"] == "nuevo_comentario")
+    assert notif_comentario["document_name"] == "Doc 1"
 
     # El mencionado recibe "mencion"
     mencionado = client.get(

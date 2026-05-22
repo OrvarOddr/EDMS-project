@@ -5,6 +5,7 @@ export interface NotificationItem {
   recipient_user_id: string
   actor_user_id: string | null
   document_id: string | null
+  document_name: string | null
   source_id: string | null
   type: string
   title: string
