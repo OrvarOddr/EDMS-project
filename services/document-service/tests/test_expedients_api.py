@@ -6,7 +6,7 @@ import httpx
 import pytest
 import respx
 
-from tests.conftest import WORKFLOW_SERVICE_URL
+from tests.conftest import COLLABORATION_SERVICE_URL, WORKFLOW_SERVICE_URL
 
 pytestmark = pytest.mark.integration
 
@@ -14,6 +14,8 @@ USER = "user-1"
 OTHER = "user-2"
 BOOTSTRAP_URL = f"{WORKFLOW_SERVICE_URL}/internal/workflow/documents/bootstrap"
 SUMMARIES_URL = f"{WORKFLOW_SERVICE_URL}/internal/workflow/documents/batch-summaries"
+# Endpoint interno consultado cuando _document_for_actor cae a chequeo de grants.
+GRANTS_URL_RE = f"{COLLABORATION_SERVICE_URL}/internal/collaboration/documents/"
 
 
 def test_crear_expediente_requiere_usuario(client):
@@ -138,6 +140,10 @@ def test_attach_documents_asocia_y_omite_no_autorizados(client):
     respx.post(SUMMARIES_URL).mock(
         return_value=httpx.Response(200, json={"summaries": {}})
     )
+    # Sin grants explicitos -> _document_for_actor consulta este endpoint.
+    respx.get(url__regex=rf"{GRANTS_URL_RE}.+/permissions").mock(
+        return_value=httpx.Response(200, json={"permissions": []})
+    )
 
     exp = client.post(
         "/expedients", headers={"X-User-Id": USER}, json={"name": "Bulk"}
@@ -186,6 +192,9 @@ def test_attach_documents_admin_bypass(client):
     respx.post(SUMMARIES_URL).mock(
         return_value=httpx.Response(200, json={"summaries": {}})
     )
+    respx.get(url__regex=rf"{GRANTS_URL_RE}.+/permissions").mock(
+        return_value=httpx.Response(200, json={"permissions": []})
+    )
 
     exp = client.post(
         "/expedients", headers={"X-User-Id": USER}, json={"name": "Admin"}
@@ -221,6 +230,9 @@ def test_attach_documents_idempotente(client):
     )
     respx.post(SUMMARIES_URL).mock(
         return_value=httpx.Response(200, json={"summaries": {}})
+    )
+    respx.get(url__regex=rf"{GRANTS_URL_RE}.+/permissions").mock(
+        return_value=httpx.Response(200, json={"permissions": []})
     )
 
     exp = client.post(
