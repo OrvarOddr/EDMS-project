@@ -14,6 +14,8 @@ async def lifespan(app: FastAPI):
         conn.execute(text("ALTER TABLE collaboration.notifications ADD COLUMN IF NOT EXISTS source_id VARCHAR"))
         conn.execute(text("ALTER TABLE collaboration.notifications ADD COLUMN IF NOT EXISTS document_name VARCHAR"))
         conn.execute(text("ALTER TABLE collaboration.document_permission_grants ADD COLUMN IF NOT EXISTS expires_at TIMESTAMPTZ"))
+        conn.execute(text("ALTER TABLE collaboration.comments ADD COLUMN IF NOT EXISTS resolved_at TIMESTAMPTZ"))
+        conn.execute(text("ALTER TABLE collaboration.comments ADD COLUMN IF NOT EXISTS resolved_by_user_id VARCHAR"))
         conn.commit()
     yield
 

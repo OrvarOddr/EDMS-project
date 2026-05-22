@@ -67,6 +67,8 @@ export interface DocumentDetailTimelineItem {
   body?: string | null
   note?: string | null
   created_at: string
+  resolved_at?: string | null
+  resolved_by_user_id?: string | null
 }
 
 export interface DocumentDetailPermissions {
@@ -163,6 +165,16 @@ export const createComment = (
     version_id: versionId ?? null,
     mentioned_user_ids: mentionedUserIds,
   })
+
+export const resolveComment = (documentId: string, commentId: string) =>
+  client.post<DocumentDetailTimelineItem>(
+    `/collaboration/documents/${documentId}/comments/${commentId}/resolve`,
+  )
+
+export const unresolveComment = (documentId: string, commentId: string) =>
+  client.post<DocumentDetailTimelineItem>(
+    `/collaboration/documents/${documentId}/comments/${commentId}/unresolve`,
+  )
 
 export interface DocumentMetricsResponse {
   total: number
