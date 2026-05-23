@@ -3357,6 +3357,8 @@ function DetailDrawer({
   onVersionUploaded,
   expedients = [],
   onOpenExpedient,
+  onApproveDoc,
+  onRejectDoc,
   fullScreen = false,
   onToggleFull,
 }: {
@@ -3378,6 +3380,8 @@ function DetailDrawer({
   onVersionUploaded?: (docId: string) => Promise<void>
   expedients?: ExpedientItem[]
   onOpenExpedient?: (expedientId: string) => void
+  onApproveDoc?: (docId: string) => Promise<void>
+  onRejectDoc?: (docId: string) => Promise<void>
   fullScreen?: boolean
   onToggleFull?: () => void
 }) {
@@ -3393,6 +3397,8 @@ function DetailDrawer({
   const versionFileInputRef = useRef<HTMLInputElement | null>(null)
   const [versionUploading, setVersionUploading] = useState(false)
   const [versionUploadError, setVersionUploadError] = useState<string | null>(null)
+  const [approvalBusy, setApprovalBusy] = useState<'approve' | 'reject' | null>(null)
+  const [approvalError, setApprovalError] = useState<string | null>(null)
   // US-022: pueden quedar comentarios resueltos en el detalle local cuando el
   // usuario marca/desmarca, sin refetch completo. Guardamos delta aqui.
   const [commentResolutionOverrides, setCommentResolutionOverrides] = useState<Record<string, { resolved_at: string | null; resolved_by_user_id: string | null }>>({})
@@ -3489,6 +3495,7 @@ function DetailDrawer({
   const canEditMetadata = permissions?.can_edit_metadata ?? true
   const canAssignAssignee = permissions?.can_assign_assignee ?? canEditMetadata
   const canDownloadFile = Boolean(currentFile) && (permissions?.can_download_file ?? true)
+  const canApprove = Boolean(permissions?.can_approve)
   const assignments = workflow?.assignments ?? []
   const assigneeId = workflow?.assignee_user_id ?? doc.owner
   const canManageAssignments = Boolean(
@@ -3810,6 +3817,37 @@ function DetailDrawer({
     versionFileInputRef.current?.click()
   }
 
+  async function handleApproveClick() {
+    if (!doc || !onApproveDoc || approvalBusy) return
+    setApprovalBusy('approve')
+    setApprovalError(null)
+    try {
+      await onApproveDoc(doc.id)
+    } catch (err) {
+      setApprovalError(getApiErrorMessage(err, 'No se pudo aprobar el documento'))
+    } finally {
+      setApprovalBusy(null)
+    }
+  }
+
+  async function handleRejectClick() {
+    if (!doc || !onRejectDoc || approvalBusy) return
+    setApprovalBusy('reject')
+    setApprovalError(null)
+    try {
+      await onRejectDoc(doc.id)
+    } catch (err) {
+      const message = (err as Error)?.message
+      if (message === 'Cambio de estado cancelado') {
+        // El usuario canceló el prompt de motivo: no es error.
+      } else {
+        setApprovalError(getApiErrorMessage(err, 'No se pudo rechazar el documento'))
+      }
+    } finally {
+      setApprovalBusy(null)
+    }
+  }
+
   async function handleVersionFileChange(event: React.ChangeEvent<HTMLInputElement>) {
     const file = event.target.files?.[0]
     event.target.value = ''
@@ -4114,7 +4152,55 @@ function DetailDrawer({
               style={{ display: 'none' }}
               onChange={handleVersionFileChange}
             />
+            {/* US-016 / US-017: aprobar y rechazar son acciones formales que
+                solo aparecen cuando el usuario tiene permiso `approve`. */}
+            {canApprove && onApproveDoc && (
+              <button
+                className="edms-button"
+                style={{
+                  ...btnStyleGhost,
+                  color: 'var(--ok)',
+                  borderColor: 'color-mix(in oklch, var(--ok) 60%, var(--border))',
+                }}
+                disabled={approvalBusy !== null || doc.status === 'aprobado'}
+                onClick={handleApproveClick}
+                title={doc.status === 'aprobado' ? 'El documento ya está aprobado' : 'Aprobar este documento'}
+              >
+                <Icon.Check size={13} /> {approvalBusy === 'approve' ? 'Aprobando...' : 'Aprobar'}
+              </button>
+            )}
+            {canApprove && onRejectDoc && (
+              <button
+                className="edms-button"
+                style={{
+                  ...btnStyleGhost,
+                  color: 'var(--danger)',
+                  borderColor: 'color-mix(in oklch, var(--danger) 60%, var(--border))',
+                }}
+                disabled={approvalBusy !== null || doc.status === 'rechazado'}
+                onClick={handleRejectClick}
+                title={doc.status === 'rechazado' ? 'El documento ya está rechazado' : 'Rechazar este documento (motivo obligatorio)'}
+              >
+                <Icon.Close size={13} /> {approvalBusy === 'reject' ? 'Rechazando...' : 'Rechazar'}
+              </button>
+            )}
           </div>
+
+          {approvalError && (
+            <div
+              style={{
+                border: '1px solid color-mix(in oklch, var(--danger) 55%, var(--border))',
+                background: 'color-mix(in oklch, var(--danger) 10%, var(--bg-elev-2))',
+                color: 'var(--danger)',
+                borderRadius: 8,
+                padding: '8px 10px',
+                marginBottom: 12,
+                fontSize: 12,
+              }}
+            >
+              {approvalError}
+            </div>
+          )}
 
           {versionUploadError && (
             <div
@@ -9934,6 +10020,33 @@ export default function DashboardPage() {
           setSelectedView('expediente')
           setOpenDocId(null)
           setFullDocId(null)
+        }}
+        onApproveDoc={async (docId) => {
+          await changeDocumentState(docId, 'aprobado')
+          setCreatedDocs((prev) => prev.map((d) =>
+            d.id === docId ? { ...d, status: statusFromWorkflow('aprobado') } : d,
+          ))
+          setDocumentDetails((current) => {
+            if (!current[docId]) return current
+            const next = { ...current }
+            delete next[docId]
+            return next
+          })
+          setToast('Documento aprobado')
+        }}
+        onRejectDoc={async (docId) => {
+          const motivo = await requestStateComment('rechazado')
+          await changeDocumentState(docId, 'rechazado', motivo)
+          setCreatedDocs((prev) => prev.map((d) =>
+            d.id === docId ? { ...d, status: statusFromWorkflow('rechazado') } : d,
+          ))
+          setDocumentDetails((current) => {
+            if (!current[docId]) return current
+            const next = { ...current }
+            delete next[docId]
+            return next
+          })
+          setToast('Documento rechazado')
         }}
         onCommentPosted={(item) => {
           if (!openDocId) return

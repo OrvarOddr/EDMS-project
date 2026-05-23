@@ -79,6 +79,7 @@ export interface DocumentDetailPermissions {
   can_comment: boolean
   can_assign_assignee: boolean
   can_manage_permissions?: boolean
+  can_approve?: boolean
 }
 
 export interface DocumentDetailResponse {

@@ -917,6 +917,10 @@ def get_document_detail(
             can_comment=document.archived_at is None and (can_operate or "comment" in grants or _can_view_document(document, actor_user_id, workflow_raw if isinstance(workflow_raw, dict) else None)),
             can_assign_assignee=can_operate,
             can_manage_permissions=can_operate or "manage_permissions" in grants,
+            # US-016/US-017: aprobar y rechazar son dos caras del mismo permiso
+            # de aprobacion. Owner/admin pasan via can_operate; otros usuarios
+            # necesitan grant explicito "approve".
+            can_approve=document.archived_at is None and (can_operate or "approve" in grants),
         ),
     )
 
