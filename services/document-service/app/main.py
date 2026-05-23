@@ -6,6 +6,7 @@ from app.config import settings
 from app.database import engine, Base, SessionLocal
 from app.models import DocumentVersion
 from app.routers import expedients
+from app.routers import favorites
 from app.routers import health
 from app.routers import versions
 from app.routers import tags
@@ -63,6 +64,11 @@ async def lifespan(app: FastAPI):
             "CREATE UNIQUE INDEX IF NOT EXISTS uq_expedients_code "
             "ON documents.expedients (code) WHERE code IS NOT NULL"
         ))
+        # Favoritos por usuario: par (user_id, document_id) unico.
+        conn.execute(text(
+            "CREATE UNIQUE INDEX IF NOT EXISTS uq_document_favorites_user_doc "
+            "ON documents.document_favorites (user_id, document_id)"
+        ))
     _backfill_mime_types()
     yield
 
@@ -73,3 +79,4 @@ app.include_router(versions.router)
 app.include_router(versions.internal_router)
 app.include_router(tags.router)
 app.include_router(expedients.router)
+app.include_router(favorites.router)

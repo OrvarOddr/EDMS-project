@@ -1,5 +1,6 @@
 import {
   createContext,
+  Fragment,
   useCallback,
   useContext,
   useEffect,
@@ -16,14 +17,18 @@ import { useAuth } from '../context/AuthContext'
 import KanbanView from '../components/kanban/KanbanView'
 import { assignRole, createUser, listRoles, listUsers, type RoleItem, type UserMe } from '../api/auth'
 import {
+  addDocumentFavorite,
   createComment,
   createDocument,
   getDocumentDetail,
   getDocumentMetrics,
+  listArchivedDocuments,
   listDocuments,
+  listFavoriteDocuments,
   listTrashedDocuments,
   moveDocumentToTrash,
   permanentlyDeleteDocument,
+  removeDocumentFavorite,
   resolveComment,
   restoreDocumentFromTrash,
   unresolveComment,
@@ -101,6 +106,7 @@ type SelectedView =
   | 'recientes'
   | 'compartidos'
   | 'favoritos'
+  | 'archivados'
   | 'aprobaciones'
   | 'papelera'
   | 'carpeta'
@@ -214,6 +220,7 @@ interface ActionItem {
 
 interface MenuItem extends ActionItem {
   shortcut?: string
+  submenu?: MenuItem[]
 }
 
 interface DashboardData {
@@ -610,6 +617,7 @@ function documentResponseToItem(document: DocumentItemResponse): DocumentItem {
     tags: [],
     shared: assignedUserIds.filter((userId) => userId !== document.owner_user_id),
     status: statusFromWorkflow(document.workflow_state_code),
+    starred: Boolean(document.is_starred),
   }
 }
 
@@ -1963,8 +1971,9 @@ function Sidebar({
           />
           <NavItem icon={<Icon.Clock size={14} />} label="Recientes" active={selectedView === 'recientes'} onClick={() => onSelectView('recientes')} />
           <NavItem icon={<Icon.Users size={14} />} label="Compartidos conmigo" count={23} active={selectedView === 'compartidos'} onClick={() => onSelectView('compartidos')} />
-          <NavItem icon={<Icon.Star size={14} />} label="Favoritos" count={4} active={selectedView === 'favoritos'} onClick={() => onSelectView('favoritos')} />
+          <NavItem icon={<Icon.Star size={14} />} label="Favoritos" active={selectedView === 'favoritos'} onClick={() => onSelectView('favoritos')} />
           <NavItem icon={<Icon.Signature size={14} />} label="Aprobaciones" badge={dashboardData.approvals.length} active={selectedView === 'aprobaciones'} onClick={() => onSelectView('aprobaciones')} />
+          <NavItem icon={<Icon.Check size={14} />} label="Archivados" active={selectedView === 'archivados'} onClick={() => onSelectView('archivados')} />
           <NavItem icon={<Icon.Trash size={14} />} label="Papelera" active={selectedView === 'papelera'} onClick={() => onSelectView('papelera')} />
           {isAdmin && (
             <NavItem
@@ -5201,11 +5210,17 @@ function ContextMenu({
   ctx,
   onClose,
   onAction,
+  expedients,
+  starredDocIds,
 }: {
   ctx: ContextMenuState | null
   onClose: () => void
   onAction: (action: string, docId?: string) => void | Promise<void>
+  expedients: ExpedientItem[]
+  starredDocIds: Set<string>
 }) {
+  const [hoverSubmenu, setHoverSubmenu] = useState<string | null>(null)
+
   useEffect(() => {
     if (!ctx) return
     function handleClose() {
@@ -5224,7 +5239,30 @@ function ContextMenu({
     }
   }, [ctx, onClose])
 
+  // Cuando el menu se cierra (ctx=null) limpiamos el hover en un microtask
+  // para evitar setState sincrono en el cuerpo del efecto anterior.
+  useEffect(() => {
+    if (ctx) return
+    let mounted = true
+    queueMicrotask(() => {
+      if (mounted) setHoverSubmenu(null)
+    })
+    return () => {
+      mounted = false
+    }
+  }, [ctx])
+
   if (!ctx) return null
+
+  const isStarred = ctx.docId ? starredDocIds.has(ctx.docId) : false
+  const moveSubmenu: MenuItem[] = [
+    { id: 'move:none', icon: <Icon.Folder size={13} />, label: 'Sin expediente' },
+    ...expedients.map((exp) => ({
+      id: `move:${exp.id}`,
+      icon: <Icon.Folder size={13} />,
+      label: exp.code ? `${exp.name} (${exp.code})` : exp.name,
+    })),
+  ]
 
   const items: Array<MenuItem | null> = [
     { id: 'open', icon: <Icon.Eye size={13} />, label: 'Abrir' },
@@ -5235,14 +5273,18 @@ function ContextMenu({
     { id: 'download', icon: <Icon.Download size={13} />, label: 'Descargar', shortcut: '⌘D' },
     null,
     { id: 'edit-metadata', icon: <Icon.File size={13} />, label: 'Editar metadata', shortcut: 'F2' },
-    { id: 'move', icon: <Icon.Move size={13} />, label: 'Mover a…' },
+    { id: 'move', icon: <Icon.Move size={13} />, label: 'Mover a…', submenu: moveSubmenu },
     { id: 'tag', icon: <Icon.Tag size={13} />, label: 'Añadir etiqueta' },
-    { id: 'star', icon: <Icon.Star size={13} />, label: 'Marcar favorito' },
+    { id: 'star', icon: <Icon.Star size={13} />, label: isStarred ? 'Quitar de favoritos' : 'Marcar favorito' },
     null,
     { id: 'trash', icon: <Icon.Trash size={13} />, label: 'Mover a papelera', danger: true, shortcut: '⌫' },
-  ] as const
+  ]
 
-  const x = Math.min(ctx.x, window.innerWidth - 230)
+  const menuWidth = 230
+  const submenuWidth = 240
+  // Si no cabe el submenu a la derecha, lo abrimos hacia la izquierda.
+  const submenuFlipLeft = ctx.x + menuWidth + submenuWidth > window.innerWidth
+  const x = Math.min(ctx.x, window.innerWidth - menuWidth)
   const y = Math.min(ctx.y, window.innerHeight - 370)
 
   return (
@@ -5258,39 +5300,101 @@ function ContextMenu({
         borderRadius: 8,
         boxShadow: 'var(--shadow)',
         padding: 4,
-        minWidth: 210,
+        minWidth: menuWidth,
       }}
     >
       {items.map((item, index) =>
         item === null ? (
           <div key={`divider-${index}`} style={{ height: 1, background: 'var(--border)', margin: '4px 0' }} />
         ) : (
-          <button
+          <div
             key={item.id}
-            onClick={() => {
-              onAction(item.id, ctx.docId)
-              onClose()
-            }}
-            className="edms-nav-item"
-            style={{
-              display: 'flex',
-              alignItems: 'center',
-              gap: 10,
-              width: '100%',
-              padding: '6px 10px',
-              borderRadius: 5,
-              fontSize: 12.5,
-              color: item.danger ? 'var(--danger)' : 'var(--fg)',
-            }}
+            style={{ position: 'relative' }}
+            onMouseEnter={() => setHoverSubmenu(item.submenu ? item.id : null)}
+            onMouseLeave={() => setHoverSubmenu((current) => (current === item.id ? null : current))}
           >
-            <span style={{ color: item.danger ? 'var(--danger)' : 'var(--fg-muted)' }}>{item.icon}</span>
-            <span style={{ flex: 1, textAlign: 'left' }}>{item.label}</span>
-            {item.shortcut && (
-              <span style={{ fontSize: 10.5, color: 'var(--fg-dim)', fontFamily: "'JetBrains Mono', ui-monospace, monospace" }}>
-                {item.shortcut}
-              </span>
+            <button
+              onClick={() => {
+                if (item.submenu) return // toggle on hover; click-to-toggle ignored
+                onAction(item.id, ctx.docId)
+                onClose()
+              }}
+              className="edms-nav-item"
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: 10,
+                width: '100%',
+                padding: '6px 10px',
+                borderRadius: 5,
+                fontSize: 12.5,
+                color: item.danger ? 'var(--danger)' : 'var(--fg)',
+              }}
+            >
+              <span style={{ color: item.danger ? 'var(--danger)' : 'var(--fg-muted)' }}>{item.icon}</span>
+              <span style={{ flex: 1, textAlign: 'left' }}>{item.label}</span>
+              {item.submenu ? (
+                <Icon.Chev size={11} stroke={2} style={{ color: 'var(--fg-dim)' }} />
+              ) : item.shortcut ? (
+                <span style={{ fontSize: 10.5, color: 'var(--fg-dim)', fontFamily: "'JetBrains Mono', ui-monospace, monospace" }}>
+                  {item.shortcut}
+                </span>
+              ) : null}
+            </button>
+            {item.submenu && hoverSubmenu === item.id && (
+              <div
+                style={{
+                  position: 'absolute',
+                  top: -4,
+                  left: submenuFlipLeft ? undefined : 'calc(100% + 2px)',
+                  right: submenuFlipLeft ? 'calc(100% + 2px)' : undefined,
+                  zIndex: 101,
+                  background: 'var(--bg-elev)',
+                  border: '1px solid var(--border-strong)',
+                  borderRadius: 8,
+                  boxShadow: 'var(--shadow)',
+                  padding: 4,
+                  minWidth: submenuWidth,
+                  maxHeight: 360,
+                  overflow: 'auto',
+                }}
+              >
+                {item.submenu.length === 1 ? (
+                  // Solo está "Sin expediente" => no hay expedientes creados.
+                  <div style={{ padding: '8px 10px', fontSize: 12, color: 'var(--fg-dim)' }}>
+                    No hay expedientes. Crea uno desde el sidebar primero.
+                  </div>
+                ) : null}
+                {item.submenu.map((sub, subIndex) => (
+                  <Fragment key={sub.id}>
+                    {subIndex === 1 && (
+                      <div style={{ height: 1, background: 'var(--border)', margin: '4px 0' }} />
+                    )}
+                    <button
+                      onClick={() => {
+                        onAction(sub.id, ctx.docId)
+                        onClose()
+                      }}
+                      className="edms-nav-item"
+                      style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: 10,
+                        width: '100%',
+                        padding: '6px 10px',
+                        borderRadius: 5,
+                        fontSize: 12.5,
+                        color: 'var(--fg)',
+                      }}
+                    >
+                      <span style={{ color: 'var(--fg-muted)' }}>{sub.icon}</span>
+                      <span style={{ flex: 1, textAlign: 'left', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{sub.label}</span>
+                    </button>
+                  </Fragment>
+                ))}
+              </div>
             )}
-          </button>
+          </div>
         ),
       )}
     </div>
@@ -8396,6 +8500,8 @@ export default function DashboardPage() {
   const [unassignedFiles, setUnassignedFiles] = useState<StoredFileItem[]>([])
   const [trashedFiles, setTrashedFiles] = useState<StoredFileItem[]>([])
   const [trashedDocs, setTrashedDocs] = useState<DocumentItem[]>([])
+  const [archivedDocs, setArchivedDocs] = useState<DocumentItem[]>([])
+  const [favoriteDocs, setFavoriteDocs] = useState<DocumentItem[]>([])
   const [selectedUnassignedFileId, setSelectedUnassignedFileId] = useState<string | null>(null)
   const [selectingTrashFiles, setSelectingTrashFiles] = useState(false)
   const [selectedTrashFileIds, setSelectedTrashFileIds] = useState<Set<string>>(new Set())
@@ -8444,6 +8550,13 @@ export default function DashboardPage() {
   const currentUserColor = user?.color ?? actorColorFromId(user?.id ?? null)
   const firstName = currentUserLabel.split(' ')[0]
   const allDocs = useMemo(() => [...createdDocs, ...dashboardData.docs], [createdDocs])
+  const starredDocIds = useMemo(() => {
+    const ids = new Set<string>()
+    for (const doc of createdDocs) if (doc.starred) ids.add(doc.id)
+    for (const doc of archivedDocs) if (doc.starred) ids.add(doc.id)
+    for (const doc of favoriteDocs) ids.add(doc.id)
+    return ids
+  }, [createdDocs, archivedDocs, favoriteDocs])
   const searchQuery = search.trim()
   const searchActive = searchQuery.length > 0
   const filtersActive = useMemo(() => Object.values(filters).some(Boolean), [filters])
@@ -8718,6 +8831,45 @@ export default function DashboardPage() {
     }
   }, [selectedExpedientId])
 
+  // Carga lazy de la vista Archivados: solo se solicita al entrar a la vista
+  // y se refresca cada vez que el usuario vuelve a abrirla.
+  useEffect(() => {
+    if (selectedView !== 'archivados') return
+    let mounted = true
+    listArchivedDocuments()
+      .then(async (res) => {
+        if (!mounted) return
+        const docs = await withDocumentTags(res.data.map(documentResponseToItem))
+        if (!mounted) return
+        setArchivedDocs(docs)
+      })
+      .catch(() => {
+        if (mounted) setToast('No se pudo cargar la vista de archivados')
+      })
+    return () => {
+      mounted = false
+    }
+  }, [selectedView])
+
+  // Carga lazy de Favoritos (server-side, persistente).
+  useEffect(() => {
+    if (selectedView !== 'favoritos') return
+    let mounted = true
+    listFavoriteDocuments()
+      .then(async (res) => {
+        if (!mounted) return
+        const docs = await withDocumentTags(res.data.map(documentResponseToItem))
+        if (!mounted) return
+        setFavoriteDocs(docs)
+      })
+      .catch(() => {
+        if (mounted) setToast('No se pudieron cargar los favoritos')
+      })
+    return () => {
+      mounted = false
+    }
+  }, [selectedView])
+
   useEffect(() => {
     if (!serverListActive) {
       let mounted = true
@@ -8790,11 +8942,15 @@ export default function DashboardPage() {
   }, [createdDocs, documentDetails, openDocId])
 
   const visibleDocs = useMemo(() => {
+    // Vistas con carga server-side dedicada: no filtramos sobre allDocs,
+    // devolvemos directamente el set que el backend nos dio.
+    if (selectedView === 'favoritos') return favoriteDocs
+    if (selectedView === 'archivados') return archivedDocs
+
     let list = serverListActive ? searchDocs : allDocs
 
     if (!serverListActive) {
-      if (selectedView === 'favoritos') list = list.filter((doc) => doc.starred)
-      else if (selectedView === 'compartidos') list = list.filter((doc) => doc.shared.length > 0 && doc.owner !== 'u1')
+      if (selectedView === 'compartidos') list = list.filter((doc) => doc.shared.length > 0 && doc.owner !== 'u1')
       else if (selectedView === 'aprobaciones') list = list.filter((doc) => doc.status === 'pendiente-firma' || doc.status === 'revision')
       else if (selectedView === 'archivos-sin-asignar') list = []
       else if (selectedView === 'papelera') list = []
@@ -8812,7 +8968,7 @@ export default function DashboardPage() {
     if (filters.date) list = list.filter((doc) => documentMatchesDateFilter(doc, filters.date))
 
     return list
-  }, [allDocs, serverListActive, searchDocs, selectedView, selectedFolder, selectedTag, filters])
+  }, [allDocs, serverListActive, searchDocs, selectedView, selectedFolder, selectedTag, filters, favoriteDocs, archivedDocs])
 
   const breadcrumb = useMemo(() => {
     if (selectedView === 'inicio') return [{ id: 'inicio', label: 'Inicio' }]
@@ -8822,6 +8978,7 @@ export default function DashboardPage() {
     if (selectedView === 'compartidos') return [{ id: 'compartidos', label: 'Compartidos conmigo' }]
     if (selectedView === 'favoritos') return [{ id: 'favoritos', label: 'Favoritos' }]
     if (selectedView === 'aprobaciones') return [{ id: 'aprobaciones', label: 'Aprobaciones' }]
+    if (selectedView === 'archivados') return [{ id: 'archivados', label: 'Archivados' }]
     if (selectedView === 'papelera') return [{ id: 'papelera', label: 'Papelera' }]
     if (selectedView === 'expediente') {
       const exp = expedients.find((item) => item.id === selectedExpedientId)
@@ -9089,6 +9246,9 @@ export default function DashboardPage() {
       const trashedDocument = documentResponseToItem(data)
       setCreatedDocs((current) => current.filter((item) => item.id !== documentId))
       setTrashedDocs((current) => [trashedDocument, ...current.filter((item) => item.id !== documentId)])
+      // Quitar tambien de las listas server-side dedicadas (favoritos/archivados).
+      setFavoriteDocs((current) => current.filter((item) => item.id !== documentId))
+      setArchivedDocs((current) => current.filter((item) => item.id !== documentId))
       setDocumentDetails((current) => {
         const next = { ...current }
         delete next[documentId]
@@ -9467,6 +9627,83 @@ export default function DashboardPage() {
     setToast('Nueva versión registrada')
   }
 
+  // Marca o desmarca favorito; actualiza todas las listas locales para
+  // reflejar el cambio sin recargar.
+  async function toggleFavorite(docId: string) {
+    const all = [...createdDocs, ...archivedDocs, ...favoriteDocs]
+    const ref = all.find((doc) => doc.id === docId)
+    const willStar = !(ref?.starred ?? false)
+    try {
+      if (willStar) {
+        await addDocumentFavorite(docId)
+      } else {
+        await removeDocumentFavorite(docId)
+      }
+      setCreatedDocs((current) => current.map((doc) => (doc.id === docId ? { ...doc, starred: willStar } : doc)))
+      setArchivedDocs((current) => current.map((doc) => (doc.id === docId ? { ...doc, starred: willStar } : doc)))
+      if (willStar) {
+        if (ref) {
+          setFavoriteDocs((current) =>
+            current.some((doc) => doc.id === docId)
+              ? current.map((doc) => (doc.id === docId ? { ...doc, starred: true } : doc))
+              : [{ ...ref, starred: true }, ...current],
+          )
+        }
+      } else {
+        setFavoriteDocs((current) => current.filter((doc) => doc.id !== docId))
+      }
+      setToast(willStar ? 'Marcado como favorito' : 'Quitado de favoritos')
+    } catch (err) {
+      setToast(getApiErrorMessage(err, 'No se pudo actualizar favoritos'))
+    }
+  }
+
+  // Mueve un documento a un expediente concreto, o lo desasocia si target es null.
+  async function moveDocumentToExpedient(docId: string, targetExpedientId: string | null) {
+    const all = [...createdDocs, ...archivedDocs, ...favoriteDocs]
+    const ref = all.find((doc) => doc.id === docId)
+    if (!ref) return
+    try {
+      if (targetExpedientId) {
+        const res = await attachDocumentsToExpedient(targetExpedientId, [docId])
+        if (res.data.skipped.some((entry) => entry.document_id === docId)) {
+          setToast('No se pudo mover (sin permiso)')
+          return
+        }
+      } else {
+        // Desasociar: reutiliza el endpoint de metadata. Envia los campos
+        // actuales del documento + expedient_id=null.
+        await updateDocumentMetadata(docId, {
+          title: ref.name,
+          document_type_id: ref.documentTypeId ?? 'contrato',
+          description: ref.description ?? '',
+          expedient_id: null,
+          confidentiality_level: ref.confidentialityLevel ?? 'publico_interno',
+          due_date: ref.dueDate ?? null,
+        })
+      }
+      const nextFolder = targetExpedientId ?? 'root'
+      const apply = (doc: DocumentItem) => (doc.id === docId ? { ...doc, folder: nextFolder } : doc)
+      setCreatedDocs((current) => current.map(apply))
+      setArchivedDocs((current) => current.map(apply))
+      setFavoriteDocs((current) => current.map(apply))
+      // Si estoy viendo un expediente y el doc ya no le pertenece, sale del listado.
+      if (selectedView === 'expediente' && selectedExpedientId && selectedExpedientId !== targetExpedientId) {
+        setExpedientDetail((detail) =>
+          detail
+            ? { ...detail, documents: detail.documents.filter((doc) => doc.id !== docId) }
+            : detail,
+        )
+      }
+      const expName = targetExpedientId
+        ? expedients.find((exp) => exp.id === targetExpedientId)?.name ?? 'expediente'
+        : 'Sin expediente'
+      setToast(targetExpedientId ? `Movido a ${expName}` : 'Documento desasociado del expediente')
+    } catch (err) {
+      setToast(getApiErrorMessage(err, 'No se pudo mover el documento'))
+    }
+  }
+
   async function handleAction(action: string, docId?: string) {
     if (action === 'team') {
       if (!user?.is_superuser) {
@@ -9506,14 +9743,25 @@ export default function DashboardPage() {
       return
     }
 
+    if (action === 'star' && docId) {
+      await toggleFavorite(docId)
+      return
+    }
+
+    // "Mover a..." sub-acciones: 'move:none' (desasociar) o 'move:<expId>'.
+    if (action.startsWith('move:') && docId) {
+      const target = action.slice('move:'.length)
+      await moveDocumentToExpedient(docId, target === 'none' ? null : target)
+      return
+    }
+
     const messages: Record<string, string> = {
       download: 'Descarga iniciada',
       share: 'Enlace copiado al portapapeles',
       sign: 'Solicitud de firma enviada',
       trash: 'Movido a papelera',
-      move: 'Selecciona destino…',
+      move: 'Elige un expediente desde el submenú',
       tag: 'Selecciona uno o mas documentos para etiquetar',
-      star: 'Añadido a favoritos',
       rename: 'Renombrar — modo edición',
       open: 'Abriendo documento…',
       preview: 'Vista previa activada',
@@ -10077,7 +10325,13 @@ export default function DashboardPage() {
         onCreateDocument={handleCreateDocumentFromFile}
         onAssignDocument={handleAssignFileToDocument}
       />
-      <ContextMenu ctx={ctxMenu} onClose={() => setCtxMenu(null)} onAction={handleAction} />
+      <ContextMenu
+        ctx={ctxMenu}
+        onClose={() => setCtxMenu(null)}
+        onAction={handleAction}
+        expedients={expedients}
+        starredDocIds={starredDocIds}
+      />
       <NotifPopover
         open={notifOpen}
         onClose={() => setNotifOpen(false)}

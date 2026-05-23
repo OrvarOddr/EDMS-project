@@ -20,6 +20,7 @@ from app.routers.versions import (
     _fetch_batch_workflow_summaries,
     _is_admin,
     _record_metadata_activity,
+    _starred_set,
     _to_document_response,
 )
 from app.schemas import (
@@ -129,6 +130,7 @@ def get_expedient(
     ]
     visible_ids = [d.id for d in visible]
     mime_map = _current_mime_map(db, visible_ids)
+    starred = _starred_set(db, actor_user_id, visible_ids)
 
     base = _to_response(expedient)
     return ExpedientDetailResponse(
@@ -138,6 +140,7 @@ def get_expedient(
                 document,
                 workflow=summary_map.get(document.id),
                 current_mime_type=mime_map.get(document.id),
+                is_starred=document.id in starred,
             )
             for document in visible
         ],
