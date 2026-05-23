@@ -137,3 +137,91 @@ def test_cambio_de_estado_notifica_a_otros_asignados(client, db_session):
     assert route.called
     sent = route.calls.last.request
     assert b"user-2" in sent.content
+
+
+# --- US-016 / US-017 -------------------------------------------------------
+
+DOC_ACCESS_URL_RE = r"http://document-service:8002/internal/documents/[^/]+/access"
+
+
+@respx.mock
+def test_aprobar_sin_permiso_devuelve_403(client, db_session):
+    """Un asignado sin permiso `approve` (rol revisor) no puede aprobar."""
+    respx.post(NOTIF_URL).mock(return_value=httpx.Response(201))
+    respx.get(url__regex=DOC_ACCESS_URL_RE).mock(return_value=httpx.Response(403))
+    _bootstrap(client)
+
+    from app.models import DocumentAssignment
+
+    db_session.add(
+        DocumentAssignment(
+            document_id=DOC,
+            user_id="revisor-1",
+            role_code="revisor",
+            assigned_by_user_id=USER,
+        )
+    )
+    db_session.commit()
+
+    r = client.patch(
+        f"/workflow/documents/{DOC}/state",
+        headers={"X-User-Id": "revisor-1"},
+        json={"new_state_code": "aprobado"},
+    )
+    assert r.status_code == 403, r.text
+
+
+@respx.mock
+def test_aprobar_con_permiso_funciona(client):
+    """Quien tenga permiso `approve` (owner) puede transicionar a aprobado."""
+    respx.post(NOTIF_URL).mock(return_value=httpx.Response(201))
+    respx.get(url__regex=DOC_ACCESS_URL_RE).mock(return_value=httpx.Response(204))
+    _bootstrap(client)
+
+    r = client.patch(
+        f"/workflow/documents/{DOC}/state",
+        headers={"X-User-Id": USER},
+        json={"new_state_code": "aprobado"},
+    )
+    assert r.status_code == 200, r.text
+    assert r.json()["new_state_code"] == "aprobado"
+
+
+@respx.mock
+def test_rechazar_exige_motivo_y_registra_historial(client):
+    respx.post(NOTIF_URL).mock(return_value=httpx.Response(201))
+    respx.get(url__regex=DOC_ACCESS_URL_RE).mock(return_value=httpx.Response(204))
+    _bootstrap(client)
+
+    sin = client.patch(
+        f"/workflow/documents/{DOC}/state",
+        headers={"X-User-Id": USER},
+        json={"new_state_code": "rechazado"},
+    )
+    assert sin.status_code == 422
+
+    con = client.patch(
+        f"/workflow/documents/{DOC}/state",
+        headers={"X-User-Id": USER},
+        json={"new_state_code": "rechazado", "comment": "Faltan firmas"},
+    )
+    assert con.status_code == 200, con.text
+
+    history = client.get(f"/internal/workflow/documents/{DOC}/history").json()
+    rechazo = next(h for h in history if h["action"] == "state_change" and h["body"] == "rechazado")
+    assert rechazo["note"] == "Faltan firmas"
+    assert rechazo["actor_user_id"] == USER
+
+
+@respx.mock
+def test_admin_puede_aprobar_sin_consulta_a_document_service(client):
+    """Admin bypassa _assert_document_permission y aprueba sin tener asignacion."""
+    respx.post(NOTIF_URL).mock(return_value=httpx.Response(201))
+    _bootstrap(client)
+
+    r = client.patch(
+        f"/workflow/documents/{DOC}/state",
+        headers={"X-User-Id": "admin-foo", "X-User-Roles": "admin"},
+        json={"new_state_code": "aprobado"},
+    )
+    assert r.status_code == 200, r.text

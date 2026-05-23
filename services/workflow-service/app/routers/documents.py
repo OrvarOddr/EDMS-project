@@ -627,17 +627,23 @@ def change_document_state(
         )
 
     if not _is_admin(x_user_roles):
-        has_assignment = (
-            db.query(DocumentAssignment)
-            .filter(
-                DocumentAssignment.document_id == document_id,
-                DocumentAssignment.user_id == x_user_id,
-                DocumentAssignment.is_active.is_(True),
+        # US-016/US-017: aprobar y rechazar son acciones formales que exigen
+        # permiso `approve` (owner del documento o grant explicito), no basta
+        # con estar asignado como revisor/lector.
+        if new_state in {"aprobado", "rechazado"}:
+            _assert_document_permission(document_id, x_user_id, "approve", x_user_roles=x_user_roles)
+        else:
+            has_assignment = (
+                db.query(DocumentAssignment)
+                .filter(
+                    DocumentAssignment.document_id == document_id,
+                    DocumentAssignment.user_id == x_user_id,
+                    DocumentAssignment.is_active.is_(True),
+                )
+                .first()
             )
-            .first()
-        )
-        if not has_assignment:
-            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="No tienes asignación activa en este documento")
+            if not has_assignment:
+                raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="No tienes asignación activa en este documento")
 
     comment = body.comment.strip() if body.comment and body.comment.strip() else None
     if new_state in STATES_REQUIRING_COMMENT and not comment:
