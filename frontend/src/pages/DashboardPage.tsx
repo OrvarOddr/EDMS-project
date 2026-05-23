@@ -91,8 +91,12 @@ import {
 import {
   attachDocumentsToExpedient,
   createExpedient,
+  createExpedientFolder,
+  deleteExpedientFolder,
   getExpedient,
   listExpedients,
+  moveDocumentToFolder,
+  renameExpedientFolder,
   type ExpedientDetail,
   type ExpedientItem,
 } from '../api/expedients'
@@ -155,6 +159,7 @@ interface DocumentItem {
   updatedAt?: string
   dueDate?: string | null
   folder: string
+  folderId?: string | null
   owner: string
   size: string
   modified: string
@@ -618,6 +623,7 @@ function documentResponseToItem(document: DocumentItemResponse): DocumentItem {
     shared: assignedUserIds.filter((userId) => userId !== document.owner_user_id),
     status: statusFromWorkflow(document.workflow_state_code),
     starred: Boolean(document.is_starred),
+    folderId: document.folder_id ?? null,
   }
 }
 
@@ -1794,6 +1800,13 @@ function Sidebar({
   selectedExpedientId,
   onSelectExpedient,
   onCreateExpedient,
+  expedientDetailsMap,
+  expandedExpedients,
+  onToggleExpedient,
+  onCreateFolder,
+  onOpenFolder,
+  onOpenDoc,
+  onMoveDocumentToFolder,
   userCount,
   isAdmin = false,
 }: {
@@ -1813,6 +1826,13 @@ function Sidebar({
   selectedExpedientId: string | null
   onSelectExpedient: (expedientId: string) => void
   onCreateExpedient: () => void
+  expedientDetailsMap: Record<string, ExpedientDetail>
+  expandedExpedients: Set<string>
+  onToggleExpedient: (expedientId: string) => void
+  onCreateFolder: (expedientId: string) => void
+  onOpenFolder: (expedientId: string, folderId: string) => void
+  onOpenDoc: (docId: string) => void
+  onMoveDocumentToFolder: (docId: string, expedientId: string, folderId: string | null) => Promise<void>
   userCount?: number | null
   isAdmin?: boolean
 }) {
@@ -2049,32 +2069,161 @@ function Sidebar({
         <div style={{ padding: '0 6px' }}>
           {expedients.map((exp) => {
             const active = selectedView === 'expediente' && selectedExpedientId === exp.id
+            const expanded = expandedExpedients.has(exp.id)
+            const detail = expedientDetailsMap[exp.id]
+            const rootDocs = detail ? detail.documents.filter((doc) => !doc.folder_id) : []
+            const folders = detail?.folders ?? []
             return (
-              <button
-                key={exp.id}
-                onClick={() => onSelectExpedient(exp.id)}
-                className="edms-nav-item"
-                style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: 9,
-                  width: '100%',
-                  padding: '6px 10px',
-                  borderRadius: 6,
-                  background: active ? 'var(--bg-active)' : 'transparent',
-                  color: active ? 'var(--fg)' : 'var(--fg-muted)',
-                  fontSize: 13,
-                  textAlign: 'left',
-                  marginBottom: 1,
-                }}
-                title={exp.code ? `${exp.name} (${exp.code})` : exp.name}
-              >
-                <Icon.Folder size={13} />
-                <span style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{exp.name}</span>
-                {exp.code && (
-                  <span style={{ fontSize: 10.5, color: 'var(--fg-dim)', fontFamily: "'JetBrains Mono', ui-monospace, monospace" }}>{exp.code}</span>
+              <div key={exp.id} style={{ marginBottom: 1 }}>
+                <div
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    borderRadius: 6,
+                    background: active ? 'var(--bg-active)' : 'transparent',
+                  }}
+                >
+                  <button
+                    onClick={() => onToggleExpedient(exp.id)}
+                    title={expanded ? 'Contraer' : 'Expandir'}
+                    style={{
+                      width: 22,
+                      height: 26,
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      color: 'var(--fg-dim)',
+                      borderRadius: 4,
+                    }}
+                  >
+                    <Icon.Chev
+                      size={11}
+                      stroke={2}
+                      style={{ transform: expanded ? 'rotate(90deg)' : 'none', transition: 'transform 0.12s' }}
+                    />
+                  </button>
+                  <button
+                    onClick={() => onSelectExpedient(exp.id)}
+                    className="edms-nav-item"
+                    style={{
+                      flex: 1,
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: 9,
+                      padding: '6px 10px 6px 4px',
+                      borderRadius: 6,
+                      color: active ? 'var(--fg)' : 'var(--fg-muted)',
+                      background: 'transparent',
+                      fontSize: 13,
+                      textAlign: 'left',
+                    }}
+                    onDragOver={(event) => {
+                      if (event.dataTransfer.types.includes('application/x-document-id')) {
+                        event.preventDefault()
+                        event.dataTransfer.dropEffect = 'move'
+                      }
+                    }}
+                    onDrop={(event) => {
+                      const docId = event.dataTransfer.getData('application/x-document-id')
+                      if (docId) {
+                        event.preventDefault()
+                        void onMoveDocumentToFolder(docId, exp.id, null)
+                      }
+                    }}
+                    title={exp.code ? `${exp.name} (${exp.code})` : exp.name}
+                  >
+                    <Icon.Folder size={13} />
+                    <span style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{exp.name}</span>
+                    {exp.code && (
+                      <span style={{ fontSize: 10.5, color: 'var(--fg-dim)', fontFamily: "'JetBrains Mono', ui-monospace, monospace" }}>{exp.code}</span>
+                    )}
+                  </button>
+                  <button
+                    onClick={() => onCreateFolder(exp.id)}
+                    title="Nueva carpeta"
+                    style={{ width: 22, height: 26, color: 'var(--fg-dim)', fontSize: 14 }}
+                  >+</button>
+                </div>
+                {expanded && (
+                  <div style={{ paddingLeft: 26 }}>
+                    {folders.map((folder) => (
+                      <button
+                        key={folder.id}
+                        onClick={() => onOpenFolder(exp.id, folder.id)}
+                        className="edms-nav-item"
+                        style={{
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: 8,
+                          width: '100%',
+                          padding: '5px 10px',
+                          borderRadius: 6,
+                          color: 'var(--fg-muted)',
+                          background: 'transparent',
+                          fontSize: 12.5,
+                          textAlign: 'left',
+                        }}
+                        onDragOver={(event) => {
+                          if (event.dataTransfer.types.includes('application/x-document-id')) {
+                            event.preventDefault()
+                            event.dataTransfer.dropEffect = 'move'
+                          }
+                        }}
+                        onDrop={(event) => {
+                          const docId = event.dataTransfer.getData('application/x-document-id')
+                          if (docId) {
+                            event.preventDefault()
+                            void onMoveDocumentToFolder(docId, exp.id, folder.id)
+                          }
+                        }}
+                        title={folder.name}
+                      >
+                        <Icon.FolderOpen size={12} style={{ color: 'var(--accent)' }} />
+                        <span style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{folder.name}</span>
+                        {detail && (
+                          <span style={{ fontSize: 10.5, color: 'var(--fg-dim)' }}>
+                            {detail.documents.filter((doc) => doc.folder_id === folder.id).length}
+                          </span>
+                        )}
+                      </button>
+                    ))}
+                    {rootDocs.map((doc) => (
+                      <button
+                        key={doc.id}
+                        onClick={() => onOpenDoc(doc.id)}
+                        className="edms-nav-item"
+                        style={{
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: 8,
+                          width: '100%',
+                          padding: '4px 10px',
+                          borderRadius: 6,
+                          color: 'var(--fg-muted)',
+                          background: 'transparent',
+                          fontSize: 12,
+                          textAlign: 'left',
+                        }}
+                        draggable
+                        onDragStart={(event) => {
+                          event.dataTransfer.effectAllowed = 'move'
+                          event.dataTransfer.setData('application/x-document-id', doc.id)
+                        }}
+                        title={doc.title}
+                      >
+                        <Icon.File size={11} style={{ color: 'var(--fg-dim)' }} />
+                        <span style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{doc.title}</span>
+                      </button>
+                    ))}
+                    {!detail && (
+                      <div style={{ padding: '6px 10px', fontSize: 11.5, color: 'var(--fg-dim)' }}>Cargando…</div>
+                    )}
+                    {detail && folders.length === 0 && rootDocs.length === 0 && (
+                      <div style={{ padding: '6px 10px', fontSize: 11.5, color: 'var(--fg-dim)' }}>Vacío</div>
+                    )}
+                  </div>
                 )}
-              </button>
+              </div>
             )
           })}
           {expedients.length === 0 && (
@@ -3098,6 +3247,11 @@ function ExpedientDetailView({
   userLabel,
   onOpenDoc,
   onAddDocument,
+  onCreateFolder,
+  onOpenFolder,
+  onRenameFolder,
+  onDeleteFolder,
+  onMoveDocumentToFolder,
 }: {
   expedient: ExpedientDetail | null
   loading: boolean
@@ -3105,6 +3259,11 @@ function ExpedientDetailView({
   userLabel: (userId?: string | null) => string
   onOpenDoc: (docId: string) => void
   onAddDocument?: () => void
+  onCreateFolder?: (expedientId: string) => void
+  onOpenFolder?: (expedientId: string, folderId: string) => void
+  onRenameFolder?: (expedientId: string, folderId: string, currentName: string) => void
+  onDeleteFolder?: (expedientId: string, folderId: string, name: string) => void
+  onMoveDocumentToFolder?: (docId: string, expedientId: string, folderId: string | null) => Promise<void>
 }) {
   if (loading) {
     return (
@@ -3168,11 +3327,131 @@ function ExpedientDetailView({
         </div>
       </div>
 
+      {/* Sección Carpetas tipo Finder */}
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-          <h3 style={{ fontSize: 14, fontWeight: 600, margin: 0 }}>Documentos asociados</h3>
+          <h3 style={{ fontSize: 14, fontWeight: 600, margin: 0 }}>Carpetas</h3>
           <span style={{ fontSize: 11, color: 'var(--fg-muted)' }}>
-            {expedient.documents.length} {expedient.documents.length === 1 ? 'documento' : 'documentos'}
+            {expedient.folders.length} {expedient.folders.length === 1 ? 'carpeta' : 'carpetas'}
+          </span>
+        </div>
+        {onCreateFolder && (
+          <button
+            onClick={() => onCreateFolder(expedient.id)}
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: 6,
+              padding: '6px 11px',
+              borderRadius: 7,
+              border: '1px solid var(--border)',
+              background: 'var(--bg-elev)',
+              color: 'var(--fg)',
+              fontSize: 12.5,
+              cursor: 'pointer',
+            }}
+            title="Crear carpeta dentro del expediente"
+          >
+            <Icon.Plus size={12} /> Nueva carpeta
+          </button>
+        )}
+      </div>
+
+      {expedient.folders.length === 0 ? (
+        <div
+          style={{
+            background: 'var(--bg-elev)',
+            border: '1px dashed var(--border)',
+            borderRadius: 10,
+            padding: '16px 14px',
+            fontSize: 12,
+            color: 'var(--fg-muted)',
+            textAlign: 'center',
+            marginBottom: 14,
+          }}
+        >
+          Aún no hay carpetas. Crea una para organizar los documentos por sección.
+        </div>
+      ) : (
+        <div
+          style={{
+            display: 'grid',
+            gridTemplateColumns: 'repeat(auto-fill, minmax(160px, 1fr))',
+            gap: 10,
+            marginBottom: 14,
+          }}
+        >
+          {expedient.folders.map((folder) => {
+            const docCount = expedient.documents.filter((doc) => doc.folder_id === folder.id).length
+            return (
+              <div
+                key={folder.id}
+                onDoubleClick={() => onOpenFolder?.(expedient.id, folder.id)}
+                onClick={() => onOpenFolder?.(expedient.id, folder.id)}
+                onDragOver={(event) => {
+                  if (event.dataTransfer.types.includes('application/x-document-id')) {
+                    event.preventDefault()
+                    event.dataTransfer.dropEffect = 'move'
+                  }
+                }}
+                onDrop={(event) => {
+                  const docId = event.dataTransfer.getData('application/x-document-id')
+                  if (docId && onMoveDocumentToFolder) {
+                    event.preventDefault()
+                    void onMoveDocumentToFolder(docId, expedient.id, folder.id)
+                  }
+                }}
+                style={{
+                  background: 'var(--bg-elev)',
+                  border: '1px solid var(--border)',
+                  borderRadius: 10,
+                  padding: '14px 12px',
+                  cursor: 'pointer',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  gap: 6,
+                  position: 'relative',
+                }}
+                title={folder.name}
+              >
+                <Icon.Folder size={28} style={{ color: 'var(--accent)' }} />
+                <div style={{ fontSize: 13, fontWeight: 500, color: 'var(--fg)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                  {folder.name}
+                </div>
+                <div style={{ fontSize: 11, color: 'var(--fg-dim)' }}>
+                  {docCount} {docCount === 1 ? 'documento' : 'documentos'}
+                </div>
+                <div style={{ position: 'absolute', top: 6, right: 6, display: 'flex', gap: 2 }}>
+                  {onRenameFolder && (
+                    <button
+                      onClick={(event) => { event.stopPropagation(); onRenameFolder(expedient.id, folder.id, folder.name) }}
+                      title="Renombrar"
+                      style={{ background: 'none', color: 'var(--fg-dim)', fontSize: 11, padding: '2px 4px', borderRadius: 3 }}
+                    >✎</button>
+                  )}
+                  {onDeleteFolder && (
+                    <button
+                      onClick={(event) => { event.stopPropagation(); onDeleteFolder(expedient.id, folder.id, folder.name) }}
+                      title="Eliminar"
+                      style={{ background: 'none', color: 'var(--fg-dim)', fontSize: 11, padding: '2px 4px', borderRadius: 3 }}
+                    >✕</button>
+                  )}
+                </div>
+              </div>
+            )
+          })}
+        </div>
+      )}
+
+      {/* Sección Documentos (raíz del expediente) */}
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+          <h3 style={{ fontSize: 14, fontWeight: 600, margin: 0 }}>Documentos en raíz</h3>
+          <span style={{ fontSize: 11, color: 'var(--fg-muted)' }}>
+            {(() => {
+              const n = expedient.documents.filter((doc) => !doc.folder_id).length
+              return `${n} ${n === 1 ? 'documento' : 'documentos'}`
+            })()}
           </span>
         </div>
         {onAddDocument && (
@@ -3197,76 +3476,281 @@ function ExpedientDetailView({
         )}
       </div>
 
-      <div style={{ background: 'var(--bg-elev)', border: '1px solid var(--border)', borderRadius: 10, overflow: 'hidden' }}>
-        {expedient.documents.length === 0 ? (
-          <div style={{ padding: '28px 14px', fontSize: 12, color: 'var(--fg-muted)', textAlign: 'center' }}>
-            Este expediente todavía no tiene documentos asociados visibles para ti.
-          </div>
-        ) : (
-          <div>
-            {expedient.documents.map((doc, index) => {
-              const kind = doc.current_file_mime_type
-                ? docKindFromMime(doc.current_file_mime_type)
-                : docKindFromType(doc.document_type_id)
-              const kindInfo = findKind(kind)
-              return (
-                <button
-                  key={doc.id}
-                  onClick={() => onOpenDoc(doc.id)}
-                  className="edms-nav-item"
+      <div
+        style={{ background: 'var(--bg-elev)', border: '1px solid var(--border)', borderRadius: 10, overflow: 'hidden' }}
+        onDragOver={(event) => {
+          if (event.dataTransfer.types.includes('application/x-document-id')) {
+            event.preventDefault()
+            event.dataTransfer.dropEffect = 'move'
+          }
+        }}
+        onDrop={(event) => {
+          const docId = event.dataTransfer.getData('application/x-document-id')
+          if (docId && onMoveDocumentToFolder) {
+            event.preventDefault()
+            void onMoveDocumentToFolder(docId, expedient.id, null)
+          }
+        }}
+      >
+        {(() => {
+          const rootDocs = expedient.documents.filter((doc) => !doc.folder_id)
+          if (rootDocs.length === 0) {
+            return (
+              <div style={{ padding: '28px 14px', fontSize: 12, color: 'var(--fg-muted)', textAlign: 'center' }}>
+                No hay documentos en la raíz. Arrastra aquí para sacarlos de una carpeta.
+              </div>
+            )
+          }
+          return rootDocs.map((doc, index) => {
+            const kind = doc.current_file_mime_type
+              ? docKindFromMime(doc.current_file_mime_type)
+              : docKindFromType(doc.document_type_id)
+            const kindInfo = findKind(kind)
+            return (
+              <button
+                key={doc.id}
+                onClick={() => onOpenDoc(doc.id)}
+                className="edms-nav-item"
+                draggable
+                onDragStart={(event) => {
+                  event.dataTransfer.effectAllowed = 'move'
+                  event.dataTransfer.setData('application/x-document-id', doc.id)
+                }}
+                style={{
+                  width: '100%',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 12,
+                  padding: '12px 14px',
+                  background: 'transparent',
+                  color: 'var(--fg)',
+                  borderBottom: index < rootDocs.length - 1 ? '1px solid var(--border)' : 'none',
+                  textAlign: 'left',
+                  cursor: 'grab',
+                }}
+              >
+                <div
                   style={{
-                    width: '100%',
+                    width: 32,
+                    height: 32,
+                    borderRadius: 6,
+                    flexShrink: 0,
+                    background: `color-mix(in oklch, ${kindInfo.tone} 16%, var(--bg-elev-2))`,
                     display: 'flex',
                     alignItems: 'center',
-                    gap: 12,
-                    padding: '12px 14px',
-                    background: 'transparent',
-                    color: 'var(--fg)',
-                    borderBottom: index < expedient.documents.length - 1 ? '1px solid var(--border)' : 'none',
-                    textAlign: 'left',
+                    justifyContent: 'center',
+                    color: kindInfo.tone,
+                    fontSize: 9,
+                    fontFamily: "'JetBrains Mono', ui-monospace, monospace",
+                    fontWeight: 600,
                   }}
                 >
-                  <div
-                    style={{
-                      width: 32,
-                      height: 32,
-                      borderRadius: 6,
-                      flexShrink: 0,
-                      background: `color-mix(in oklch, ${kindInfo.tone} 16%, var(--bg-elev-2))`,
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                      color: kindInfo.tone,
-                      fontSize: 9,
-                      fontFamily: "'JetBrains Mono', ui-monospace, monospace",
-                      fontWeight: 600,
-                    }}
-                  >
-                    {kindInfo.label}
+                  {kindInfo.label}
+                </div>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ fontSize: 13, fontWeight: 500, marginBottom: 2, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                    {doc.title}
                   </div>
-                  <div style={{ flex: 1, minWidth: 0 }}>
-                    <div style={{ fontSize: 13, fontWeight: 500, marginBottom: 2, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                      {doc.title}
-                    </div>
-                    <div style={{ fontSize: 11, color: 'var(--fg-dim)', display: 'flex', alignItems: 'center', gap: 8 }}>
-                      <span style={{ fontFamily: "'JetBrains Mono', ui-monospace, monospace" }}>{doc.code}</span>
-                      <span>·</span>
-                      <span>{userLabel(doc.owner_user_id)}</span>
-                      {doc.due_date && (
-                        <>
-                          <span>·</span>
-                          <span style={{ color: dueUrgency(doc.due_date).color }}>{dueUrgency(doc.due_date).label}</span>
-                        </>
-                      )}
-                    </div>
+                  <div style={{ fontSize: 11, color: 'var(--fg-dim)', display: 'flex', alignItems: 'center', gap: 8 }}>
+                    <span style={{ fontFamily: "'JetBrains Mono', ui-monospace, monospace" }}>{doc.code}</span>
+                    <span>·</span>
+                    <span>{userLabel(doc.owner_user_id)}</span>
+                    {doc.due_date && (
+                      <>
+                        <span>·</span>
+                        <span style={{ color: dueUrgency(doc.due_date).color }}>{dueUrgency(doc.due_date).label}</span>
+                      </>
+                    )}
                   </div>
-                  <StateBadge state={doc.workflow_state_code} />
-                </button>
-              )
-            })}
+                </div>
+                <StateBadge state={doc.workflow_state_code} />
+              </button>
+            )
+          })
+        })()}
+      </div>
+    </div>
+  )
+}
+
+function FolderWindow({
+  expedient,
+  folderId,
+  onClose,
+  onOpenDoc,
+  onRenameFolder,
+  onDeleteFolder,
+  onMoveDocumentToFolder,
+  userLabel,
+}: {
+  expedient: ExpedientDetail
+  folderId: string
+  onClose: () => void
+  onOpenDoc: (docId: string) => void
+  onRenameFolder?: (expedientId: string, folderId: string, currentName: string) => void
+  onDeleteFolder?: (expedientId: string, folderId: string, name: string) => void
+  onMoveDocumentToFolder?: (docId: string, expedientId: string, folderId: string | null) => Promise<void>
+  userLabel: (userId?: string | null) => string
+}) {
+  const folder = expedient.folders.find((f) => f.id === folderId)
+  if (!folder) return null
+  const docs = expedient.documents.filter((doc) => doc.folder_id === folder.id)
+  return (
+    <div
+      style={{
+        position: 'fixed',
+        top: '8%',
+        right: '5%',
+        width: 480,
+        maxHeight: '84vh',
+        background: 'var(--bg-elev)',
+        border: '1px solid var(--border-strong)',
+        borderRadius: 12,
+        boxShadow: 'var(--shadow)',
+        display: 'flex',
+        flexDirection: 'column',
+        zIndex: 900,
+      }}
+    >
+      <div
+        style={{
+          display: 'flex',
+          alignItems: 'center',
+          gap: 10,
+          padding: '12px 14px',
+          borderBottom: '1px solid var(--border)',
+        }}
+      >
+        <Icon.FolderOpen size={16} style={{ color: 'var(--accent)' }} />
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div style={{ fontSize: 13.5, fontWeight: 600, color: 'var(--fg)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+            {folder.name}
           </div>
+          <div style={{ fontSize: 11, color: 'var(--fg-dim)' }}>
+            {expedient.name} · {docs.length} {docs.length === 1 ? 'documento' : 'documentos'}
+          </div>
+        </div>
+        {onRenameFolder && (
+          <button
+            onClick={() => onRenameFolder(expedient.id, folder.id, folder.name)}
+            title="Renombrar"
+            style={{ color: 'var(--fg-muted)', padding: '4px 6px', fontSize: 12 }}
+          >✎</button>
+        )}
+        {onDeleteFolder && (
+          <button
+            onClick={() => onDeleteFolder(expedient.id, folder.id, folder.name)}
+            title="Eliminar carpeta"
+            style={{ color: 'var(--fg-muted)', padding: '4px 6px', fontSize: 12 }}
+          >✕</button>
+        )}
+        <button
+          onClick={onClose}
+          title="Cerrar"
+          style={{ color: 'var(--fg-muted)', padding: '4px 8px' }}
+        >
+          <Icon.Close size={12} />
+        </button>
+      </div>
+
+      <div
+        style={{ flex: 1, overflow: 'auto', padding: '8px 8px' }}
+        onDragOver={(event) => {
+          if (event.dataTransfer.types.includes('application/x-document-id')) {
+            event.preventDefault()
+            event.dataTransfer.dropEffect = 'move'
+          }
+        }}
+        onDrop={(event) => {
+          const docId = event.dataTransfer.getData('application/x-document-id')
+          if (docId && onMoveDocumentToFolder) {
+            event.preventDefault()
+            void onMoveDocumentToFolder(docId, expedient.id, folder.id)
+          }
+        }}
+      >
+        {docs.length === 0 ? (
+          <div style={{ padding: '32px 14px', fontSize: 12, color: 'var(--fg-muted)', textAlign: 'center', border: '1px dashed var(--border)', borderRadius: 8 }}>
+            Esta carpeta está vacía. Arrastra documentos desde el expediente para meterlos aquí.
+          </div>
+        ) : (
+          docs.map((doc) => {
+            const kind = doc.current_file_mime_type
+              ? docKindFromMime(doc.current_file_mime_type)
+              : docKindFromType(doc.document_type_id)
+            const kindInfo = findKind(kind)
+            return (
+              <button
+                key={doc.id}
+                onClick={() => onOpenDoc(doc.id)}
+                className="edms-nav-item"
+                draggable
+                onDragStart={(event) => {
+                  event.dataTransfer.effectAllowed = 'move'
+                  event.dataTransfer.setData('application/x-document-id', doc.id)
+                }}
+                style={{
+                  width: '100%',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 10,
+                  padding: '10px 10px',
+                  borderRadius: 7,
+                  background: 'transparent',
+                  color: 'var(--fg)',
+                  textAlign: 'left',
+                  cursor: 'grab',
+                  marginBottom: 2,
+                }}
+              >
+                <div
+                  style={{
+                    width: 30,
+                    height: 30,
+                    borderRadius: 6,
+                    flexShrink: 0,
+                    background: `color-mix(in oklch, ${kindInfo.tone} 16%, var(--bg-elev-2))`,
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    color: kindInfo.tone,
+                    fontSize: 9,
+                    fontFamily: "'JetBrains Mono', ui-monospace, monospace",
+                    fontWeight: 600,
+                  }}
+                >
+                  {kindInfo.label}
+                </div>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ fontSize: 12.5, fontWeight: 500, marginBottom: 1, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                    {doc.title}
+                  </div>
+                  <div style={{ fontSize: 10.5, color: 'var(--fg-dim)' }}>
+                    {userLabel(doc.owner_user_id)}
+                  </div>
+                </div>
+                <StateBadge state={doc.workflow_state_code} />
+              </button>
+            )
+          })
         )}
       </div>
+
+      {onMoveDocumentToFolder && (
+        <div
+          style={{
+            borderTop: '1px solid var(--border)',
+            padding: '8px 14px',
+            fontSize: 11.5,
+            color: 'var(--fg-dim)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+          }}
+        >
+          <span>Arrastra fuera o usa "Mover a..." del menú contextual para sacar un documento.</span>
+        </div>
+      )}
     </div>
   )
 }
@@ -8523,6 +9007,9 @@ export default function DashboardPage() {
   const [expedients, setExpedients] = useState<ExpedientItem[]>([])
   const [selectedExpedientId, setSelectedExpedientId] = useState<string | null>(null)
   const [expedientDetail, setExpedientDetail] = useState<ExpedientDetail | null>(null)
+  const [expedientDetailsMap, setExpedientDetailsMap] = useState<Record<string, ExpedientDetail>>({})
+  const [expandedExpedients, setExpandedExpedients] = useState<Set<string>>(new Set())
+  const [folderWindow, setFolderWindow] = useState<{ expedientId: string; folderId: string } | null>(null)
   const [expedientLoading, setExpedientLoading] = useState(false)
   const [expedientError, setExpedientError] = useState<string | null>(null)
   const [expedientModalOpen, setExpedientModalOpen] = useState(false)
@@ -8804,6 +9291,7 @@ export default function DashboardPage() {
       .then((res) => {
         if (!mounted) return
         setExpedientDetail(res.data)
+        setExpedientDetailsMap((current) => ({ ...current, [res.data.id]: res.data }))
       })
       .catch((err) => {
         if (!mounted) return
@@ -9629,6 +10117,87 @@ export default function DashboardPage() {
 
   // Marca o desmarca favorito; actualiza todas las listas locales para
   // reflejar el cambio sin recargar.
+  // ---- Tree de expedientes + carpetas en el sidebar -----------------------
+  async function refreshExpedientDetail(expedientId: string): Promise<ExpedientDetail | null> {
+    try {
+      const res = await getExpedient(expedientId)
+      setExpedientDetailsMap((current) => ({ ...current, [res.data.id]: res.data }))
+      if (selectedExpedientId === expedientId) setExpedientDetail(res.data)
+      return res.data
+    } catch (err) {
+      setToast(getApiErrorMessage(err, 'No se pudo cargar el expediente'))
+      return null
+    }
+  }
+
+  async function handleToggleExpedient(expedientId: string) {
+    const next = new Set(expandedExpedients)
+    if (next.has(expedientId)) {
+      next.delete(expedientId)
+      setExpandedExpedients(next)
+      return
+    }
+    next.add(expedientId)
+    setExpandedExpedients(next)
+    if (!expedientDetailsMap[expedientId]) {
+      await refreshExpedientDetail(expedientId)
+    }
+  }
+
+  async function handleCreateFolderInExpedient(expedientId: string) {
+    const name = window.prompt('Nombre de la carpeta')
+    if (!name || !name.trim()) return
+    try {
+      await createExpedientFolder(expedientId, name.trim())
+      await refreshExpedientDetail(expedientId)
+      setToast(`Carpeta "${name.trim()}" creada`)
+    } catch (err) {
+      setToast(getApiErrorMessage(err, 'No se pudo crear la carpeta'))
+    }
+  }
+
+  async function handleRenameFolder(expedientId: string, folderId: string, currentName: string) {
+    const name = window.prompt('Nuevo nombre', currentName)
+    if (!name || !name.trim() || name.trim() === currentName) return
+    try {
+      await renameExpedientFolder(expedientId, folderId, name.trim())
+      await refreshExpedientDetail(expedientId)
+      setToast('Carpeta renombrada')
+    } catch (err) {
+      setToast(getApiErrorMessage(err, 'No se pudo renombrar la carpeta'))
+    }
+  }
+
+  async function handleDeleteFolder(expedientId: string, folderId: string, folderName: string) {
+    if (!window.confirm(`Borrar la carpeta "${folderName}"? Los documentos volveran a la raiz del expediente.`)) {
+      return
+    }
+    try {
+      await deleteExpedientFolder(expedientId, folderId)
+      await refreshExpedientDetail(expedientId)
+      if (folderWindow?.folderId === folderId) setFolderWindow(null)
+      setToast('Carpeta eliminada')
+    } catch (err) {
+      setToast(getApiErrorMessage(err, 'No se pudo eliminar la carpeta'))
+    }
+  }
+
+  async function handleMoveDocumentToFolder(docId: string, expedientId: string, folderId: string | null) {
+    try {
+      await moveDocumentToFolder(docId, folderId)
+      await refreshExpedientDetail(expedientId)
+      setCreatedDocs((current) =>
+        current.map((doc) => (doc.id === docId ? { ...doc, folderId } : doc)),
+      )
+      const folderName = folderId
+        ? expedientDetailsMap[expedientId]?.folders.find((f) => f.id === folderId)?.name
+        : null
+      setToast(folderName ? `Movido a "${folderName}"` : 'Sacado a la raíz del expediente')
+    } catch (err) {
+      setToast(getApiErrorMessage(err, 'No se pudo mover el documento'))
+    }
+  }
+
   async function toggleFavorite(docId: string) {
     const all = [...createdDocs, ...archivedDocs, ...favoriteDocs]
     const ref = all.find((doc) => doc.id === docId)
@@ -9925,6 +10494,13 @@ export default function DashboardPage() {
           setExpedientFormError(null)
           setExpedientModalOpen(true)
         }}
+        expedientDetailsMap={expedientDetailsMap}
+        expandedExpedients={expandedExpedients}
+        onToggleExpedient={(expId) => { void handleToggleExpedient(expId) }}
+        onCreateFolder={(expId) => { void handleCreateFolderInExpedient(expId) }}
+        onOpenFolder={(expId, folderId) => setFolderWindow({ expedientId: expId, folderId })}
+        onOpenDoc={openDoc}
+        onMoveDocumentToFolder={handleMoveDocumentToFolder}
       />
 
       <main style={{ flex: 1, display: 'flex', flexDirection: 'column', minWidth: 0, position: 'relative' }}>
@@ -10051,6 +10627,11 @@ export default function DashboardPage() {
               setAttachDocsError(null)
               setAttachDocsModalOpen(true)
             }}
+            onCreateFolder={(expId) => { void handleCreateFolderInExpedient(expId) }}
+            onOpenFolder={(expId, folderId) => setFolderWindow({ expedientId: expId, folderId })}
+            onRenameFolder={(expId, folderId, name) => { void handleRenameFolder(expId, folderId, name) }}
+            onDeleteFolder={(expId, folderId, name) => { void handleDeleteFolder(expId, folderId, name) }}
+            onMoveDocumentToFolder={handleMoveDocumentToFolder}
           />
         ) : showKanban ? (
           <>
@@ -10508,6 +11089,19 @@ export default function DashboardPage() {
             </div>
           </div>
         </div>
+      )}
+
+      {folderWindow && expedientDetailsMap[folderWindow.expedientId] && (
+        <FolderWindow
+          expedient={expedientDetailsMap[folderWindow.expedientId]}
+          folderId={folderWindow.folderId}
+          onClose={() => setFolderWindow(null)}
+          onOpenDoc={openDoc}
+          onRenameFolder={(expId, folderId, name) => { void handleRenameFolder(expId, folderId, name) }}
+          onDeleteFolder={(expId, folderId, name) => { void handleDeleteFolder(expId, folderId, name) }}
+          onMoveDocumentToFolder={handleMoveDocumentToFolder}
+          userLabel={labelForUserId}
+        />
       )}
 
       {attachDocsModalOpen && expedientDetail && (() => {

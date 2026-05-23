@@ -7,6 +7,7 @@ from app.database import engine, Base, SessionLocal
 from app.models import DocumentVersion
 from app.routers import expedients
 from app.routers import favorites
+from app.routers import folders
 from app.routers import health
 from app.routers import versions
 from app.routers import tags
@@ -69,6 +70,11 @@ async def lifespan(app: FastAPI):
             "CREATE UNIQUE INDEX IF NOT EXISTS uq_document_favorites_user_doc "
             "ON documents.document_favorites (user_id, document_id)"
         ))
+        # Carpetas dentro de expediente.
+        conn.execute(text("ALTER TABLE documents.documents ADD COLUMN IF NOT EXISTS folder_id VARCHAR"))
+        conn.execute(text(
+            "CREATE INDEX IF NOT EXISTS ix_documents_folder_id ON documents.documents (folder_id)"
+        ))
     _backfill_mime_types()
     yield
 
@@ -80,3 +86,4 @@ app.include_router(versions.internal_router)
 app.include_router(tags.router)
 app.include_router(expedients.router)
 app.include_router(favorites.router)
+app.include_router(folders.router)
