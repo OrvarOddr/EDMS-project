@@ -9,7 +9,7 @@ from sqlalchemy.orm import Session
 
 from app.config import settings
 from app.database import get_db
-from app.models import Document, DocumentVersion
+from app.models import Document, DocumentFavorite, DocumentVersion
 from app.schemas import (
     CreateDocumentRequest,
     CreateDocumentFromFileRequest,
@@ -44,7 +44,12 @@ def _to_response(version: DocumentVersion) -> DocumentVersionResponse:
     )
 
 
-def _to_document_response(document: Document, workflow: dict | None = None, current_mime_type: str | None = None) -> DocumentResponse:
+def _to_document_response(
+    document: Document,
+    workflow: dict | None = None,
+    current_mime_type: str | None = None,
+    is_starred: bool = False,
+) -> DocumentResponse:
     metadata = document.metadata_json if isinstance(document.metadata_json, dict) else {}
     activity = metadata.get("activity") if isinstance(metadata.get("activity"), list) else []
     return DocumentResponse(
@@ -66,6 +71,7 @@ def _to_document_response(document: Document, workflow: dict | None = None, curr
         assignee_user_id=workflow.get("assignee_user_id") if workflow else None,
         assigned_user_ids=workflow.get("assigned_user_ids", []) if workflow else [],
         current_file_mime_type=current_mime_type,
+        is_starred=is_starred,
     )
 
 
@@ -543,6 +549,21 @@ def _current_mime_map(db: Session, document_ids: list[str]) -> dict[str, str | N
     return {doc_id: mime for doc_id, mime in rows}
 
 
+def _starred_set(db: Session, user_id: str, document_ids: list[str]) -> set[str]:
+    """Devuelve los document_ids favoritos del usuario dentro de la lista."""
+    if not user_id or not document_ids:
+        return set()
+    rows = (
+        db.query(DocumentFavorite.document_id)
+        .filter(
+            DocumentFavorite.user_id == user_id,
+            DocumentFavorite.document_id.in_(document_ids),
+        )
+        .all()
+    )
+    return {row[0] for row in rows}
+
+
 def _escape_like_query(value: str) -> str:
     return value.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
 
@@ -678,11 +699,100 @@ def list_documents(
     ids = [d.id for d in documents]
 
     mime_map = _current_mime_map(db, ids)
+    starred = _starred_set(db, actor_user_id, ids)
     return [
         _to_document_response(
             document,
             workflow=summary_map.get(document.id),
             current_mime_type=mime_map.get(document.id),
+            is_starred=document.id in starred,
+        )
+        for document in documents
+    ]
+
+
+@router.get("/favorites", response_model=list[DocumentResponse])
+def list_favorite_documents(
+    x_user_id: str | None = Header(default=None, alias="X-User-Id"),
+    x_user_roles: str | None = Header(default=None, alias="X-User-Roles"),
+    db: Session = Depends(get_db),
+):
+    """Lista los documentos marcados como favoritos por el actor.
+
+    Excluye los archivados (papelera) y los que el actor ya no puede ver
+    (filtro de visibilidad estandar). Admin bypass aplica al filtro de
+    visibilidad, pero el set de favoritos sigue siendo el del actor.
+    """
+    actor_user_id = _require_user(x_user_id)
+    is_admin = _is_admin(x_user_roles)
+    fav_doc_ids = [
+        row[0]
+        for row in db.query(DocumentFavorite.document_id)
+        .filter(DocumentFavorite.user_id == actor_user_id)
+        .all()
+    ]
+    if not fav_doc_ids:
+        return []
+    documents = (
+        db.query(Document)
+        .filter(Document.id.in_(fav_doc_ids), Document.archived_at.is_(None))
+        .order_by(Document.updated_at.desc())
+        .all()
+    )
+    ids = [d.id for d in documents]
+    summary_map = _fetch_batch_workflow_summaries(ids)
+    documents = _filter_visible_documents(documents, summary_map, actor_user_id, is_admin=is_admin)
+    ids = [d.id for d in documents]
+    mime_map = _current_mime_map(db, ids)
+    return [
+        _to_document_response(
+            document,
+            workflow=summary_map.get(document.id),
+            current_mime_type=mime_map.get(document.id),
+            is_starred=True,
+        )
+        for document in documents
+    ]
+
+
+@router.get("/archived", response_model=list[DocumentResponse])
+def list_archived_documents(
+    x_user_id: str | None = Header(default=None, alias="X-User-Id"),
+    x_user_roles: str | None = Header(default=None, alias="X-User-Roles"),
+    db: Session = Depends(get_db),
+):
+    """Lista los documentos con estado workflow terminal.
+
+    "Archivados" = documentos firmados o resueltos, segun el usuario:
+    estado workflow en {aprobado, rechazado, archivado}. Excluye papelera
+    (Document.archived_at IS NOT NULL). Filtra por visibilidad estandar.
+    """
+    actor_user_id = _require_user(x_user_id)
+    is_admin = _is_admin(x_user_roles)
+    documents = (
+        db.query(Document)
+        .filter(Document.archived_at.is_(None))
+        .order_by(Document.updated_at.desc())
+        .all()
+    )
+    ids = [d.id for d in documents]
+    summary_map = _fetch_batch_workflow_summaries(ids)
+    terminal_states = {"aprobado", "rechazado", "archivado"}
+    documents = [
+        document
+        for document in documents
+        if (summary_map.get(document.id) or {}).get("state_code") in terminal_states
+    ]
+    documents = _filter_visible_documents(documents, summary_map, actor_user_id, is_admin=is_admin)
+    ids = [d.id for d in documents]
+    mime_map = _current_mime_map(db, ids)
+    starred = _starred_set(db, actor_user_id, ids)
+    return [
+        _to_document_response(
+            document,
+            workflow=summary_map.get(document.id),
+            current_mime_type=mime_map.get(document.id),
+            is_starred=document.id in starred,
         )
         for document in documents
     ]
@@ -704,11 +814,13 @@ def list_trashed_documents(
     ids = [d.id for d in documents]
     mime_map = _current_mime_map(db, ids)
     state_map = _fetch_batch_workflow_states(ids)
+    starred = _starred_set(db, actor_user_id, ids)
     return [
         _to_document_response(
             document,
             workflow={"state_code": state_map.get(document.id)} if state_map.get(document.id) else None,
             current_mime_type=mime_map.get(document.id),
+            is_starred=document.id in starred,
         )
         for document in documents
     ]
@@ -903,8 +1015,9 @@ def get_document_detail(
     can_operate = document.archived_at is None and _can_upload_version(document, actor_user_id)
     # US-005: tomamos en cuenta los grants explicitos para los can_* del frontend.
     grants = _fetch_user_grants(document.id, actor_user_id) if not can_operate else set()
+    is_starred = bool(_starred_set(db, actor_user_id, [document.id]))
     return DocumentDetailResponse(
-        document=_to_document_response(document, workflow_raw),
+        document=_to_document_response(document, workflow_raw, is_starred=is_starred),
         workflow=workflow,
         files=files,
         comments=[DocumentDetailTimelineItemResponse(**item) for item in comments if isinstance(item, dict)],

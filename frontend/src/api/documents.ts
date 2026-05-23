@@ -19,6 +19,7 @@ export interface DocumentItemResponse {
   assignee_user_id?: string | null
   assigned_user_ids?: string[]
   current_file_mime_type?: string | null
+  is_starred?: boolean
 }
 
 export interface DocumentActivityItem {
@@ -145,6 +146,18 @@ export const updateDocumentMetadata = (documentId: string, payload: UpdateDocume
 
 export const listTrashedDocuments = () =>
   client.get<DocumentItemResponse[]>('/documents/trash')
+
+export const listArchivedDocuments = () =>
+  client.get<DocumentItemResponse[]>('/documents/archived')
+
+export const listFavoriteDocuments = () =>
+  client.get<DocumentItemResponse[]>('/documents/favorites')
+
+export const addDocumentFavorite = (documentId: string) =>
+  client.post<{ document_id: string; is_starred: boolean }>(`/documents/${documentId}/favorite`)
+
+export const removeDocumentFavorite = (documentId: string) =>
+  client.delete<void>(`/documents/${documentId}/favorite`)
 
 export const moveDocumentToTrash = (documentId: string) =>
   client.patch<DocumentItemResponse>(`/documents/${documentId}/trash`)
