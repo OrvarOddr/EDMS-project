@@ -82,6 +82,7 @@ class DocumentResponse(BaseModel):
     assigned_user_ids: list[str] = Field(default_factory=list)
     current_file_mime_type: str | None = None
     is_starred: bool = False
+    folder_id: str | None = None
 
 
 class DocumentCreatedFromFileResponse(BaseModel):
@@ -178,8 +179,29 @@ class ExpedientResponse(BaseModel):
     created_at: str
 
 
+class ExpedientFolderResponse(BaseModel):
+    id: str
+    expedient_id: str
+    name: str
+    created_by_user_id: str
+    created_at: str
+
+
+class CreateFolderRequest(BaseModel):
+    name: str
+
+
+class UpdateFolderRequest(BaseModel):
+    name: str
+
+
+class MoveDocumentToFolderRequest(BaseModel):
+    folder_id: str | None = None
+
+
 class ExpedientDetailResponse(ExpedientResponse):
     documents: list[DocumentResponse] = Field(default_factory=list)
+    folders: list[ExpedientFolderResponse] = Field(default_factory=list)
 
 
 class AttachDocumentsToExpedientRequest(BaseModel):

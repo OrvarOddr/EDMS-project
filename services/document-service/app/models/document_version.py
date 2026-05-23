@@ -35,6 +35,7 @@ class Document(Base):
     description = Column(Text, nullable=True)
     document_type_id = Column(String, nullable=True, index=True)
     expedient_id = Column(String, nullable=True, index=True)
+    folder_id = Column(String, nullable=True, index=True)
     confidentiality_level = Column(String, nullable=False, default="publico_interno")
     metadata_json = Column(JSON, nullable=True)
     owner_user_id = Column(String, nullable=False, index=True)

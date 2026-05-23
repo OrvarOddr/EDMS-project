@@ -20,6 +20,7 @@ export interface DocumentItemResponse {
   assigned_user_ids?: string[]
   current_file_mime_type?: string | null
   is_starred?: boolean
+  folder_id?: string | null
 }
 
 export interface DocumentActivityItem {

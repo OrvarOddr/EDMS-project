@@ -12,7 +12,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.database import get_db
-from app.models import Document, Expedient
+from app.models import Document, Expedient, ExpedientFolder
 from app.routers.versions import (
     _can_view_document,
     _current_mime_map,
@@ -29,6 +29,7 @@ from app.schemas import (
     AttachDocumentsToExpedientResponse,
     CreateExpedientRequest,
     ExpedientDetailResponse,
+    ExpedientFolderResponse,
     ExpedientResponse,
 )
 
@@ -132,6 +133,13 @@ def get_expedient(
     mime_map = _current_mime_map(db, visible_ids)
     starred = _starred_set(db, actor_user_id, visible_ids)
 
+    folders = (
+        db.query(ExpedientFolder)
+        .filter(ExpedientFolder.expedient_id == expedient.id)
+        .order_by(ExpedientFolder.created_at.asc())
+        .all()
+    )
+
     base = _to_response(expedient)
     return ExpedientDetailResponse(
         **base.model_dump(),
@@ -143,6 +151,16 @@ def get_expedient(
                 is_starred=document.id in starred,
             )
             for document in visible
+        ],
+        folders=[
+            ExpedientFolderResponse(
+                id=folder.id,
+                expedient_id=folder.expedient_id,
+                name=folder.name,
+                created_by_user_id=folder.created_by_user_id,
+                created_at=folder.created_at.isoformat(),
+            )
+            for folder in folders
         ],
     )
 
@@ -201,6 +219,9 @@ def attach_documents_to_expedient(
             attached.append(document.id)
             continue
         document.expedient_id = expedient.id
+        # Si venia de otro expediente, el folder_id apuntaba a una carpeta
+        # ajena. Reset a la raiz del nuevo expediente.
+        document.folder_id = None
         _record_metadata_activity(document, actor_user_id, ["expedient_id"])
         attached.append(document.id)
     db.commit()

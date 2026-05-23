@@ -72,6 +72,7 @@ def _to_document_response(
         assigned_user_ids=workflow.get("assigned_user_ids", []) if workflow else [],
         current_file_mime_type=current_mime_type,
         is_starred=is_starred,
+        folder_id=document.folder_id,
     )
 
 
@@ -1146,8 +1147,13 @@ def update_document_metadata(
     if not changed_fields and not due_changed:
         return _to_document_response(document, current_mime_type=current_mime_type)
 
+    # Si el expedient_id cambia, el folder_id queda huérfano (apunta a una
+    # carpeta del expediente anterior). Lo limpiamos para evitar inconsistencia.
+    expedient_changing = "expedient_id" in changed_fields
     for field, value in updates.items():
         setattr(document, field, value)
+    if expedient_changing and document.folder_id is not None:
+        document.folder_id = None
     if due_changed:
         change_details["due_date"] = (document.due_at, new_due)
         document.due_at = new_due
