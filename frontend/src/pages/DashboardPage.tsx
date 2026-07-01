@@ -329,34 +329,9 @@ const dashboardData: DashboardData = {
     image: { label: 'IMG', tone: 'oklch(0.72 0.14 300)' },
     sig: { label: 'FIRMA', tone: 'oklch(0.7 0.13 200)' },
   },
-  docs: [
-    { id: 'd01', name: 'Contrato de servicios — Acme Logística v4.2', kind: 'pdf', folder: 'contratos', owner: 'u1', size: '1.4 MB', modified: 'hace 14 min', version: 12, tags: ['revision', 'urgente'], shared: ['u2', 'u3', 'u6'], status: 'pendiente-firma', pages: 24, starred: true },
-    { id: 'd02', name: 'NDA Mútuo — Klarva Labs', kind: 'pdf', folder: 'nda', owner: 'u3', size: '312 KB', modified: 'hace 2 h', version: 3, tags: ['confidencial'], shared: ['u1'], status: 'archivado', pages: 6 },
-    { id: 'd03', name: 'Política de tratamiento de datos 2026', kind: 'doc', folder: 'compliance', owner: 'u1', size: '640 KB', modified: 'ayer', version: 8, tags: ['aprobado'], shared: ['u2', 'u4', 'u5'], status: 'aprobado', pages: 18, starred: true },
-    { id: 'd04', name: 'Análisis financiero Q1 — Borrador', kind: 'sheet', folder: 'auditoria', owner: 'u5', size: '2.8 MB', modified: 'hace 3 h', version: 6, tags: ['revision'], shared: ['u1', 'u2'], status: 'borrador', rows: 4821 },
-    { id: 'd05', name: 'PRD — Motor de búsqueda semántica', kind: 'doc', folder: 'prds', owner: 'u3', size: '420 KB', modified: 'hace 1 d', version: 4, tags: [], shared: ['u2', 'u4'], status: 'aprobado', pages: 11 },
-    { id: 'd06', name: 'Presentación All-Hands abril', kind: 'slide', folder: 'roadmap', owner: 'u2', size: '14.2 MB', modified: 'hace 2 d', version: 2, tags: ['revision'], shared: ['u1', 'u3', 'u4', 'u5'], status: 'borrador', pages: 38 },
-    { id: 'd07', name: 'Nómina — marzo 2026 (cifrado)', kind: 'sheet', folder: 'rrhh', owner: 'u4', size: '890 KB', modified: 'hace 3 d', version: 1, tags: ['confidencial'], shared: [], status: 'archivado', rows: 214, locked: true },
-    { id: 'd08', name: 'Plan de investigación — Onboarding B2B', kind: 'doc', folder: 'research', owner: 'u3', size: '1.1 MB', modified: 'hace 4 d', version: 9, tags: ['aprobado'], shared: ['u1', 'u2'], status: 'aprobado', pages: 32 },
-    { id: 'd09', name: 'Wireframes — Pantalla de cobro', kind: 'image', folder: 'producto', owner: 'u2', size: '5.4 MB', modified: 'hace 5 d', version: 3, tags: [], shared: ['u3', 'u4'], status: 'borrador' },
-    { id: 'd10', name: 'Memorando fiscal — Operaciones México', kind: 'pdf', folder: 'impuestos', owner: 'u5', size: '720 KB', modified: 'hace 6 d', version: 2, tags: ['confidencial', 'aprobado'], shared: ['u1'], status: 'aprobado', pages: 14 },
-    { id: 'd11', name: 'Contrato laboral — Plantilla 2026', kind: 'doc', folder: 'contratacion', owner: 'u4', size: '380 KB', modified: 'hace 1 sem', version: 5, tags: ['aprobado'], shared: ['u1'], status: 'aprobado', pages: 9 },
-    { id: 'd12', name: 'Factura FE-2026-01842 — Klarva Labs', kind: 'pdf', folder: 'facturas', owner: 'u5', size: '210 KB', modified: 'hace 1 sem', version: 1, tags: [], shared: [], status: 'aprobado', pages: 2 },
-    { id: 'd13', name: 'Contrato SaaS — Bafora Consulting', kind: 'pdf', folder: 'clientes', owner: 'u6', size: '980 KB', modified: 'hace 9 d', version: 7, tags: ['externo', 'revision'], shared: ['u1', 'u3', 'u6'], status: 'pendiente-firma', pages: 22, starred: true },
-    { id: 'd14', name: 'Auditoría de accesos — Plataforma', kind: 'sheet', folder: 'auditoria', owner: 'u2', size: '3.2 MB', modified: 'hace 11 d', version: 2, tags: ['confidencial'], shared: ['u1'], status: 'borrador', rows: 12090 },
-  ],
-  approvals: [
-    { id: 'a1', docId: 'd01', title: 'Firma — Contrato Acme Logística', requester: 'u1', due: 'hoy, 18:00', priority: 'alta' },
-    { id: 'a2', docId: 'd13', title: 'Firma — SaaS Bafora', requester: 'u6', due: 'mañana', priority: 'media' },
-    { id: 'a3', docId: 'd04', title: 'Revisión — Análisis Q1', requester: 'u5', due: '24 abr', priority: 'media' },
-  ],
-  activity: [
-    { id: 'ac1', who: 'u2', what: 'comentó en', doc: 'd01', at: 'hace 8 min' },
-    { id: 'ac2', who: 'u4', what: 'subió v9 de', doc: 'd08', at: 'hace 42 min' },
-    { id: 'ac3', who: 'u6', what: 'solicitó firma en', doc: 'd13', at: 'hace 2 h' },
-    { id: 'ac4', who: 'u3', what: 'compartió', doc: 'd05', at: 'hace 3 h' },
-    { id: 'ac5', who: 'u1', what: 'aprobó', doc: 'd03', at: 'ayer' },
-  ],
+  docs: [],
+  approvals: [],
+  activity: [],
   stats: {
     total: 1830,
     deltaWeek: 42,
@@ -1990,9 +1965,9 @@ function Sidebar({
             onClick={() => onSelectView('archivos-sin-asignar')}
           />
           <NavItem icon={<Icon.Clock size={14} />} label="Recientes" active={selectedView === 'recientes'} onClick={() => onSelectView('recientes')} />
-          <NavItem icon={<Icon.Users size={14} />} label="Compartidos conmigo" count={23} active={selectedView === 'compartidos'} onClick={() => onSelectView('compartidos')} />
+          <NavItem icon={<Icon.Users size={14} />} label="Compartidos conmigo" active={selectedView === 'compartidos'} onClick={() => onSelectView('compartidos')} />
           <NavItem icon={<Icon.Star size={14} />} label="Favoritos" active={selectedView === 'favoritos'} onClick={() => onSelectView('favoritos')} />
-          <NavItem icon={<Icon.Signature size={14} />} label="Aprobaciones" badge={dashboardData.approvals.length} active={selectedView === 'aprobaciones'} onClick={() => onSelectView('aprobaciones')} />
+          <NavItem icon={<Icon.Signature size={14} />} label="Aprobaciones" active={selectedView === 'aprobaciones'} onClick={() => onSelectView('aprobaciones')} />
           <NavItem icon={<Icon.Check size={14} />} label="Archivados" active={selectedView === 'archivados'} onClick={() => onSelectView('archivados')} />
           <NavItem icon={<Icon.Trash size={14} />} label="Papelera" active={selectedView === 'papelera'} onClick={() => onSelectView('papelera')} />
           {isAdmin && (
@@ -2886,6 +2861,11 @@ function ApprovalsPanel({ onOpenDoc }: { onOpenDoc: (docId: string) => void }) {
         </button>
       </div>
 
+      {dashboardData.approvals.length === 0 && (
+        <div style={{ padding: '16px 14px', fontSize: 12.5, color: 'var(--fg-muted)', textAlign: 'center' }}>
+          No tienes revisiones pendientes.
+        </div>
+      )}
       {dashboardData.approvals.map((approval) => (
         <div
           key={approval.id}
@@ -10559,7 +10539,9 @@ export default function DashboardPage() {
               {showAdminPanel
                 ? `Métricas globales del workspace · ${adminMetrics ? `${adminMetrics.total} documento${adminMetrics.total === 1 ? '' : 's'} activo${adminMetrics.total === 1 ? '' : 's'}` : 'cargando...'}`
                 : showDashboard
-                ? 'Tienes 3 documentos que requieren tu firma hoy.'
+                ? metrics
+                  ? `Tienes ${metrics.total} documento${metrics.total === 1 ? '' : 's'} activo${metrics.total === 1 ? '' : 's'} en tu espacio.`
+                  : 'Cargando tu espacio documental…'
                 : showKanban
                   ? `${kanbanDocs.length} documento${kanbanDocs.length !== 1 ? 's' : ''} en el pipeline · arrastra para cambiar estado`
                 : selectedView === 'archivos-sin-asignar'
@@ -10671,6 +10653,11 @@ export default function DashboardPage() {
                 </button>
               </div>
               <div style={{ background: 'var(--bg-elev)', border: '1px solid var(--border)', borderRadius: 10, overflow: 'hidden' }}>
+                {allDocs.length === 0 ? (
+                  <div style={{ padding: '22px 14px', fontSize: 12.5, color: 'var(--fg-muted)', textAlign: 'center' }}>
+                    Aún no hay documentos. Crea o sube uno para empezar.
+                  </div>
+                ) : (
                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(200px, 1fr))', gap: 0 }}>
                   {allDocs.slice(0, 6).map((doc, index) => {
                     const kind = findKind(doc.kind)
@@ -10721,6 +10708,7 @@ export default function DashboardPage() {
                     )
                   })}
                 </div>
+                )}
               </div>
             </div>
 
