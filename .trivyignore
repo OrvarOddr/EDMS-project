@@ -4,3 +4,5 @@
 CVE-2024-47874  # starlette <0.40.0 (topado por fastapi==0.115.0, starlette<0.39)
 CVE-2025-54121  # starlette <0.47.2 (topado por fastapi==0.115.0)
 CVE-2026-30922  # pyasn1 <0.6.3 (topado por python-jose==3.4.0, pyasn1<0.5.0)
+CVE-2026-48817  # starlette <1.1.0 (topado por fastapi==0.115.0; fix exige fastapi mayor)
+CVE-2026-48818  # starlette <1.1.0 (topado por fastapi==0.115.0; fix exige fastapi mayor)

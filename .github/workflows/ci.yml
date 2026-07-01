@@ -306,8 +306,10 @@ jobs:
           python-version: "3.12"
       - name: Instalar pip-audit
         run: pip install pip-audit
-      # CVEs ignoradas: requieren subir fastapi/python-jose (topados por pines
-      # transitivos). Dependabot abre los PRs de upgrade, revisados aparte.
+      # CVEs ignoradas: requieren subir fastapi/python-jose/starlette (topados
+      # por pines transitivos). Dependabot abre los PRs de upgrade, revisados
+      # aparte. Las CVE-2026-4881x / PYSEC-2026-24x son de starlette, cuyo fix
+      # (1.x) exige un salto mayor de fastapi.
       - name: pip-audit ${{ matrix.service }}
         run: |
           set +e
@@ -318,7 +320,11 @@ jobs:
               --ignore-vuln CVE-2025-54121 \
               --ignore-vuln CVE-2026-30922 \
               --ignore-vuln PYSEC-2025-185 \
-              --ignore-vuln PYSEC-2026-161
+              --ignore-vuln PYSEC-2026-161 \
+              --ignore-vuln CVE-2026-48817 \
+              --ignore-vuln CVE-2026-48818 \
+              --ignore-vuln PYSEC-2026-248 \
+              --ignore-vuln PYSEC-2026-249
             status=$?
             if [ $status -eq 0 ]; then
               exit 0
