@@ -8,8 +8,6 @@ export interface ExpedientItem {
   description?: string | null
   created_by_user_id: string
   created_at: string
-  // Nº de documentos activos visibles para el actor (lo llena GET /expedients).
-  document_count?: number | null
 }
 
 export interface ExpedientFolderItem {

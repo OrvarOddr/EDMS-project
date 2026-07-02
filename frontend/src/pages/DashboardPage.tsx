@@ -15,7 +15,6 @@ import logo from '../assets/logo.png'
 import { normalizeMentionToken, notifTimeAgo } from '../lib/text'
 import { useAuth } from '../context/AuthContext'
 import KanbanView from '../components/kanban/KanbanView'
-import ProjectsView from '../components/projects/ProjectsView'
 import { assignRole, createUser, listRoles, listUsers, type RoleItem, type UserMe } from '../api/auth'
 import {
   addDocumentFavorite,
@@ -105,7 +104,6 @@ import {
 type ViewMode = 'list' | 'grid'
 type DocKind = 'pdf' | 'doc' | 'sheet' | 'slide' | 'image' | 'sig'
 type SelectedView =
-  | 'proyectos'
   | 'inicio'
   | 'kanban'
   | 'archivos-sin-asignar'
@@ -1957,7 +1955,6 @@ function Sidebar({
 
       <div style={{ flex: 1, overflow: 'auto', paddingBottom: 12 }}>
         <div style={{ padding: '8px 0 4px' }}>
-          <NavItem icon={<Icon.Folder size={14} />} label="Proyectos" active={selectedView === 'proyectos'} onClick={() => onSelectView('proyectos')} />
           <NavItem icon={<Icon.Home size={14} />} label="Inicio" active={selectedView === 'inicio'} onClick={() => onSelectView('inicio')} />
           <NavItem icon={<Icon.Kanban size={14} />} label="Pipeline" active={selectedView === 'kanban'} onClick={() => onSelectView('kanban')} />
           <NavItem
@@ -3235,7 +3232,6 @@ function ExpedientDetailView({
   onRenameFolder,
   onDeleteFolder,
   onMoveDocumentToFolder,
-  onViewKanban,
 }: {
   expedient: ExpedientDetail | null
   loading: boolean
@@ -3248,7 +3244,6 @@ function ExpedientDetailView({
   onRenameFolder?: (expedientId: string, folderId: string, currentName: string) => void
   onDeleteFolder?: (expedientId: string, folderId: string, name: string) => void
   onMoveDocumentToFolder?: (docId: string, expedientId: string, folderId: string | null) => Promise<void>
-  onViewKanban?: () => void
 }) {
   if (loading) {
     return (
@@ -3300,28 +3295,6 @@ function ExpedientDetailView({
             >
               {expedient.code}
             </span>
-          )}
-          {onViewKanban && (
-            <button
-              onClick={onViewKanban}
-              className="edms-nav-item"
-              style={{
-                marginLeft: 'auto',
-                display: 'flex',
-                alignItems: 'center',
-                gap: 6,
-                fontSize: 12.5,
-                fontWeight: 500,
-                padding: '6px 12px',
-                borderRadius: 8,
-                border: '1px solid var(--border)',
-                background: 'var(--bg-elev-2)',
-                color: 'var(--fg)',
-                cursor: 'pointer',
-              }}
-            >
-              <Icon.Kanban size={14} /> Pipeline del proyecto
-            </button>
           )}
         </div>
         {expedient.description && (
@@ -8954,7 +8927,7 @@ function DocumentTagAssignmentModal({
 export default function DashboardPage() {
   const { user, logout } = useAuth()
   const [tweaks, setTweaks] = useState(initialTweaks)
-  const [selectedView, setSelectedView] = useState<SelectedView>('proyectos')
+  const [selectedView, setSelectedView] = useState<SelectedView>('inicio')
   const [selectedFolder, setSelectedFolder] = useState('root')
   const [selectedTag, setSelectedTag] = useState<string | null>(null)
   const [search, setSearch] = useState('')
@@ -9466,20 +9439,8 @@ export default function DashboardPage() {
   }, [allDocs, serverListActive, searchDocs, selectedView, selectedFolder, selectedTag, filters, favoriteDocs, archivedDocs])
 
   const breadcrumb = useMemo(() => {
-    if (selectedView === 'proyectos') return [{ id: 'proyectos', label: 'Proyectos' }]
     if (selectedView === 'inicio') return [{ id: 'inicio', label: 'Inicio' }]
-    if (selectedView === 'kanban') {
-      if (selectedExpedientId) {
-        const exp = expedients.find((item) => item.id === selectedExpedientId)
-        const name = expedientDetail?.name ?? exp?.name ?? 'Proyecto'
-        return [
-          { id: 'proyectos', label: 'Proyectos' },
-          { id: selectedExpedientId, label: name },
-          { id: 'kanban', label: 'Pipeline' },
-        ]
-      }
-      return [{ id: 'kanban', label: 'Pipeline' }]
-    }
+    if (selectedView === 'kanban') return [{ id: 'kanban', label: 'Pipeline' }]
     if (selectedView === 'archivos-sin-asignar') return [{ id: 'archivos-sin-asignar', label: 'Archivos sin asignar' }]
     if (selectedView === 'recientes') return [{ id: 'recientes', label: 'Recientes' }]
     if (selectedView === 'compartidos') return [{ id: 'compartidos', label: 'Compartidos conmigo' }]
@@ -9509,15 +9470,8 @@ export default function DashboardPage() {
   const dashboardMetrics = showAdminPanel ? adminMetrics : metrics
   const showKanban = selectedView === 'kanban'
   const kanbanDocs = useMemo(
-    () =>
-      visibleDocs.filter(
-        (doc) =>
-          createdDocs.some((createdDoc) => createdDoc.id === doc.id) &&
-          // Kanban escopado al proyecto (expediente) cuando hay uno abierto.
-          // doc.folder guarda el expedient_id (ver documentResponseToItem).
-          (!selectedExpedientId || doc.folder === selectedExpedientId),
-      ),
-    [createdDocs, visibleDocs, selectedExpedientId],
+    () => visibleDocs.filter((doc) => createdDocs.some((createdDoc) => createdDoc.id === doc.id)),
+    [createdDocs, visibleDocs],
   )
 
   function toggleSelect(id: string) {
@@ -10489,10 +10443,6 @@ export default function DashboardPage() {
           setSelectedView(view)
           setSelected(new Set())
           setSearch('')
-          // Navegar por el sidebar sale del contexto de un proyecto: las vistas
-          // globales (Pipeline, Inicio, etc.) no deben quedar escopadas a un
-          // expediente abierto previamente.
-          setSelectedExpedientId(null)
           if (view !== 'archivos-sin-asignar') setSelectedUnassignedFileId(null)
           if (view !== 'papelera') clearTrashSelection()
         }}
@@ -10592,8 +10542,6 @@ export default function DashboardPage() {
                 ? metrics
                   ? `Tienes ${metrics.total} documento${metrics.total === 1 ? '' : 's'} activo${metrics.total === 1 ? '' : 's'} en tu espacio.`
                   : 'Cargando tu espacio documental…'
-                : selectedView === 'proyectos'
-                  ? `${expedients.length} proyecto${expedients.length === 1 ? '' : 's'} visible${expedients.length === 1 ? '' : 's'}`
                 : showKanban
                   ? `${kanbanDocs.length} documento${kanbanDocs.length !== 1 ? 's' : ''} en el pipeline · arrastra para cambiar estado`
                 : selectedView === 'archivos-sin-asignar'
@@ -10610,7 +10558,7 @@ export default function DashboardPage() {
             </div>
           </div>
 
-          {!showDashboard && !showKanban && selectedView !== 'archivos-sin-asignar' && selectedView !== 'proyectos' && (
+          {!showDashboard && !showKanban && selectedView !== 'archivos-sin-asignar' && (
             <div style={{ display: 'flex', gap: 6 }}>
               <button
                 onClick={() => handleAction('new-folder')}
@@ -10648,23 +10596,7 @@ export default function DashboardPage() {
           )}
         </div>
 
-        {selectedView === 'proyectos' ? (
-          <ProjectsView
-            expedients={expedients}
-            isAdmin={Boolean(user?.is_superuser)}
-            onOpenProject={(id) => {
-              setSelectedExpedientId(id)
-              setSelectedView('expediente')
-              setSelected(new Set())
-              setSearch('')
-            }}
-            onCreateProject={() => {
-              setExpedientForm({ name: '', code: '', description: '' })
-              setExpedientFormError(null)
-              setExpedientModalOpen(true)
-            }}
-          />
-        ) : selectedView === 'expediente' ? (
+        {selectedView === 'expediente' ? (
           <ExpedientDetailView
             expedient={expedientDetail}
             loading={expedientLoading}
@@ -10682,7 +10614,6 @@ export default function DashboardPage() {
             onRenameFolder={(expId, folderId, name) => { void handleRenameFolder(expId, folderId, name) }}
             onDeleteFolder={(expId, folderId, name) => { void handleDeleteFolder(expId, folderId, name) }}
             onMoveDocumentToFolder={handleMoveDocumentToFolder}
-            onViewKanban={() => setSelectedView('kanban')}
           />
         ) : showKanban ? (
           <>
