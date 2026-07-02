@@ -177,6 +177,9 @@ class ExpedientResponse(BaseModel):
     description: str | None = None
     created_by_user_id: str
     created_at: str
+    # Nº de documentos activos visibles para el actor (lo llena list_expedients;
+    # None en respuestas donde no se calcula, como create/detail).
+    document_count: int | None = None
 
 
 class ExpedientFolderResponse(BaseModel):

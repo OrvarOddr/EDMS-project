@@ -124,6 +124,95 @@ def test_detalle_de_expediente_inexistente_devuelve_404(client):
     assert client.get("/expedients/no-existe", headers={"X-User-Id": USER}).status_code == 404
 
 
+def _bootstrap_ok(assignee=USER):
+    return httpx.Response(
+        201,
+        json={
+            "document_id": "x",
+            "state_code": "borrador",
+            "assignee_user_id": assignee,
+            "assignment_role_code": "encargado",
+        },
+    )
+
+
+@respx.mock
+def test_listar_proyectos_no_admin_solo_donde_participa(client):
+    """Regla de roles: un usuario no-admin solo ve expedientes donde participa
+    (creó el expediente o puede ver >=1 documento)."""
+    respx.post(BOOTSTRAP_URL).mock(return_value=_bootstrap_ok())
+    respx.post(SUMMARIES_URL).mock(return_value=httpx.Response(200, json={"summaries": {}}))
+
+    # Expediente de USER con un documento propio.
+    exp_mio = client.post("/expedients", headers={"X-User-Id": USER}, json={"name": "Mio"}).json()
+    client.post(
+        "/documents",
+        headers={"X-User-Id": USER},
+        json={"title": "D", "document_type_id": "t1", "description": "d", "expedient_id": exp_mio["id"]},
+    )
+
+    # Expediente ajeno (OTHER) con documento ajeno; USER no participa.
+    exp_ajeno = client.post("/expedients", headers={"X-User-Id": OTHER}, json={"name": "Ajeno"}).json()
+    client.post(
+        "/documents",
+        headers={"X-User-Id": OTHER},
+        json={"title": "D2", "document_type_id": "t1", "description": "d", "expedient_id": exp_ajeno["id"]},
+    )
+
+    listed = client.get("/expedients", headers={"X-User-Id": USER})
+    assert listed.status_code == 200
+    ids = {e["id"] for e in listed.json()}
+    assert exp_mio["id"] in ids
+    assert exp_ajeno["id"] not in ids
+
+
+@respx.mock
+def test_listar_proyectos_admin_ve_todos(client):
+    respx.post(BOOTSTRAP_URL).mock(return_value=_bootstrap_ok(assignee=OTHER))
+    respx.post(SUMMARIES_URL).mock(return_value=httpx.Response(200, json={"summaries": {}}))
+
+    exp_ajeno = client.post("/expedients", headers={"X-User-Id": OTHER}, json={"name": "Ajeno"}).json()
+    client.post(
+        "/documents",
+        headers={"X-User-Id": OTHER},
+        json={"title": "D", "document_type_id": "t1", "description": "d", "expedient_id": exp_ajeno["id"]},
+    )
+
+    listed = client.get("/expedients", headers={"X-User-Id": USER, "X-User-Roles": "admin"})
+    assert listed.status_code == 200
+    ids = {e["id"] for e in listed.json()}
+    # Admin ve el expediente ajeno aunque no participe.
+    assert exp_ajeno["id"] in ids
+
+
+@respx.mock
+def test_listar_proyectos_participa_por_asignacion(client):
+    """Participación derivada de asignaciones: USER ve un expediente ajeno
+    porque está asignado (via summary de workflow) a un documento suyo."""
+    respx.post(BOOTSTRAP_URL).mock(return_value=_bootstrap_ok(assignee=OTHER))
+
+    exp = client.post("/expedients", headers={"X-User-Id": OTHER}, json={"name": "Compartido"}).json()
+    doc = client.post(
+        "/documents",
+        headers={"X-User-Id": OTHER},
+        json={"title": "D", "document_type_id": "t1", "description": "d", "expedient_id": exp["id"]},
+    ).json()
+
+    # Workflow reporta a USER como asignado del documento ajeno.
+    respx.post(SUMMARIES_URL).mock(
+        return_value=httpx.Response(
+            200,
+            json={"summaries": {doc["id"]: {"assignee_user_id": OTHER, "assigned_user_ids": [USER]}}},
+        )
+    )
+
+    listed = client.get("/expedients", headers={"X-User-Id": USER}).json()
+    match = next((e for e in listed if e["id"] == exp["id"]), None)
+    assert match is not None
+    # document_count refleja el documento visible para USER.
+    assert match["document_count"] == 1
+
+
 @respx.mock
 def test_attach_documents_asocia_y_omite_no_autorizados(client):
     respx.post(BOOTSTRAP_URL).mock(
