@@ -42,7 +42,7 @@ def _require_user(x_user_id: str | None) -> str:
     return x_user_id
 
 
-def _to_response(expedient: Expedient, document_count: int | None = None) -> ExpedientResponse:
+def _to_response(expedient: Expedient) -> ExpedientResponse:
     return ExpedientResponse(
         id=expedient.id,
         name=expedient.name,
@@ -50,7 +50,6 @@ def _to_response(expedient: Expedient, document_count: int | None = None) -> Exp
         description=expedient.description,
         created_by_user_id=expedient.created_by_user_id,
         created_at=expedient.created_at.isoformat(),
-        document_count=document_count,
     )
 
 
@@ -97,46 +96,11 @@ def create_expedient(
 @router.get("", response_model=list[ExpedientResponse])
 def list_expedients(
     x_user_id: str | None = Header(default=None, alias="X-User-Id"),
-    x_user_roles: str | None = Header(default=None, alias="X-User-Roles"),
     db: Session = Depends(get_db),
 ):
-    """Lista de proyectos (expedientes) con visibilidad por rol.
-
-    - admin: ve todos los expedientes.
-    - resto: solo aquellos donde participa, es decir donde creó el expediente
-      o puede ver >=1 de sus documentos (asignado / owner / creador del doc).
-      La participación se deriva de las asignaciones de workflow via
-      `_can_view_document`.
-
-    `document_count` = documentos activos visibles para el actor por expediente.
-    """
-    actor_user_id = _require_user(x_user_id)
-    is_admin = _is_admin(x_user_roles)
+    _require_user(x_user_id)
     rows = db.query(Expedient).order_by(Expedient.created_at.desc()).all()
-    if not rows:
-        return []
-
-    documents = (
-        db.query(Document)
-        .filter(
-            Document.expedient_id.in_([row.id for row in rows]),
-            Document.archived_at.is_(None),
-        )
-        .all()
-    )
-    summary_map = _fetch_batch_workflow_summaries([doc.id for doc in documents])
-
-    visible_counts: dict[str, int] = {}
-    for doc in documents:
-        if _can_view_document(doc, actor_user_id, summary_map.get(doc.id), is_admin=is_admin):
-            visible_counts[doc.expedient_id] = visible_counts.get(doc.expedient_id, 0) + 1
-
-    result = []
-    for row in rows:
-        participates = row.created_by_user_id == actor_user_id or visible_counts.get(row.id, 0) > 0
-        if is_admin or participates:
-            result.append(_to_response(row, document_count=visible_counts.get(row.id, 0)))
-    return result
+    return [_to_response(row) for row in rows]
 
 
 @router.get("/{expedient_id}", response_model=ExpedientDetailResponse)
