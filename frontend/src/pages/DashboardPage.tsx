@@ -1785,7 +1785,6 @@ function Sidebar({
   onOpenDoc,
   onMoveDocumentToFolder,
   userCount,
-  isAdmin = false,
 }: {
   collapsed: boolean
   selectedView: SelectedView
@@ -1811,7 +1810,6 @@ function Sidebar({
   onOpenDoc: (docId: string) => void
   onMoveDocumentToFolder: (docId: string, expedientId: string, folderId: string | null) => Promise<void>
   userCount?: number | null
-  isAdmin?: boolean
 }) {
 
   if (collapsed) {
@@ -1972,14 +1970,6 @@ function Sidebar({
           <NavItem icon={<Icon.Signature size={14} />} label="Aprobaciones" active={selectedView === 'aprobaciones'} onClick={() => onSelectView('aprobaciones')} />
           <NavItem icon={<Icon.Check size={14} />} label="Archivados" active={selectedView === 'archivados'} onClick={() => onSelectView('archivados')} />
           <NavItem icon={<Icon.Trash size={14} />} label="Papelera" active={selectedView === 'papelera'} onClick={() => onSelectView('papelera')} />
-          {isAdmin && (
-            <NavItem
-              icon={<Icon.Lock size={14} />}
-              label="Panel admin"
-              active={selectedView === 'admin'}
-              onClick={() => onSelectView('admin')}
-            />
-          )}
         </div>
 
         <div style={{ display: 'flex', alignItems: 'center', padding: '12px 14px 6px', justifyContent: 'space-between' }}>
@@ -10534,7 +10524,6 @@ export default function DashboardPage() {
         onCreateTag={() => { setEditingTag(null); setTagForm({ label: '', color: '#6366f1' }); setTagModalOpen(true) }}
         onEditTag={(tag) => { setEditingTag(tag); setTagForm({ label: tag.label, color: tag.color }); setTagModalOpen(true) }}
         userCount={workspaceUserCount}
-        isAdmin={Boolean(user?.is_superuser)}
         onDeleteTag={async (tagId) => {
           await deleteTag(tagId)
           setTags((prev) => prev.filter((t) => t.id !== tagId))
