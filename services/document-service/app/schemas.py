@@ -164,27 +164,43 @@ class UpdateTagRequest(BaseModel):
     color: str
 
 
-class CreateExpedientRequest(BaseModel):
+class CreateProjectRequest(BaseModel):
     name: str
     code: str | None = None
     description: str | None = None
 
 
-class ExpedientResponse(BaseModel):
+class ProjectResponse(BaseModel):
     id: str
     name: str
     code: str | None = None
     description: str | None = None
     created_by_user_id: str
     created_at: str
-    # Campos derivados para la pantalla de Proyectos (los llena list_expedients;
-    # None/vacio en respuestas donde no se calculan, como create/detail).
+    # Campos derivados para la pantalla de Proyectos (los llena list_projects).
     document_count: int | None = None
     member_user_ids: list[str] = Field(default_factory=list)
     progress: int | None = None
     status: str | None = None  # activo | en-riesgo | en-pausa | completado
     pending_count: int | None = None
     updated_at: str | None = None
+
+
+class CreateExpedientRequest(BaseModel):
+    name: str
+    code: str | None = None
+    description: str | None = None
+    project_id: str | None = None
+
+
+class ExpedientResponse(BaseModel):
+    id: str
+    project_id: str | None = None
+    name: str
+    code: str | None = None
+    description: str | None = None
+    created_by_user_id: str
+    created_at: str
 
 
 class ExpedientFolderResponse(BaseModel):

@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState, type CSSProperties, type ReactNode } from
 import { useNavigate } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
 import { listUsers, type UserMe } from '../api/auth'
-import { listExpedients, type ExpedientItem } from '../api/expedients'
+import { listProjects, type ProjectItem } from '../api/projects'
 
 /**
  * Pantalla principal de Proyectos: primera pantalla tras login. Es standalone
@@ -130,7 +130,7 @@ function formatUpdated(iso?: string | null): string {
 }
 
 function ProjectCard({ p, relation, byId, onOpen }: {
-  p: ExpedientItem; relation: string | null; byId: Map<string, UserMe>; onOpen: () => void
+  p: ProjectItem; relation: string | null; byId: Map<string, UserMe>; onOpen: () => void
 }) {
   const s = STATUS[p.status ?? 'activo'] ?? STATUS['activo']
   const coord = byId.get(p.created_by_user_id)
@@ -200,7 +200,7 @@ function ProjectCard({ p, relation, byId, onOpen }: {
 }
 
 function ProjectRow({ p, relation, byId, onOpen }: {
-  p: ExpedientItem; relation: string | null; byId: Map<string, UserMe>; onOpen: () => void
+  p: ProjectItem; relation: string | null; byId: Map<string, UserMe>; onOpen: () => void
 }) {
   const s = STATUS[p.status ?? 'activo'] ?? STATUS['activo']
   const coord = byId.get(p.created_by_user_id)
@@ -261,7 +261,7 @@ function Section({ title, count, subtitle, children }: { title: string; count: n
 export default function ProjectsPage() {
   const { user, logout } = useAuth()
   const navigate = useNavigate()
-  const [expedients, setExpedients] = useState<ExpedientItem[]>([])
+  const [expedients, setExpedients] = useState<ProjectItem[]>([])
   const [users, setUsers] = useState<UserMe[]>([])
   const [loading, setLoading] = useState(true)
   const [query, setQuery] = useState('')
@@ -270,7 +270,7 @@ export default function ProjectsPage() {
 
   useEffect(() => {
     let mounted = true
-    Promise.all([listExpedients(), listUsers().catch(() => ({ data: [] as UserMe[] }))])
+    Promise.all([listProjects(), listUsers().catch(() => ({ data: [] as UserMe[] }))])
       .then(([exp, usr]) => { if (mounted) { setExpedients(exp.data); setUsers(usr.data ?? []) } })
       .finally(() => { if (mounted) setLoading(false) })
     return () => { mounted = false }
@@ -280,12 +280,12 @@ export default function ProjectsPage() {
   const isAdmin = Boolean(user?.is_superuser) || Boolean(user?.roles?.includes('admin'))
   const meId = user?.id ?? ''
 
-  const relation = (p: ExpedientItem): string | null =>
+  const relation = (p: ProjectItem): string | null =>
     p.created_by_user_id === meId ? 'coord'
       : (p.member_user_ids ?? []).includes(meId) ? 'collab'
         : (isAdmin ? 'admin' : null)
 
-  const match = (p: ExpedientItem) => {
+  const match = (p: ProjectItem) => {
     const q = query.trim().toLowerCase()
     if (q && !p.name.toLowerCase().includes(q) && !(p.description ?? '').toLowerCase().includes(q)) return false
     if (statusFilter !== 'all' && (p.status ?? 'activo') !== statusFilter) return false
@@ -299,7 +299,7 @@ export default function ProjectsPage() {
     }
     const coord = visible.filter((p) => p.created_by_user_id === meId)
     const collab = visible.filter((p) => p.created_by_user_id !== meId && (p.member_user_ids ?? []).includes(meId))
-    const g: { key: string; title: string; subtitle: string; items: ExpedientItem[] }[] = []
+    const g: { key: string; title: string; subtitle: string; items: ProjectItem[] }[] = []
     if (coord.length) g.push({ key: 'coord', title: 'Proyectos que coordino', subtitle: 'Eres responsable de estos proyectos', items: coord })
     if (collab.length) g.push({ key: 'collab', title: 'Donde colaboro', subtitle: 'Participas como colaborador', items: collab })
     // Sin relación explícita (ej. creados por otro pero visibles): agrúpalos aparte.

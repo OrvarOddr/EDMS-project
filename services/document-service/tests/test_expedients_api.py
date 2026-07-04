@@ -124,84 +124,13 @@ def test_detalle_de_expediente_inexistente_devuelve_404(client):
     assert client.get("/expedients/no-existe", headers={"X-User-Id": USER}).status_code == 404
 
 
-def _bootstrap_ok(assignee=USER):
-    return httpx.Response(
-        201,
-        json={
-            "document_id": "x",
-            "state_code": "borrador",
-            "assignee_user_id": assignee,
-            "assignment_role_code": "encargado",
-        },
-    )
-
-
-@respx.mock
-def test_proyectos_no_admin_solo_donde_participa(client):
-    respx.post(BOOTSTRAP_URL).mock(return_value=_bootstrap_ok())
-    respx.post(SUMMARIES_URL).mock(return_value=httpx.Response(200, json={"summaries": {}}))
-
-    exp_mio = client.post("/expedients", headers={"X-User-Id": USER}, json={"name": "Mio"}).json()
-    client.post(
-        "/documents",
-        headers={"X-User-Id": USER},
-        json={"title": "D", "document_type_id": "t1", "description": "d", "expedient_id": exp_mio["id"]},
-    )
-    exp_ajeno = client.post("/expedients", headers={"X-User-Id": OTHER}, json={"name": "Ajeno"}).json()
-    client.post(
-        "/documents",
-        headers={"X-User-Id": OTHER},
-        json={"title": "D2", "document_type_id": "t1", "description": "d", "expedient_id": exp_ajeno["id"]},
-    )
-
-    ids = {e["id"] for e in client.get("/expedients", headers={"X-User-Id": USER}).json()}
-    assert exp_mio["id"] in ids
-    assert exp_ajeno["id"] not in ids
-
-
-@respx.mock
-def test_proyectos_admin_ve_todos(client):
-    respx.post(BOOTSTRAP_URL).mock(return_value=_bootstrap_ok(assignee=OTHER))
-    respx.post(SUMMARIES_URL).mock(return_value=httpx.Response(200, json={"summaries": {}}))
-
-    exp_ajeno = client.post("/expedients", headers={"X-User-Id": OTHER}, json={"name": "Ajeno"}).json()
-    client.post(
-        "/documents",
-        headers={"X-User-Id": OTHER},
-        json={"title": "D", "document_type_id": "t1", "description": "d", "expedient_id": exp_ajeno["id"]},
-    )
-    ids = {e["id"] for e in client.get("/expedients", headers={"X-User-Id": USER, "X-User-Roles": "admin"}).json()}
-    assert exp_ajeno["id"] in ids
-
-
-@respx.mock
-def test_proyectos_campos_derivados(client):
-    """El proyecto trae document_count, miembros, progress, status y pending."""
-    respx.post(BOOTSTRAP_URL).mock(return_value=_bootstrap_ok(assignee=OTHER))
-
-    exp = client.post("/expedients", headers={"X-User-Id": OTHER}, json={"name": "Compartido"}).json()
-    doc = client.post(
-        "/documents",
-        headers={"X-User-Id": OTHER},
-        json={"title": "D", "document_type_id": "t1", "description": "d", "expedient_id": exp["id"]},
-    ).json()
-
-    # USER asignado + doc aprobado => visible para USER, progreso 100, completado.
-    respx.post(SUMMARIES_URL).mock(
-        return_value=httpx.Response(
-            200,
-            json={"summaries": {doc["id"]: {"state_code": "aprobado", "assignee_user_id": OTHER, "assigned_user_ids": [USER]}}},
-        )
-    )
-
-    listed = client.get("/expedients", headers={"X-User-Id": USER}).json()
-    match = next((e for e in listed if e["id"] == exp["id"]), None)
-    assert match is not None
-    assert match["document_count"] == 1
-    assert match["progress"] == 100
-    assert match["status"] == "completado"
-    assert match["pending_count"] == 0
-    assert set(match["member_user_ids"]) == {OTHER, USER}
+def test_listar_expedientes_filtra_por_proyecto(client):
+    a = client.post("/expedients", headers={"X-User-Id": USER}, json={"name": "A", "project_id": "proj-1"}).json()
+    client.post("/expedients", headers={"X-User-Id": USER}, json={"name": "B", "project_id": "proj-2"})
+    listed = client.get("/expedients", headers={"X-User-Id": USER}, params={"project_id": "proj-1"}).json()
+    ids = {e["id"] for e in listed}
+    assert a["id"] in ids
+    assert all(e["project_id"] == "proj-1" for e in listed)
 
 
 @respx.mock

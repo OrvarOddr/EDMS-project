@@ -13,8 +13,8 @@ export default function App() {
           <Route path="/login" element={<LoginPage />} />
           {/* Landing tras login: lista de proyectos (standalone). */}
           <Route path="/" element={<ProtectedRoute><ProjectsPage /></ProtectedRoute>} />
-          {/* Dashboard escopado a un proyecto (expediente). */}
-          <Route path="/proyecto/:expedientId" element={<ProtectedRoute><DashboardPage /></ProtectedRoute>} />
+          {/* Dashboard escopado a un proyecto. */}
+          <Route path="/proyecto/:projectId" element={<ProtectedRoute><DashboardPage /></ProtectedRoute>} />
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
       </AuthProvider>

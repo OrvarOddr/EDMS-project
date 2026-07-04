@@ -8,20 +8,18 @@ def utcnow():
     return datetime.now(timezone.utc)
 
 
-class Expedient(Base):
-    """Expediente: agrupador formal de documentos relacionados (US-029/US-030).
+class Project(Base):
+    """Proyecto: agrupador de nivel superior que contiene expedientes.
 
-    El `code` es opcional pero unico cuando se usa; permite identificar el
-    expediente por una clave de negocio (ej. "EXP-2026-001") aparte del id
-    interno. La relacion documento -> expediente se modela en
-    `Document.expedient_id` (ya existente).
+    Jerarquía: Proyecto -> Expedientes (Expedient.project_id) -> Carpetas ->
+    Documentos. El proyecto NO es un expediente; es la entrada principal del
+    sistema. El `code` es opcional pero único cuando se usa.
     """
 
-    __tablename__ = "expedients"
+    __tablename__ = "projects"
     __table_args__ = {"schema": "documents"}
 
     id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
-    project_id = Column(String, nullable=True, index=True)
     name = Column(String, nullable=False)
     code = Column(String, nullable=True, index=True)
     description = Column(Text, nullable=True)

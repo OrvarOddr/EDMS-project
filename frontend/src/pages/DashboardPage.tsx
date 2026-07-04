@@ -8929,10 +8929,10 @@ export default function DashboardPage() {
   const { user, logout } = useAuth()
   // Proyecto (expediente) activo tomado de la ruta /proyecto/:expedientId.
   // Cuando está presente, todo el dashboard queda escopado a ese proyecto.
-  const { expedientId: routeProjectId } = useParams<{ expedientId: string }>()
+  const { projectId: routeProjectId } = useParams<{ projectId: string }>()
   const navigate = useNavigate()
   const [tweaks, setTweaks] = useState(initialTweaks)
-  const [selectedView, setSelectedView] = useState<SelectedView>(routeProjectId ? 'expediente' : 'inicio')
+  const [selectedView, setSelectedView] = useState<SelectedView>('inicio')
   const [selectedFolder, setSelectedFolder] = useState('root')
   const [selectedTag, setSelectedTag] = useState<string | null>(null)
   const [search, setSearch] = useState('')
@@ -8990,7 +8990,7 @@ export default function DashboardPage() {
   const [adminMetrics, setAdminMetrics] = useState<DocumentMetricsResponse | null>(null)
   const [tags, setTags] = useState<ApiTag[]>([])
   const [expedients, setExpedients] = useState<ExpedientItem[]>([])
-  const [selectedExpedientId, setSelectedExpedientId] = useState<string | null>(routeProjectId ?? null)
+  const [selectedExpedientId, setSelectedExpedientId] = useState<string | null>(null)
   const [expedientDetail, setExpedientDetail] = useState<ExpedientDetail | null>(null)
   const [expedientDetailsMap, setExpedientDetailsMap] = useState<Record<string, ExpedientDetail>>({})
   const [expandedExpedients, setExpandedExpedients] = useState<Set<string>>(new Set())
@@ -9021,12 +9021,14 @@ export default function DashboardPage() {
   const currentUserEmail = user?.email ?? ''
   const currentUserColor = user?.color ?? actorColorFromId(user?.id ?? null)
   const firstName = currentUserLabel.split(' ')[0]
+  // Expedientes del proyecto activo (expedients ya viene filtrado por
+  // listExpedients(routeProjectId)). doc.folder = expedient_id.
+  const projectExpedientIds = useMemo(() => new Set(expedients.map((e) => e.id)), [expedients])
   const allDocs = useMemo(() => {
     const base = [...createdDocs, ...dashboardData.docs]
-    // Escopar todo al proyecto activo: doc.folder guarda el expedient_id
-    // (ver documentResponseToItem). Sin proyecto, se ve todo.
-    return routeProjectId ? base.filter((doc) => doc.folder === routeProjectId) : base
-  }, [createdDocs, routeProjectId])
+    // Escopar todo al proyecto activo: solo docs de sus expedientes.
+    return routeProjectId ? base.filter((doc) => projectExpedientIds.has(doc.folder)) : base
+  }, [createdDocs, routeProjectId, projectExpedientIds])
   const starredDocIds = useMemo(() => {
     const ids = new Set<string>()
     for (const doc of createdDocs) if (doc.starred) ids.add(doc.id)
@@ -9257,14 +9259,14 @@ export default function DashboardPage() {
       .then((res) => { if (mounted) setTags(res.data) })
       .catch(() => {})
 
-    listExpedients()
+    listExpedients(routeProjectId)
       .then((res) => { if (mounted) setExpedients(res.data) })
       .catch(() => {})
 
     return () => {
       mounted = false
     }
-  }, [user?.is_superuser])
+  }, [user?.is_superuser, routeProjectId])
 
   // Cargar detalle del expediente seleccionado. El reset cuando se deselecciona
   // lo hacemos por handler (setSelectedExpedientId) — aqui solo respondemos a
@@ -11082,6 +11084,7 @@ export default function DashboardPage() {
                       name: expedientForm.name.trim(),
                       code: expedientForm.code.trim() || null,
                       description: expedientForm.description.trim() || null,
+                      project_id: routeProjectId ?? null,
                     })
                     setExpedients((prev) => [res.data, ...prev])
                     setExpedientModalOpen(false)
