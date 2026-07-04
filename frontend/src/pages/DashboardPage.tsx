@@ -93,6 +93,7 @@ import {
   attachDocumentsToExpedient,
   createExpedient,
   createExpedientFolder,
+  deleteExpedient,
   deleteExpedientFolder,
   getExpedient,
   listExpedients,
@@ -3233,6 +3234,7 @@ function ExpedientDetailView({
   onRenameFolder,
   onDeleteFolder,
   onMoveDocumentToFolder,
+  onDeleteExpedient,
 }: {
   expedient: ExpedientDetail | null
   loading: boolean
@@ -3245,7 +3247,9 @@ function ExpedientDetailView({
   onRenameFolder?: (expedientId: string, folderId: string, currentName: string) => void
   onDeleteFolder?: (expedientId: string, folderId: string, name: string) => void
   onMoveDocumentToFolder?: (docId: string, expedientId: string, folderId: string | null) => Promise<void>
+  onDeleteExpedient?: (expedientId: string) => void
 }) {
+  const [confirmDelete, setConfirmDelete] = useState(false)
   if (loading) {
     return (
       <div style={{ padding: '24px 22px', color: 'var(--fg-muted)', fontSize: 13 }}>
@@ -3296,6 +3300,21 @@ function ExpedientDetailView({
             >
               {expedient.code}
             </span>
+          )}
+          {onDeleteExpedient && (
+            <button
+              onClick={() => setConfirmDelete(true)}
+              className="edms-nav-item"
+              title="Eliminar expediente"
+              style={{
+                marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 6,
+                fontSize: 12.5, fontWeight: 500, padding: '6px 12px', borderRadius: 8,
+                border: '1px solid var(--danger)', background: 'transparent',
+                color: 'var(--danger)', cursor: 'pointer',
+              }}
+            >
+              <Icon.Trash size={14} /> Eliminar expediente
+            </button>
           )}
         </div>
         {expedient.description && (
@@ -3550,6 +3569,34 @@ function ExpedientDetailView({
           })
         })()}
       </div>
+
+      {confirmDelete && (
+        <div
+          onClick={() => setConfirmDelete(false)}
+          style={{ position: 'fixed', inset: 0, zIndex: 60, background: 'rgba(0,0,0,0.55)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20 }}
+        >
+          <div onClick={(e) => e.stopPropagation()} style={{ width: '100%', maxWidth: 420, background: 'var(--bg-elev)', border: '1px solid var(--border)', borderRadius: 12, padding: 20 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10 }}>
+              <Icon.Trash size={18} style={{ color: 'var(--danger)' }} />
+              <h3 style={{ margin: 0, fontSize: 16, fontWeight: 600 }}>Eliminar expediente</h3>
+            </div>
+            <p style={{ margin: '0 0 16px', fontSize: 13, color: 'var(--fg-muted)', lineHeight: 1.5 }}>
+              ¿Seguro que quieres eliminar <b style={{ color: 'var(--fg)' }}>{expedient.name}</b> junto a{' '}
+              <b style={{ color: 'var(--fg)' }}>todos los documentos</b> que contiene? Esta acción no se puede deshacer.
+            </p>
+            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
+              <button
+                onClick={() => setConfirmDelete(false)}
+                style={{ fontSize: 12.5, padding: '8px 14px', borderRadius: 8, border: '1px solid var(--border)', background: 'var(--bg-elev-2)', color: 'var(--fg)', cursor: 'pointer' }}
+              >Cancelar</button>
+              <button
+                onClick={() => { setConfirmDelete(false); onDeleteExpedient?.(expedient.id) }}
+                style={{ fontSize: 12.5, fontWeight: 600, padding: '8px 16px', borderRadius: 8, border: 'none', background: 'var(--danger)', color: '#fff', cursor: 'pointer' }}
+              >Eliminar</button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }
@@ -10174,6 +10221,26 @@ export default function DashboardPage() {
     }
   }
 
+  async function handleDeleteExpedient(expedientId: string) {
+    try {
+      const res = await deleteExpedient(expedientId)
+      setExpedients((prev) => prev.filter((e) => e.id !== expedientId))
+      setExpedientDetailsMap((prev) => {
+        const next = { ...prev }
+        delete next[expedientId]
+        return next
+      })
+      if (selectedExpedientId === expedientId) {
+        setSelectedExpedientId(null)
+        setSelectedView('inicio')
+      }
+      const n = res.data.deleted_count
+      setToast(`Expediente eliminado${n ? ` · ${n} documento${n === 1 ? '' : 's'}` : ''}`)
+    } catch (err) {
+      setToast(getApiErrorMessage(err, 'No se pudo eliminar el expediente'))
+    }
+  }
+
   async function handleMoveDocumentToFolder(docId: string, expedientId: string, folderId: string | null) {
     try {
       await moveDocumentToFolder(docId, folderId)
@@ -10640,6 +10707,7 @@ export default function DashboardPage() {
             onRenameFolder={(expId, folderId, name) => { void handleRenameFolder(expId, folderId, name) }}
             onDeleteFolder={(expId, folderId, name) => { void handleDeleteFolder(expId, folderId, name) }}
             onMoveDocumentToFolder={handleMoveDocumentToFolder}
+            onDeleteExpedient={(expId) => { void handleDeleteExpedient(expId) }}
           />
         ) : showKanban ? (
           <>
