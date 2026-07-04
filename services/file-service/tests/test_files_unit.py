@@ -42,7 +42,9 @@ def test_detect_mime_type_por_firma():
     assert _detect_mime_type(b"%PDF-1.7...") == "application/pdf"
     assert _detect_mime_type(b"\x89PNG\r\n\x1a\nrest") == "image/png"
     assert _detect_mime_type(b"\xff\xd8\xffjpeg") == "image/jpeg"
-    assert _detect_mime_type(b"texto") is None
+    assert _detect_mime_type("texto con acentos: áéíóú".encode()) == "text/plain"
+    assert _detect_mime_type(b"binario\x00oculto") is None
+    assert _detect_mime_type(b"utf8-invalido-\xff") is None
 
 
 @pytest.mark.unit

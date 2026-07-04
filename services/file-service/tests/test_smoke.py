@@ -17,4 +17,4 @@ def test_title_from_filename():
 @pytest.mark.unit
 def test_detect_mime_type_pdf():
     assert _detect_mime_type(b"%PDF-1.7 resto") == "application/pdf"
-    assert _detect_mime_type(b"texto plano") is None
+    assert _detect_mime_type(b"texto plano") == "text/plain"
