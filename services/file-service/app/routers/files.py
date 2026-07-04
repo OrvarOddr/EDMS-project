@@ -32,7 +32,7 @@ from app.schemas import (
 router = APIRouter(prefix="/files", tags=["files"])
 internal_router = APIRouter(prefix="/internal/files", tags=["internal-files"])
 
-ALLOWED_MIME_TYPES = {"application/pdf", "image/png", "image/jpeg"}
+ALLOWED_MIME_TYPES = {"application/pdf", "image/png", "image/jpeg", "text/plain"}
 READ_CHUNK_SIZE = 1024 * 1024
 
 
@@ -87,6 +87,16 @@ def _detect_mime_type(content: bytes) -> str | None:
         return "image/png"
     if content.startswith(b"\xff\xd8\xff"):
         return "image/jpeg"
+    # Los archivos de texto no tienen una firma binaria. Se aceptan solo si
+    # son UTF-8 valido y no contienen bytes NUL, para evitar clasificar un
+    # binario arbitrario como texto plano.
+    if b"\x00" not in content:
+        try:
+            content.decode("utf-8")
+        except UnicodeDecodeError:
+            pass
+        else:
+            return "text/plain"
     return None
 
 
