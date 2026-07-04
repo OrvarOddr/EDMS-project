@@ -177,6 +177,14 @@ class ExpedientResponse(BaseModel):
     description: str | None = None
     created_by_user_id: str
     created_at: str
+    # Campos derivados para la pantalla de Proyectos (los llena list_expedients;
+    # None/vacio en respuestas donde no se calculan, como create/detail).
+    document_count: int | None = None
+    member_user_ids: list[str] = Field(default_factory=list)
+    progress: int | None = None
+    status: str | None = None  # activo | en-riesgo | en-pausa | completado
+    pending_count: int | None = None
+    updated_at: str | None = None
 
 
 class ExpedientFolderResponse(BaseModel):
