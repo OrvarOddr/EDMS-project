@@ -9,6 +9,7 @@ from app.routers import expedients
 from app.routers import favorites
 from app.routers import folders
 from app.routers import health
+from app.routers import projects
 from app.routers import versions
 from app.routers import tags
 
@@ -75,6 +76,16 @@ async def lifespan(app: FastAPI):
         conn.execute(text(
             "CREATE INDEX IF NOT EXISTS ix_documents_folder_id ON documents.documents (folder_id)"
         ))
+        # Proyectos: nivel superior que agrupa expedientes. La tabla `projects`
+        # la crea create_all; aqui aniadimos el vinculo expediente -> proyecto.
+        conn.execute(text("ALTER TABLE documents.expedients ADD COLUMN IF NOT EXISTS project_id VARCHAR"))
+        conn.execute(text(
+            "CREATE INDEX IF NOT EXISTS ix_expedients_project_id ON documents.expedients (project_id)"
+        ))
+        conn.execute(text(
+            "CREATE UNIQUE INDEX IF NOT EXISTS uq_projects_code "
+            "ON documents.projects (code) WHERE code IS NOT NULL"
+        ))
     _backfill_mime_types()
     yield
 
@@ -85,5 +96,6 @@ app.include_router(versions.router)
 app.include_router(versions.internal_router)
 app.include_router(tags.router)
 app.include_router(expedients.router)
+app.include_router(projects.router)
 app.include_router(favorites.router)
 app.include_router(folders.router)
