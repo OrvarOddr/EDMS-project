@@ -54,3 +54,14 @@ def test_proxy_propaga_status_del_upstream(client, access_token):
     )
     r = client.get("/documents/x", headers={"Authorization": f"Bearer {access_token}"})
     assert r.status_code == 404
+
+
+@respx.mock
+def test_proxy_ruta_projects_va_a_document_service(client, access_token):
+    # /projects debe enrutar a document-service (regresion: se olvido en el mapa).
+    route = respx.get(f"{settings.DOCUMENT_SERVICE_URL}/projects").mock(
+        return_value=httpx.Response(200, json=[])
+    )
+    r = client.get("/projects", headers={"Authorization": f"Bearer {access_token}"})
+    assert r.status_code == 200
+    assert route.called
