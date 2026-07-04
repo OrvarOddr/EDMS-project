@@ -276,9 +276,14 @@ export default function ProjectsPage() {
 
   useEffect(() => {
     let mounted = true
-    Promise.all([listProjects(), listUsers().catch(() => ({ data: [] as UserMe[] }))])
-      .then(([exp, usr]) => { if (mounted) { setExpedients(exp.data); setUsers(usr.data ?? []) } })
+    // Cargas independientes: un fallo en una no debe dejar sin datos a la otra.
+    listProjects()
+      .then((res) => { if (mounted) setExpedients(res.data) })
+      .catch(() => {})
       .finally(() => { if (mounted) setLoading(false) })
+    listUsers()
+      .then((res) => { if (mounted) setUsers(res.data) })
+      .catch(() => {})
     return () => { mounted = false }
   }, [])
 
