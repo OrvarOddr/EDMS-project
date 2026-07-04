@@ -8,6 +8,13 @@ export interface ExpedientItem {
   description?: string | null
   created_by_user_id: string
   created_at: string
+  // Campos derivados para la pantalla de Proyectos (los llena GET /expedients).
+  document_count?: number | null
+  member_user_ids?: string[]
+  progress?: number | null
+  status?: string | null // activo | en-riesgo | en-pausa | completado
+  pending_count?: number | null
+  updated_at?: string | null
 }
 
 export interface ExpedientFolderItem {

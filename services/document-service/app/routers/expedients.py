@@ -7,6 +7,8 @@ Permisos: cualquier usuario autenticado puede crear/listar/ver expedientes;
 en el detalle filtramos la lista de documentos asociados por permiso de
 lectura del actor (admin ve todos).
 """
+from datetime import datetime, timezone
+
 from fastapi import APIRouter, Depends, Header, HTTPException, status
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
@@ -42,7 +44,12 @@ def _require_user(x_user_id: str | None) -> str:
     return x_user_id
 
 
-def _to_response(expedient: Expedient) -> ExpedientResponse:
+# Estados de workflow usados para derivar progreso/estado del proyecto.
+_TERMINAL_STATES = {"aprobado", "archivado"}
+_PENDING_STATES = {"en_revision", "pendiente_firma", "observado"}
+
+
+def _to_response(expedient: Expedient, **extra) -> ExpedientResponse:
     return ExpedientResponse(
         id=expedient.id,
         name=expedient.name,
@@ -50,6 +57,7 @@ def _to_response(expedient: Expedient) -> ExpedientResponse:
         description=expedient.description,
         created_by_user_id=expedient.created_by_user_id,
         created_at=expedient.created_at.isoformat(),
+        **extra,
     )
 
 
@@ -96,11 +104,93 @@ def create_expedient(
 @router.get("", response_model=list[ExpedientResponse])
 def list_expedients(
     x_user_id: str | None = Header(default=None, alias="X-User-Id"),
+    x_user_roles: str | None = Header(default=None, alias="X-User-Roles"),
     db: Session = Depends(get_db),
 ):
-    _require_user(x_user_id)
+    """Lista de proyectos (expedientes) para la pantalla de Proyectos.
+
+    Visibilidad por rol:
+    - admin: ve todos los proyectos.
+    - resto: solo aquellos donde participa (creó el expediente o puede ver >=1
+      documento, es decir esta asignado / es owner / creador del doc). La
+      participación se deriva de las asignaciones de workflow.
+
+    Cada proyecto viene enriquecido con datos derivados reales:
+    - document_count, member_user_ids (asignados), progress (% terminal),
+      status, pending_count y updated_at.
+    """
+    actor_user_id = _require_user(x_user_id)
+    is_admin = _is_admin(x_user_roles)
     rows = db.query(Expedient).order_by(Expedient.created_at.desc()).all()
-    return [_to_response(row) for row in rows]
+    if not rows:
+        return []
+
+    documents = (
+        db.query(Document)
+        .filter(
+            Document.expedient_id.in_([row.id for row in rows]),
+            Document.archived_at.is_(None),
+        )
+        .all()
+    )
+    summary_map = _fetch_batch_workflow_summaries([doc.id for doc in documents])
+    now = datetime.now(timezone.utc)
+
+    # Agregados por expediente, contando solo documentos visibles para el actor.
+    agg: dict[str, dict] = {
+        row.id: {"count": 0, "terminal": 0, "pending": 0, "overdue": False, "members": [], "updated": None}
+        for row in rows
+    }
+    for doc in documents:
+        summary = summary_map.get(doc.id)
+        if not _can_view_document(doc, actor_user_id, summary, is_admin=is_admin):
+            continue
+        bucket = agg[doc.expedient_id]
+        bucket["count"] += 1
+        state_code = (summary or {}).get("state_code")
+        if state_code in _TERMINAL_STATES:
+            bucket["terminal"] += 1
+        elif state_code in _PENDING_STATES:
+            bucket["pending"] += 1
+        if doc.due_at is not None and doc.due_at < now and state_code not in _TERMINAL_STATES:
+            bucket["overdue"] = True
+        for uid in [(summary or {}).get("assignee_user_id"), *((summary or {}).get("assigned_user_ids") or [])]:
+            if uid and uid not in bucket["members"]:
+                bucket["members"].append(uid)
+        if doc.updated_at is not None and (bucket["updated"] is None or doc.updated_at > bucket["updated"]):
+            bucket["updated"] = doc.updated_at
+
+    result = []
+    for row in rows:
+        bucket = agg[row.id]
+        count = bucket["count"]
+        participates = row.created_by_user_id == actor_user_id or count > 0
+        if not (is_admin or participates):
+            continue
+
+        progress = round(100 * bucket["terminal"] / count) if count else 0
+        if count == 0:
+            status_code = "en-pausa"
+        elif bucket["overdue"]:
+            status_code = "en-riesgo"
+        elif progress == 100:
+            status_code = "completado"
+        else:
+            status_code = "activo"
+
+        updated = bucket["updated"] or row.created_at
+        result.append(
+            _to_response(
+                row,
+                document_count=count,
+                member_user_ids=bucket["members"],
+                progress=progress,
+                status=status_code,
+                pending_count=bucket["pending"],
+                updated_at=updated.isoformat(),
+            )
+        )
+    return result
 
 
 @router.get("/{expedient_id}", response_model=ExpedientDetailResponse)

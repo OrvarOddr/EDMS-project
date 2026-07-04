@@ -14,6 +14,7 @@ import {
 import logo from '../assets/logo.png'
 import { normalizeMentionToken, notifTimeAgo } from '../lib/text'
 import { useAuth } from '../context/AuthContext'
+import { useParams, useNavigate } from 'react-router-dom'
 import KanbanView from '../components/kanban/KanbanView'
 import { assignRole, createUser, listRoles, listUsers, type RoleItem, type UserMe } from '../api/auth'
 import {
@@ -8926,8 +8927,12 @@ function DocumentTagAssignmentModal({
 
 export default function DashboardPage() {
   const { user, logout } = useAuth()
+  // Proyecto (expediente) activo tomado de la ruta /proyecto/:expedientId.
+  // Cuando está presente, todo el dashboard queda escopado a ese proyecto.
+  const { expedientId: routeProjectId } = useParams<{ expedientId: string }>()
+  const navigate = useNavigate()
   const [tweaks, setTweaks] = useState(initialTweaks)
-  const [selectedView, setSelectedView] = useState<SelectedView>('inicio')
+  const [selectedView, setSelectedView] = useState<SelectedView>(routeProjectId ? 'expediente' : 'inicio')
   const [selectedFolder, setSelectedFolder] = useState('root')
   const [selectedTag, setSelectedTag] = useState<string | null>(null)
   const [search, setSearch] = useState('')
@@ -8985,7 +8990,7 @@ export default function DashboardPage() {
   const [adminMetrics, setAdminMetrics] = useState<DocumentMetricsResponse | null>(null)
   const [tags, setTags] = useState<ApiTag[]>([])
   const [expedients, setExpedients] = useState<ExpedientItem[]>([])
-  const [selectedExpedientId, setSelectedExpedientId] = useState<string | null>(null)
+  const [selectedExpedientId, setSelectedExpedientId] = useState<string | null>(routeProjectId ?? null)
   const [expedientDetail, setExpedientDetail] = useState<ExpedientDetail | null>(null)
   const [expedientDetailsMap, setExpedientDetailsMap] = useState<Record<string, ExpedientDetail>>({})
   const [expandedExpedients, setExpandedExpedients] = useState<Set<string>>(new Set())
@@ -9016,7 +9021,12 @@ export default function DashboardPage() {
   const currentUserEmail = user?.email ?? ''
   const currentUserColor = user?.color ?? actorColorFromId(user?.id ?? null)
   const firstName = currentUserLabel.split(' ')[0]
-  const allDocs = useMemo(() => [...createdDocs, ...dashboardData.docs], [createdDocs])
+  const allDocs = useMemo(() => {
+    const base = [...createdDocs, ...dashboardData.docs]
+    // Escopar todo al proyecto activo: doc.folder guarda el expedient_id
+    // (ver documentResponseToItem). Sin proyecto, se ve todo.
+    return routeProjectId ? base.filter((doc) => doc.folder === routeProjectId) : base
+  }, [createdDocs, routeProjectId])
   const starredDocIds = useMemo(() => {
     const ids = new Set<string>()
     for (const doc of createdDocs) if (doc.starred) ids.add(doc.id)
@@ -10484,6 +10494,20 @@ export default function DashboardPage() {
       />
 
       <main style={{ flex: 1, display: 'flex', flexDirection: 'column', minWidth: 0, position: 'relative' }}>
+        {routeProjectId && (
+          <button
+            onClick={() => navigate('/')}
+            className="edms-nav-item"
+            style={{
+              display: 'flex', alignItems: 'center', gap: 6, alignSelf: 'flex-start',
+              margin: '10px 0 0 14px', padding: '5px 10px', borderRadius: 7,
+              border: '1px solid var(--border)', background: 'var(--bg-elev)', color: 'var(--fg-muted)',
+              fontSize: 12.5, cursor: 'pointer',
+            }}
+          >
+            <Icon.Arrow size={12} style={{ transform: 'rotate(180deg)' }} /> Proyectos
+          </button>
+        )}
         <Topbar
           breadcrumb={breadcrumb}
           onCrumbClick={(crumb) => {
