@@ -23,5 +23,19 @@ class Project(Base):
     name = Column(String, nullable=False)
     code = Column(String, nullable=True, index=True)
     description = Column(Text, nullable=True)
+    # Coordinador (responsable) del proyecto. Por defecto es el creador.
+    coordinator_user_id = Column(String, nullable=True, index=True)
     created_by_user_id = Column(String, nullable=False, index=True)
+    created_at = Column(DateTime(timezone=True), nullable=False, default=utcnow)
+
+
+class ProjectMember(Base):
+    """Miembro asignado explícitamente a un proyecto (colaborador)."""
+
+    __tablename__ = "project_members"
+    __table_args__ = {"schema": "documents"}
+
+    id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
+    project_id = Column(String, nullable=False, index=True)
+    user_id = Column(String, nullable=False, index=True)
     created_at = Column(DateTime(timezone=True), nullable=False, default=utcnow)

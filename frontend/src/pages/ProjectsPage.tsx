@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState, type CSSProperties, type ReactNode } from
 import { useNavigate } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
 import { listUsers, type UserMe } from '../api/auth'
-import { listProjects, type ProjectItem } from '../api/projects'
+import { createProject, listProjects, type ProjectItem } from '../api/projects'
 
 /**
  * Pantalla principal de Proyectos: primera pantalla tras login. Es standalone
@@ -133,7 +133,8 @@ function ProjectCard({ p, relation, byId, onOpen }: {
   p: ProjectItem; relation: string | null; byId: Map<string, UserMe>; onOpen: () => void
 }) {
   const s = STATUS[p.status ?? 'activo'] ?? STATUS['activo']
-  const coord = byId.get(p.created_by_user_id)
+  const coordId = p.coordinator_user_id ?? p.created_by_user_id
+  const coord = byId.get(coordId)
   const members = p.member_user_ids ?? []
   const pending = p.pending_count ?? 0
   return (
@@ -173,7 +174,7 @@ function ProjectCard({ p, relation, byId, onOpen }: {
       </div>
 
       <div style={{ display: 'flex', alignItems: 'center', gap: 10, paddingTop: 2 }}>
-        <Avatar u={coord} id={p.created_by_user_id} size={24} />
+        <Avatar u={coord} id={coordId} size={24} />
         <div style={{ minWidth: 0, flex: 1 }}>
           <div style={{ fontSize: 10, color: 'var(--fg-dim)', textTransform: 'uppercase', letterSpacing: '0.06em', fontWeight: 600 }}>Coordinador</div>
           <div style={{ fontSize: 12, color: 'var(--fg)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{userName(coord)}</div>
@@ -203,7 +204,8 @@ function ProjectRow({ p, relation, byId, onOpen }: {
   p: ProjectItem; relation: string | null; byId: Map<string, UserMe>; onOpen: () => void
 }) {
   const s = STATUS[p.status ?? 'activo'] ?? STATUS['activo']
-  const coord = byId.get(p.created_by_user_id)
+  const coordId = p.coordinator_user_id ?? p.created_by_user_id
+  const coord = byId.get(coordId)
   return (
     <button className="edms-nav-item" onClick={onOpen} style={{
       textAlign: 'left', width: '100%', display: 'grid',
@@ -225,7 +227,7 @@ function ProjectRow({ p, relation, byId, onOpen }: {
       </div>
       <div><StatusPill status={p.status} /></div>
       <div style={{ display: 'flex', alignItems: 'center', gap: 8, minWidth: 0 }}>
-        <Avatar u={coord} id={p.created_by_user_id} size={22} />
+        <Avatar u={coord} id={coordId} size={22} />
         <span style={{ fontSize: 12, color: 'var(--fg-muted)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{userName(coord).split(' ')[0]}</span>
       </div>
       <div style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
@@ -267,6 +269,10 @@ export default function ProjectsPage() {
   const [query, setQuery] = useState('')
   const [statusFilter, setStatusFilter] = useState('all')
   const [layout, setLayout] = useState<'grid' | 'list'>('grid')
+  const [creating, setCreating] = useState(false)
+  const [submitting, setSubmitting] = useState(false)
+  const [formError, setFormError] = useState<string | null>(null)
+  const [form, setForm] = useState({ name: '', code: '', description: '', coordinator_user_id: '', member_user_ids: [] as string[] })
 
   useEffect(() => {
     let mounted = true
@@ -280,8 +286,10 @@ export default function ProjectsPage() {
   const isAdmin = Boolean(user?.is_superuser) || Boolean(user?.roles?.includes('admin'))
   const meId = user?.id ?? ''
 
+  const coordinatorOf = (p: ProjectItem) => p.coordinator_user_id ?? p.created_by_user_id
+
   const relation = (p: ProjectItem): string | null =>
-    p.created_by_user_id === meId ? 'coord'
+    coordinatorOf(p) === meId ? 'coord'
       : (p.member_user_ids ?? []).includes(meId) ? 'collab'
         : (isAdmin ? 'admin' : null)
 
@@ -297,13 +305,13 @@ export default function ProjectsPage() {
     if (isAdmin) {
       return [{ key: 'all', title: 'Todos los proyectos', subtitle: 'Vista de administrador', items: visible }]
     }
-    const coord = visible.filter((p) => p.created_by_user_id === meId)
-    const collab = visible.filter((p) => p.created_by_user_id !== meId && (p.member_user_ids ?? []).includes(meId))
+    const coord = visible.filter((p) => coordinatorOf(p) === meId)
+    const collab = visible.filter((p) => coordinatorOf(p) !== meId && (p.member_user_ids ?? []).includes(meId))
     const g: { key: string; title: string; subtitle: string; items: ProjectItem[] }[] = []
     if (coord.length) g.push({ key: 'coord', title: 'Proyectos que coordino', subtitle: 'Eres responsable de estos proyectos', items: coord })
     if (collab.length) g.push({ key: 'collab', title: 'Donde colaboro', subtitle: 'Participas como colaborador', items: collab })
     // Sin relación explícita (ej. creados por otro pero visibles): agrúpalos aparte.
-    const rest = visible.filter((p) => p.created_by_user_id !== meId && !(p.member_user_ids ?? []).includes(meId))
+    const rest = visible.filter((p) => coordinatorOf(p) !== meId && !(p.member_user_ids ?? []).includes(meId))
     if (rest.length) g.push({ key: 'rest', title: 'Otros proyectos', subtitle: 'Con acceso', items: rest })
     return g
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -317,6 +325,39 @@ export default function ProjectsPage() {
     : 'Los proyectos que coordinas y aquellos en los que colaboras.'
 
   const onLogout = async () => { await logout(); navigate('/login') }
+
+  const openCreate = () => {
+    setForm({ name: '', code: '', description: '', coordinator_user_id: user?.id ?? '', member_user_ids: [] })
+    setFormError(null)
+    setCreating(true)
+  }
+  const submitCreate = async () => {
+    if (!form.name.trim()) { setFormError('El nombre es obligatorio'); return }
+    setSubmitting(true)
+    setFormError(null)
+    try {
+      const res = await createProject({
+        name: form.name.trim(),
+        code: form.code.trim() || null,
+        description: form.description.trim() || null,
+        coordinator_user_id: form.coordinator_user_id || null,
+        member_user_ids: form.member_user_ids,
+      })
+      setExpedients((prev) => [res.data, ...prev])
+      setCreating(false)
+    } catch {
+      setFormError('No se pudo crear el proyecto')
+    } finally {
+      setSubmitting(false)
+    }
+  }
+  const toggleMember = (uid: string) =>
+    setForm((f) => ({
+      ...f,
+      member_user_ids: f.member_user_ids.includes(uid)
+        ? f.member_user_ids.filter((m) => m !== uid)
+        : [...f.member_user_ids, uid],
+    }))
 
   return (
     <div style={{ position: 'relative', minHeight: '100vh', display: 'flex', flexDirection: 'column', background: 'var(--bg)', color: 'var(--fg)' }}>
@@ -347,6 +388,12 @@ export default function ProjectsPage() {
           <button className="edms-nav-item" onClick={() => setLayout('list')} title="Lista" style={{ padding: '5px 8px', borderRadius: 5,
             color: layout === 'list' ? 'var(--fg)' : 'var(--fg-dim)', background: layout === 'list' ? 'var(--bg-active)' : 'transparent' }}><IcList size={15} /></button>
         </div>
+
+        <button onClick={openCreate} style={{
+          display: 'flex', alignItems: 'center', gap: 6, fontSize: 12.5, fontWeight: 600,
+          padding: '8px 14px', borderRadius: 8, border: 'none',
+          background: 'var(--accent)', color: 'var(--accent-fg)', cursor: 'pointer',
+        }}>+ Nuevo proyecto</button>
 
         <div style={{ display: 'flex', alignItems: 'center', gap: 10, paddingLeft: 6, borderLeft: '1px solid var(--border)' }}>
           <div style={{ textAlign: 'right', lineHeight: 1.2 }}>
@@ -408,6 +455,96 @@ export default function ProjectsPage() {
           </Section>
         ))}
       </main>
+
+      {creating && (
+        <div
+          onClick={() => { if (!submitting) setCreating(false) }}
+          style={{ position: 'fixed', inset: 0, zIndex: 50, background: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20 }}
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            style={{ width: '100%', maxWidth: 480, background: 'var(--bg-elev)', border: '1px solid var(--border)', borderRadius: 12, padding: 20, maxHeight: '86vh', overflow: 'auto' }}
+          >
+            <h2 style={{ margin: '0 0 16px', fontSize: 17, fontWeight: 600 }}>Nuevo proyecto</h2>
+
+            <div style={{ fontSize: 11.5, fontWeight: 600, color: 'var(--fg-muted)', marginBottom: 5 }}>Nombre</div>
+            <input
+              value={form.name} autoFocus
+              onChange={(e) => setForm({ ...form, name: e.target.value })}
+              placeholder="Ej: Reestructuración Legal 2026"
+              style={{ width: '100%', padding: '8px 11px', borderRadius: 8, border: '1px solid var(--border)', background: 'var(--bg-elev-2)', color: 'var(--fg)', fontSize: 13, marginBottom: 12 }}
+            />
+
+            <div style={{ display: 'flex', gap: 12, marginBottom: 12 }}>
+              <div style={{ flex: 1 }}>
+                <div style={{ fontSize: 11.5, fontWeight: 600, color: 'var(--fg-muted)', marginBottom: 5 }}>Código (opcional)</div>
+                <input
+                  value={form.code}
+                  onChange={(e) => setForm({ ...form, code: e.target.value })}
+                  placeholder="PR-2026-001"
+                  style={{ width: '100%', padding: '8px 11px', borderRadius: 8, border: '1px solid var(--border)', background: 'var(--bg-elev-2)', color: 'var(--fg)', fontSize: 13 }}
+                />
+              </div>
+              <div style={{ flex: 1 }}>
+                <div style={{ fontSize: 11.5, fontWeight: 600, color: 'var(--fg-muted)', marginBottom: 5 }}>Coordinador</div>
+                <select
+                  value={form.coordinator_user_id}
+                  onChange={(e) => setForm({ ...form, coordinator_user_id: e.target.value })}
+                  style={{ width: '100%', padding: '8px 11px', borderRadius: 8, border: '1px solid var(--border)', background: 'var(--bg-elev-2)', color: 'var(--fg)', fontSize: 13 }}
+                >
+                  {users.map((u) => <option key={u.id} value={u.id}>{userName(u)}</option>)}
+                </select>
+              </div>
+            </div>
+
+            <div style={{ fontSize: 11.5, fontWeight: 600, color: 'var(--fg-muted)', marginBottom: 5 }}>Descripción (opcional)</div>
+            <textarea
+              value={form.description}
+              onChange={(e) => setForm({ ...form, description: e.target.value })}
+              rows={2}
+              placeholder="Breve descripción del proyecto"
+              style={{ width: '100%', padding: '8px 11px', borderRadius: 8, border: '1px solid var(--border)', background: 'var(--bg-elev-2)', color: 'var(--fg)', fontSize: 13, marginBottom: 12, resize: 'vertical', fontFamily: 'inherit' }}
+            />
+
+            <div style={{ fontSize: 11.5, fontWeight: 600, color: 'var(--fg-muted)', marginBottom: 6 }}>Miembros</div>
+            {users.filter((u) => u.id !== form.coordinator_user_id).length === 0 ? (
+              <div style={{ fontSize: 12, color: 'var(--fg-dim)' }}>No hay otros usuarios para asignar.</div>
+            ) : (
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, maxHeight: 140, overflow: 'auto' }}>
+                {users.filter((u) => u.id !== form.coordinator_user_id).map((u) => {
+                  const on = form.member_user_ids.includes(u.id)
+                  return (
+                    <button
+                      key={u.id} onClick={() => toggleMember(u.id)}
+                      style={{
+                        display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 12, padding: '5px 10px', borderRadius: 20, cursor: 'pointer',
+                        border: '1px solid ' + (on ? 'transparent' : 'var(--border)'),
+                        background: on ? 'var(--accent-soft)' : 'var(--bg-elev-2)',
+                        color: on ? 'var(--accent)' : 'var(--fg-muted)',
+                      }}
+                    >
+                      <Avatar u={u} id={u.id} size={18} /> {userName(u)}
+                    </button>
+                  )
+                })}
+              </div>
+            )}
+
+            {formError && <div style={{ color: 'var(--danger)', fontSize: 12, marginTop: 12 }}>{formError}</div>}
+
+            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 18 }}>
+              <button
+                onClick={() => setCreating(false)} disabled={submitting}
+                style={{ fontSize: 12.5, padding: '8px 14px', borderRadius: 8, border: '1px solid var(--border)', background: 'var(--bg-elev-2)', color: 'var(--fg)', cursor: 'pointer' }}
+              >Cancelar</button>
+              <button
+                onClick={submitCreate} disabled={submitting}
+                style={{ fontSize: 12.5, fontWeight: 600, padding: '8px 16px', borderRadius: 8, border: 'none', background: 'var(--accent)', color: 'var(--accent-fg)', cursor: submitting ? 'wait' : 'pointer', opacity: submitting ? 0.7 : 1 }}
+              >{submitting ? 'Creando…' : 'Crear proyecto'}</button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }

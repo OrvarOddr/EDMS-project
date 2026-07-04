@@ -86,6 +86,8 @@ async def lifespan(app: FastAPI):
             "CREATE UNIQUE INDEX IF NOT EXISTS uq_projects_code "
             "ON documents.projects (code) WHERE code IS NOT NULL"
         ))
+        # Coordinador explicito del proyecto (la tabla project_members la crea create_all).
+        conn.execute(text("ALTER TABLE documents.projects ADD COLUMN IF NOT EXISTS coordinator_user_id VARCHAR"))
     _backfill_mime_types()
     yield
 

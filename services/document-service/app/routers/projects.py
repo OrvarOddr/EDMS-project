@@ -11,13 +11,24 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.database import get_db
-from app.models import Document, Expedient, Project
+from app.models import Document, Expedient, Project, ProjectMember
 from app.routers.versions import (
     _can_view_document,
     _fetch_batch_workflow_summaries,
     _is_admin,
 )
 from app.schemas import CreateProjectRequest, ProjectResponse
+
+
+def _clean_ids(values, exclude=None) -> list[str]:
+    """Normaliza una lista de user ids: strip, sin vacios, sin duplicados y sin
+    el `exclude` (ej. para no repetir al coordinador entre los miembros)."""
+    seen: list[str] = []
+    for raw in values or []:
+        uid = (raw or "").strip()
+        if uid and uid != exclude and uid not in seen:
+            seen.append(uid)
+    return seen
 
 router = APIRouter(prefix="/projects", tags=["projects"])
 
@@ -32,12 +43,14 @@ def _require_user(x_user_id: str | None) -> str:
     return x_user_id
 
 
-def _base_response(project: Project, **extra) -> ProjectResponse:
+def _base_response(project: Project, *, member_user_ids=None, **extra) -> ProjectResponse:
     return ProjectResponse(
         id=project.id,
         name=project.name,
         code=project.code,
         description=project.description,
+        coordinator_user_id=project.coordinator_user_id or project.created_by_user_id,
+        member_user_ids=member_user_ids or [],
         created_by_user_id=project.created_by_user_id,
         created_at=project.created_at.isoformat(),
         **extra,
@@ -63,15 +76,27 @@ def create_project(
             detail=f"Ya existe un proyecto con el codigo '{code}'",
         )
 
-    project = Project(name=name, code=code, description=description, created_by_user_id=actor_user_id)
+    coordinator = (body.coordinator_user_id or "").strip() or actor_user_id
+    members = _clean_ids(body.member_user_ids, exclude=coordinator)
+
+    project = Project(
+        name=name,
+        code=code,
+        description=description,
+        created_by_user_id=actor_user_id,
+        coordinator_user_id=coordinator,
+    )
     db.add(project)
     try:
+        db.flush()
+        for uid in members:
+            db.add(ProjectMember(project_id=project.id, user_id=uid))
         db.commit()
     except IntegrityError:
         db.rollback()
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Codigo de proyecto duplicado")
     db.refresh(project)
-    return _base_response(project)
+    return _base_response(project, member_user_ids=members)
 
 
 @router.get("", response_model=list[ProjectResponse])
@@ -97,6 +122,16 @@ def list_projects(
     if not projects:
         return []
 
+    # Miembros explicitos por proyecto (asignados al crear el proyecto).
+    member_rows = (
+        db.query(ProjectMember)
+        .filter(ProjectMember.project_id.in_([p.id for p in projects]))
+        .all()
+    )
+    members_by_project: dict[str, list[str]] = {}
+    for row in member_rows:
+        members_by_project.setdefault(row.project_id, []).append(row.user_id)
+
     # expediente -> proyecto
     expedients = (
         db.query(Expedient)
@@ -119,7 +154,7 @@ def list_projects(
     now = datetime.now(timezone.utc)
 
     agg: dict[str, dict] = {
-        p.id: {"count": 0, "terminal": 0, "pending": 0, "overdue": False, "members": [], "updated": None}
+        p.id: {"count": 0, "terminal": 0, "pending": 0, "overdue": False, "updated": None}
         for p in projects
     }
     for doc in documents:
@@ -138,9 +173,6 @@ def list_projects(
             bucket["pending"] += 1
         if doc.due_at is not None and doc.due_at < now and state_code not in _TERMINAL_STATES:
             bucket["overdue"] = True
-        for uid in [(summary or {}).get("assignee_user_id"), *((summary or {}).get("assigned_user_ids") or [])]:
-            if uid and uid not in bucket["members"]:
-                bucket["members"].append(uid)
         if doc.updated_at is not None and (bucket["updated"] is None or doc.updated_at > bucket["updated"]):
             bucket["updated"] = doc.updated_at
 
@@ -148,7 +180,16 @@ def list_projects(
     for project in projects:
         bucket = agg[project.id]
         count = bucket["count"]
-        participates = project.created_by_user_id == actor_user_id or count > 0
+        explicit_members = members_by_project.get(project.id, [])
+        coordinator = project.coordinator_user_id or project.created_by_user_id
+        # Visibilidad: admin, o el usuario es creador / coordinador / miembro
+        # explicito, o participa en algun documento (derivado de asignaciones).
+        participates = (
+            project.created_by_user_id == actor_user_id
+            or coordinator == actor_user_id
+            or actor_user_id in explicit_members
+            or count > 0
+        )
         if not (is_admin or participates):
             continue
 
@@ -167,7 +208,7 @@ def list_projects(
             _base_response(
                 project,
                 document_count=count,
-                member_user_ids=bucket["members"],
+                member_user_ids=explicit_members,
                 progress=progress,
                 status=status_code,
                 pending_count=bucket["pending"],
