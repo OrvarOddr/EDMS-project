@@ -12,7 +12,14 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.database import get_db
-from app.models import Document, Expedient, ExpedientFolder
+from app.models import (
+    Document,
+    DocumentFavorite,
+    DocumentTag,
+    DocumentVersion,
+    Expedient,
+    ExpedientFolder,
+)
 from app.routers.versions import (
     _can_view_document,
     _current_mime_map,
@@ -28,6 +35,7 @@ from app.schemas import (
     AttachDocumentsToExpedientRequest,
     AttachDocumentsToExpedientResponse,
     CreateExpedientRequest,
+    DocumentDeleteResponse,
     ExpedientDetailResponse,
     ExpedientFolderResponse,
     ExpedientResponse,
@@ -174,6 +182,42 @@ def get_expedient(
             for folder in folders
         ],
     )
+
+
+@router.delete("/{expedient_id}", response_model=DocumentDeleteResponse)
+def delete_expedient(
+    expedient_id: str,
+    x_user_id: str | None = Header(default=None, alias="X-User-Id"),
+    x_user_roles: str | None = Header(default=None, alias="X-User-Roles"),
+    db: Session = Depends(get_db),
+):
+    """Elimina el expediente y TODO su contenido: documentos (con sus versiones,
+    favoritos y etiquetas) y carpetas. Irreversible.
+
+    Solo el creador del expediente o un admin pueden eliminarlo.
+    """
+    actor_user_id = _require_user(x_user_id)
+    expedient = db.query(Expedient).filter(Expedient.id == expedient_id.strip()).first()
+    if not expedient:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Expediente no encontrado")
+    if not _is_admin(x_user_roles) and expedient.created_by_user_id != actor_user_id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Solo el creador del expediente o un administrador puede eliminarlo",
+        )
+
+    document_ids = [
+        doc_id for (doc_id,) in db.query(Document.id).filter(Document.expedient_id == expedient.id).all()
+    ]
+    if document_ids:
+        db.query(DocumentVersion).filter(DocumentVersion.document_id.in_(document_ids)).delete(synchronize_session=False)
+        db.query(DocumentFavorite).filter(DocumentFavorite.document_id.in_(document_ids)).delete(synchronize_session=False)
+        db.query(DocumentTag).filter(DocumentTag.document_id.in_(document_ids)).delete(synchronize_session=False)
+        db.query(Document).filter(Document.id.in_(document_ids)).delete(synchronize_session=False)
+    db.query(ExpedientFolder).filter(ExpedientFolder.expedient_id == expedient.id).delete(synchronize_session=False)
+    db.delete(expedient)
+    db.commit()
+    return DocumentDeleteResponse(deleted_count=len(document_ids))
 
 
 @router.post(

@@ -266,3 +266,48 @@ def test_attach_documents_idempotente(client):
     )
     assert res.status_code == 200
     assert doc["id"] in res.json()["attached"]
+
+
+@respx.mock
+def test_eliminar_expediente_borra_sus_documentos(client):
+    respx.post(BOOTSTRAP_URL).mock(
+        return_value=httpx.Response(
+            201,
+            json={"document_id": "x", "state_code": "borrador", "assignee_user_id": USER, "assignment_role_code": "encargado"},
+        )
+    )
+    respx.post(SUMMARIES_URL).mock(return_value=httpx.Response(200, json={"summaries": {}}))
+
+    exp = client.post("/expedients", headers={"X-User-Id": USER}, json={"name": "Borrable"}).json()
+    doc = client.post(
+        "/documents",
+        headers={"X-User-Id": USER},
+        json={"title": "Doc", "document_type_id": "t1", "description": "d", "expedient_id": exp["id"]},
+    ).json()
+
+    # Un usuario que no es creador ni admin no puede eliminarlo.
+    assert client.delete(f"/expedients/{exp['id']}", headers={"X-User-Id": OTHER}).status_code == 403
+
+    # El creador lo elimina con sus documentos.
+    res = client.delete(f"/expedients/{exp['id']}", headers={"X-User-Id": USER})
+    assert res.status_code == 200, res.text
+    assert res.json()["deleted_count"] == 1
+
+    # El expediente ya no existe y el documento tampoco.
+    assert client.get(f"/expedients/{exp['id']}", headers={"X-User-Id": USER}).status_code == 404
+    assert client.get(f"/documents/{doc['id']}", headers={"X-User-Id": USER}).status_code == 404
+
+
+@respx.mock
+def test_eliminar_expediente_admin_bypass(client):
+    respx.post(BOOTSTRAP_URL).mock(
+        return_value=httpx.Response(
+            201,
+            json={"document_id": "x", "state_code": "borrador", "assignee_user_id": OTHER, "assignment_role_code": "encargado"},
+        )
+    )
+    respx.post(SUMMARIES_URL).mock(return_value=httpx.Response(200, json={"summaries": {}}))
+
+    exp = client.post("/expedients", headers={"X-User-Id": OTHER}, json={"name": "Ajeno"}).json()
+    res = client.delete(f"/expedients/{exp['id']}", headers={"X-User-Id": USER, "X-User-Roles": "admin"})
+    assert res.status_code == 200, res.text

@@ -40,6 +40,9 @@ export const getExpedient = (id: string) =>
 export const createExpedient = (payload: CreateExpedientPayload) =>
   client.post<ExpedientItem>('/expedients', payload)
 
+export const deleteExpedient = (id: string) =>
+  client.delete<{ deleted_count: number }>(`/expedients/${id}`)
+
 export interface AttachDocumentsToExpedientResult {
   attached: string[]
   skipped: { document_id: string; reason: string }[]
