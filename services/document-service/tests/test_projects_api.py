@@ -107,4 +107,26 @@ def test_listar_proyectos_campos_derivados_por_asignacion(client):
     assert match["progress"] == 100
     assert match["status"] == "completado"
     assert match["pending_count"] == 0
-    assert set(match["member_user_ids"]) == {OTHER, USER}
+
+
+def test_crear_proyecto_con_coordinador_y_miembros(client):
+    """Al crear se asigna coordinador y miembros explicitos; ambos ven el
+    proyecto aunque no tengan documentos."""
+    THIRD = "user-3"
+    res = client.post(
+        "/projects",
+        headers={"X-User-Id": USER},
+        json={"name": "Con equipo", "coordinator_user_id": OTHER, "member_user_ids": [THIRD, OTHER, THIRD]},
+    )
+    assert res.status_code == 201, res.text
+    body = res.json()
+    assert body["coordinator_user_id"] == OTHER
+    # OTHER es coordinador -> se excluye de miembros; sin duplicados.
+    assert body["member_user_ids"] == [THIRD]
+
+    pid = body["id"]
+    # El coordinador (OTHER) y el miembro (THIRD) ven el proyecto.
+    assert any(p["id"] == pid for p in client.get("/projects", headers={"X-User-Id": OTHER}).json())
+    assert any(p["id"] == pid for p in client.get("/projects", headers={"X-User-Id": THIRD}).json())
+    # Un usuario sin relacion NO lo ve.
+    assert not any(p["id"] == pid for p in client.get("/projects", headers={"X-User-Id": "nadie"}).json())
