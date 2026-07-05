@@ -121,6 +121,7 @@ export interface ListDocumentsParams {
   date?: string
   due_within_days?: number
   due_soon?: boolean
+  limit?: number
 }
 
 export const createDocument = (payload: CreateDocumentPayload) =>

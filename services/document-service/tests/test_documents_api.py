@@ -64,3 +64,16 @@ def test_listar_documentos_del_usuario(client):
     assert r.status_code == 200
     titles = [d["title"] for d in r.json()]
     assert "Acta de reunion" in titles
+
+
+@respx.mock
+def test_listar_documentos_respeta_limit(client):
+    respx.post(BOOTSTRAP_URL).mock(return_value=_bootstrap_response())
+    respx.post(SUMMARIES_URL).mock(return_value=httpx.Response(200, json={"summaries": {}}))
+
+    for i in range(5):
+        client.post("/documents", headers={"X-User-Id": USER}, json={**NEW_DOC, "title": f"Doc {i}"})
+
+    r = client.get("/documents", headers={"X-User-Id": USER}, params={"limit": 3})
+    assert r.status_code == 200
+    assert len(r.json()) <= 3
