@@ -311,3 +311,35 @@ def test_eliminar_expediente_admin_bypass(client):
     exp = client.post("/expedients", headers={"X-User-Id": OTHER}, json={"name": "Ajeno"}).json()
     res = client.delete(f"/expedients/{exp['id']}", headers={"X-User-Id": USER, "X-User-Roles": "admin"})
     assert res.status_code == 200, res.text
+
+
+@respx.mock
+def test_detalle_expediente_pagina_documentos(client):
+    """El detalle trae documentos paginados (no todos): document_count total,
+    has_more y una pagina acotada por limit."""
+    respx.post(BOOTSTRAP_URL).mock(
+        return_value=httpx.Response(
+            201,
+            json={"document_id": "x", "state_code": "borrador", "assignee_user_id": USER, "assignment_role_code": "encargado"},
+        )
+    )
+    respx.post(SUMMARIES_URL).mock(return_value=httpx.Response(200, json={"summaries": {}}))
+
+    exp = client.post("/expedients", headers={"X-User-Id": USER}, json={"name": "Grande"}).json()
+    for i in range(5):
+        client.post(
+            "/documents",
+            headers={"X-User-Id": USER},
+            json={"title": f"Doc {i}", "document_type_id": "t1", "description": "d", "expedient_id": exp["id"]},
+        )
+
+    r = client.get(f"/expedients/{exp['id']}", headers={"X-User-Id": USER}, params={"limit": 2, "offset": 0})
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert len(body["documents"]) <= 2
+    assert body["document_count"] == 5
+    assert body["has_more"] is True
+
+    # Ultima pagina: sin has_more.
+    r2 = client.get(f"/expedients/{exp['id']}", headers={"X-User-Id": USER}, params={"limit": 2, "offset": 4})
+    assert r2.json()["has_more"] is False

@@ -7,7 +7,8 @@ Permisos: cualquier usuario autenticado puede crear/listar/ver expedientes;
 en el detalle filtramos la lista de documentos asociados por permiso de
 lectura del actor (admin ve todos).
 """
-from fastapi import APIRouter, Depends, Header, HTTPException, status
+from fastapi import APIRouter, Depends, Header, HTTPException, Query, status
+from sqlalchemy import func
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
@@ -125,22 +126,39 @@ def list_expedients(
 @router.get("/{expedient_id}", response_model=ExpedientDetailResponse)
 def get_expedient(
     expedient_id: str,
+    offset: int = Query(default=0, ge=0),
+    limit: int = Query(default=50, ge=1, le=200),
     x_user_id: str | None = Header(default=None, alias="X-User-Id"),
     x_user_roles: str | None = Header(default=None, alias="X-User-Roles"),
     db: Session = Depends(get_db),
 ):
+    """Detalle del expediente con documentos **paginados** (50 por defecto).
+
+    Evita colgar la web al abrir un expediente con miles de documentos: se trae
+    una pagina (offset/limit) en vez de todos. `document_count` es el total y
+    `has_more` indica si quedan mas paginas.
+    """
     actor_user_id = _require_user(x_user_id)
     is_admin = _is_admin(x_user_roles)
     expedient = db.query(Expedient).filter(Expedient.id == expedient_id.strip()).first()
     if not expedient:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Expediente no encontrado")
 
+    document_count = (
+        db.query(func.count(Document.id))
+        .filter(Document.expedient_id == expedient.id, Document.archived_at.is_(None))
+        .scalar()
+    ) or 0
+
     documents = (
         db.query(Document)
         .filter(Document.expedient_id == expedient.id, Document.archived_at.is_(None))
         .order_by(Document.created_at.desc())
+        .offset(offset)
+        .limit(limit)
         .all()
     )
+    has_more = offset + limit < document_count
     ids = [d.id for d in documents]
     summary_map = _fetch_batch_workflow_summaries(ids)
     visible = [
@@ -162,6 +180,8 @@ def get_expedient(
     base = _to_response(expedient)
     return ExpedientDetailResponse(
         **base.model_dump(),
+        document_count=document_count,
+        has_more=has_more,
         documents=[
             _to_document_response(
                 document,
