@@ -640,6 +640,7 @@ def list_documents(
     date: str | None = Query(default=None, max_length=20),
     due_within_days: int | None = Query(default=None, ge=1, le=365),
     due_soon: bool = Query(default=False),
+    limit: int = Query(default=200, ge=1, le=1000),
     x_user_id: str | None = Header(default=None, alias="X-User-Id"),
     x_user_roles: str | None = Header(default=None, alias="X-User-Roles"),
     db: Session = Depends(get_db),
@@ -674,18 +675,20 @@ def list_documents(
     # dias; due_soon devuelve TODOS los que tienen fecha (sin tope de dias)
     # ordenados por proximidad -> evita que un vencimiento lejano "no se
     # muestre" en el widget.
+    # `limit` acota cuantos documentos se traen (y por ende el batch de workflow,
+    # mime/starred y la serializacion). Evita colgar la web con miles de docs.
     if due_within_days is not None:
         limit_dt = datetime.now(timezone.utc) + timedelta(days=due_within_days)
         query = query.filter(
             Document.due_at.isnot(None),
             Document.due_at <= limit_dt,
         )
-        documents = query.order_by(Document.due_at.asc()).all()
+        documents = query.order_by(Document.due_at.asc()).limit(limit).all()
     elif due_soon:
         query = query.filter(Document.due_at.isnot(None))
-        documents = query.order_by(Document.due_at.asc()).all()
+        documents = query.order_by(Document.due_at.asc()).limit(limit).all()
     else:
-        documents = query.order_by(Document.created_at.desc()).all()
+        documents = query.order_by(Document.created_at.desc()).limit(limit).all()
     ids = [d.id for d in documents]
     summary_map = _fetch_batch_workflow_summaries(ids)
     documents = _filter_visible_documents(

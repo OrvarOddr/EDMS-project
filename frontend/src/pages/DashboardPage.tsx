@@ -386,6 +386,9 @@ const initialTweaks = {
 }
 
 const BYTES_IN_GB = 1024 ** 3
+// Fase 1 (escalabilidad): tope de documentos que trae/renderiza el dashboard.
+// La paginacion real / scroll infinito viene en Fase 2.
+const DOC_PAGE_LIMIT = 200
 
 function userLabelFromAuth(firstName: string, lastName: string, email: string) {
   const full = `${firstName} ${lastName}`.trim()
@@ -9084,6 +9087,7 @@ export default function DashboardPage() {
     assignee_user_id: filters.assignee ?? undefined,
     assigned_user_id: filters.assigned ?? undefined,
     date: filters.date ?? undefined,
+    limit: DOC_PAGE_LIMIT,
   }), [filters.assignee, filters.assigned, filters.date, filters.documentType, filters.status, searchQuery])
   const searchDocs = useMemo(
     () => (serverListActive ? (searchResults ?? []) : allDocs),
@@ -9254,7 +9258,7 @@ export default function DashboardPage() {
         if (mounted) setLoadingFileLists(false)
       })
 
-    Promise.all([listDocuments(), listTrashedDocuments()])
+    Promise.all([listDocuments({ limit: DOC_PAGE_LIMIT }), listTrashedDocuments()])
       .then(async ([activeResponse, trashResponse]) => {
         const docs = await withDocumentTags(activeResponse.data.map(documentResponseToItem))
         if (!mounted) return
