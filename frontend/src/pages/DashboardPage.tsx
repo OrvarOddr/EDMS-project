@@ -96,6 +96,7 @@ import {
   deleteExpedient,
   deleteExpedientFolder,
   getExpedient,
+  EXPEDIENT_DOCS_PAGE,
   listExpedients,
   moveDocumentToFolder,
   renameExpedientFolder,
@@ -3228,6 +3229,10 @@ function ExpedientDetailView({
   onDeleteFolder,
   onMoveDocumentToFolder,
   onDeleteExpedient,
+  hasMoreDocs,
+  totalDocs,
+  loadingMoreDocs,
+  onLoadMoreDocs,
 }: {
   expedient: ExpedientDetail | null
   loading: boolean
@@ -3241,6 +3246,10 @@ function ExpedientDetailView({
   onDeleteFolder?: (expedientId: string, folderId: string, name: string) => void
   onMoveDocumentToFolder?: (docId: string, expedientId: string, folderId: string | null) => Promise<void>
   onDeleteExpedient?: (expedientId: string) => void
+  hasMoreDocs?: boolean
+  totalDocs?: number | null
+  loadingMoreDocs?: boolean
+  onLoadMoreDocs?: () => void
 }) {
   const [confirmDelete, setConfirmDelete] = useState(false)
   if (loading) {
@@ -3562,6 +3571,25 @@ function ExpedientDetailView({
           })
         })()}
       </div>
+
+      {hasMoreDocs && onLoadMoreDocs && (
+        <div style={{ display: 'flex', justifyContent: 'center', padding: '14px 0 4px' }}>
+          <button
+            onClick={onLoadMoreDocs}
+            disabled={loadingMoreDocs}
+            className="edms-nav-item"
+            style={{
+              fontSize: 12.5, fontWeight: 500, padding: '8px 16px', borderRadius: 8,
+              border: '1px solid var(--border)', background: 'var(--bg-elev)', color: 'var(--fg)',
+              cursor: loadingMoreDocs ? 'wait' : 'pointer',
+            }}
+          >
+            {loadingMoreDocs
+              ? 'Cargando…'
+              : `Cargar más${totalDocs ? ` · ${expedient.documents.length} de ${totalDocs}` : ''}`}
+          </button>
+        </div>
+      )}
 
       {confirmDelete && (
         <div
@@ -9037,6 +9065,7 @@ export default function DashboardPage() {
   const [folderWindow, setFolderWindow] = useState<{ expedientId: string; folderId: string } | null>(null)
   const [expedientLoading, setExpedientLoading] = useState(false)
   const [expedientError, setExpedientError] = useState<string | null>(null)
+  const [loadingMoreDocs, setLoadingMoreDocs] = useState(false)
   const [expedientModalOpen, setExpedientModalOpen] = useState(false)
   const [expedientForm, setExpedientForm] = useState<{ name: string; code: string; description: string }>({ name: '', code: '', description: '' })
   const [expedientFormBusy, setExpedientFormBusy] = useState(false)
@@ -10163,6 +10192,34 @@ export default function DashboardPage() {
     }
   }
 
+  async function handleLoadMoreExpedientDocs() {
+    if (!selectedExpedientId || !expedientDetail || loadingMoreDocs) return
+    setLoadingMoreDocs(true)
+    try {
+      const res = await getExpedient(selectedExpedientId, {
+        offset: expedientDetail.documents.length,
+        limit: EXPEDIENT_DOCS_PAGE,
+      })
+      setExpedientDetail((current) => {
+        if (!current || current.id !== res.data.id) return current
+        const seen = new Set(current.documents.map((d) => d.id))
+        const merged = [...current.documents, ...res.data.documents.filter((d) => !seen.has(d.id))]
+        const next: ExpedientDetail = {
+          ...current,
+          documents: merged,
+          has_more: res.data.has_more,
+          document_count: res.data.document_count,
+        }
+        setExpedientDetailsMap((m) => ({ ...m, [next.id]: next }))
+        return next
+      })
+    } catch (err) {
+      setToast(getApiErrorMessage(err, 'No se pudieron cargar más documentos'))
+    } finally {
+      setLoadingMoreDocs(false)
+    }
+  }
+
   async function handleToggleExpedient(expedientId: string) {
     const next = new Set(expandedExpedients)
     if (next.has(expedientId)) {
@@ -10701,6 +10758,10 @@ export default function DashboardPage() {
             onDeleteFolder={(expId, folderId, name) => { void handleDeleteFolder(expId, folderId, name) }}
             onMoveDocumentToFolder={handleMoveDocumentToFolder}
             onDeleteExpedient={(expId) => { void handleDeleteExpedient(expId) }}
+            hasMoreDocs={Boolean(expedientDetail?.has_more)}
+            totalDocs={expedientDetail?.document_count ?? null}
+            loadingMoreDocs={loadingMoreDocs}
+            onLoadMoreDocs={() => { void handleLoadMoreExpedientDocs() }}
           />
         ) : showKanban ? (
           <>

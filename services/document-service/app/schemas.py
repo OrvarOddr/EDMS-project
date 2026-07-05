@@ -229,6 +229,9 @@ class MoveDocumentToFolderRequest(BaseModel):
 class ExpedientDetailResponse(ExpedientResponse):
     documents: list[DocumentResponse] = Field(default_factory=list)
     folders: list[ExpedientFolderResponse] = Field(default_factory=list)
+    # Paginacion de documentos: total activos y si hay mas paginas por cargar.
+    document_count: int | None = None
+    has_more: bool = False
 
 
 class AttachDocumentsToExpedientRequest(BaseModel):

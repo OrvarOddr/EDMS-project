@@ -22,6 +22,8 @@ export interface ExpedientFolderItem {
 export interface ExpedientDetail extends ExpedientItem {
   documents: DocumentItemResponse[]
   folders: ExpedientFolderItem[]
+  document_count?: number
+  has_more?: boolean
 }
 
 export interface CreateExpedientPayload {
@@ -34,8 +36,10 @@ export interface CreateExpedientPayload {
 export const listExpedients = (projectId?: string) =>
   client.get<ExpedientItem[]>('/expedients', projectId ? { params: { project_id: projectId } } : undefined)
 
-export const getExpedient = (id: string) =>
-  client.get<ExpedientDetail>(`/expedients/${id}`)
+export const EXPEDIENT_DOCS_PAGE = 50
+
+export const getExpedient = (id: string, params?: { offset?: number; limit?: number }) =>
+  client.get<ExpedientDetail>(`/expedients/${id}`, params ? { params } : undefined)
 
 export const createExpedient = (payload: CreateExpedientPayload) =>
   client.post<ExpedientItem>('/expedients', payload)
