@@ -6356,7 +6356,7 @@ function UploadFileModal({
             </div>
           </div>
 
-          <div style={{ padding: 18, display: 'grid', gap: 14, flex: 1, minHeight: 0, overflowY: 'auto' }}>
+          <div style={{ padding: 18, display: 'grid', gap: 14, minHeight: 0 }}>
             <label
               style={{
                 display: 'grid',
@@ -6410,7 +6410,8 @@ function UploadFileModal({
                 border: '1px solid var(--border)',
                 borderRadius: 10,
                 background: 'var(--bg-elev-2)',
-                overflow: 'hidden',
+                maxHeight: 'min(52vh, 460px)',
+                overflowY: 'auto',
               }}
             >
               {selectedFiles.length === 0 ? (
