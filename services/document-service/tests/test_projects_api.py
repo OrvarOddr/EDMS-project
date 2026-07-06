@@ -130,3 +130,26 @@ def test_crear_proyecto_con_coordinador_y_miembros(client):
     assert any(p["id"] == pid for p in client.get("/projects", headers={"X-User-Id": THIRD}).json())
     # Un usuario sin relacion NO lo ve.
     assert not any(p["id"] == pid for p in client.get("/projects", headers={"X-User-Id": "nadie"}).json())
+
+
+@respx.mock
+def test_eliminar_proyecto_borra_todo(client):
+    respx.post(BOOTSTRAP_URL).mock(return_value=_bootstrap_ok())
+    respx.post(SUMMARIES_URL).mock(return_value=httpx.Response(200, json={"summaries": {}}))
+
+    project, doc = _make_project_with_doc(client, USER, "Borrable")
+
+    # Un usuario sin relacion no puede eliminarlo.
+    assert client.delete(f"/projects/{project['id']}", headers={"X-User-Id": "nadie"}).status_code == 403
+
+    # El creador lo elimina con todo su contenido.
+    res = client.delete(f"/projects/{project['id']}", headers={"X-User-Id": USER})
+    assert res.status_code == 200, res.text
+    assert res.json()["deleted_count"] == 1
+
+    # El proyecto ya no aparece (ni para admin) y el documento tampoco.
+    assert not any(
+        p["id"] == project["id"]
+        for p in client.get("/projects", headers={"X-User-Id": USER, "X-User-Roles": "admin"}).json()
+    )
+    assert client.get(f"/documents/{doc['id']}", headers={"X-User-Id": USER}).status_code == 404

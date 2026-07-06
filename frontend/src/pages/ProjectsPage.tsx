@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState, type CSSProperties, type ReactNode } from
 import { useNavigate } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
 import { listUsers, type UserMe } from '../api/auth'
-import { createProject, listProjects, type ProjectItem } from '../api/projects'
+import { createProject, deleteProject, listProjects, type ProjectItem } from '../api/projects'
 
 /**
  * Pantalla principal de Proyectos: primera pantalla tras login. Es standalone
@@ -31,6 +31,7 @@ const IcLogout = (p: { size?: number }) => <Ic {...p} d="M9 21H5a2 2 0 0 1-2-2V5
 const IcFolder = (p: { size?: number }) => <Ic {...p} d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V7z" />
 const IcChev = (p: { size?: number; style?: CSSProperties }) => <Ic {...p} d="M9 18l6-6-6-6" />
 const IcClock = (p: { size?: number; style?: CSSProperties }) => <Ic {...p} d="M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18zM12 7v5l3 2" />
+const IcTrash = (p: { size?: number; style?: CSSProperties }) => <Ic {...p} d="M3 6h18M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2m2 0v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6M10 11v6M14 11v6" />
 
 const AVATAR_PALETTE = [
   'oklch(0.7 0.14 30)', 'oklch(0.68 0.13 180)', 'oklch(0.7 0.14 290)',
@@ -129,8 +130,8 @@ function formatUpdated(iso?: string | null): string {
   return d.toLocaleDateString('es', { day: 'numeric', month: 'short' })
 }
 
-function ProjectCard({ p, relation, byId, onOpen }: {
-  p: ProjectItem; relation: string | null; byId: Map<string, UserMe>; onOpen: () => void
+function ProjectCard({ p, relation, byId, onOpen, onDelete }: {
+  p: ProjectItem; relation: string | null; byId: Map<string, UserMe>; onOpen: () => void; onDelete?: () => void
 }) {
   const s = STATUS[p.status ?? 'activo'] ?? STATUS['activo']
   const coordId = p.coordinator_user_id ?? p.created_by_user_id
@@ -158,6 +159,16 @@ function ProjectCard({ p, relation, byId, onOpen }: {
             whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{p.name}</h3>
         </div>
         <StatusPill status={p.status} />
+        {onDelete && (
+          <span
+            role="button"
+            title="Eliminar proyecto"
+            onClick={(e) => { e.stopPropagation(); onDelete() }}
+            style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: 26, height: 26, borderRadius: 6, color: 'var(--fg-dim)', cursor: 'pointer', flexShrink: 0 }}
+          >
+            <IcTrash size={14} />
+          </span>
+        )}
       </div>
 
       {p.description && (
@@ -200,8 +211,8 @@ function ProjectCard({ p, relation, byId, onOpen }: {
   )
 }
 
-function ProjectRow({ p, relation, byId, onOpen }: {
-  p: ProjectItem; relation: string | null; byId: Map<string, UserMe>; onOpen: () => void
+function ProjectRow({ p, relation, byId, onOpen, onDelete }: {
+  p: ProjectItem; relation: string | null; byId: Map<string, UserMe>; onOpen: () => void; onDelete?: () => void
 }) {
   const s = STATUS[p.status ?? 'activo'] ?? STATUS['activo']
   const coordId = p.coordinator_user_id ?? p.created_by_user_id
@@ -241,7 +252,18 @@ function ProjectRow({ p, relation, byId, onOpen }: {
         </div>
         <ProgressBar value={p.progress ?? 0} color={s.color} height={4} />
       </div>
-      <IcChev size={15} style={{ color: 'var(--fg-dim)' }} />
+      {onDelete ? (
+        <span
+          role="button"
+          title="Eliminar proyecto"
+          onClick={(e) => { e.stopPropagation(); onDelete() }}
+          style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', color: 'var(--fg-dim)', cursor: 'pointer' }}
+        >
+          <IcTrash size={15} />
+        </span>
+      ) : (
+        <IcChev size={15} style={{ color: 'var(--fg-dim)' }} />
+      )}
     </button>
   )
 }
@@ -273,6 +295,8 @@ export default function ProjectsPage() {
   const [submitting, setSubmitting] = useState(false)
   const [formError, setFormError] = useState<string | null>(null)
   const [form, setForm] = useState({ name: '', code: '', description: '', coordinator_user_id: '', member_user_ids: [] as string[] })
+  const [projectToDelete, setProjectToDelete] = useState<ProjectItem | null>(null)
+  const [deletingProject, setDeletingProject] = useState(false)
 
   useEffect(() => {
     let mounted = true
@@ -292,6 +316,8 @@ export default function ProjectsPage() {
   const meId = user?.id ?? ''
 
   const coordinatorOf = (p: ProjectItem) => p.coordinator_user_id ?? p.created_by_user_id
+  // Puede eliminar: admin, creador o coordinador del proyecto.
+  const canDelete = (p: ProjectItem) => isAdmin || p.created_by_user_id === meId || coordinatorOf(p) === meId
 
   const relation = (p: ProjectItem): string | null =>
     coordinatorOf(p) === meId ? 'coord'
@@ -330,6 +356,20 @@ export default function ProjectsPage() {
     : 'Los proyectos que coordinas y aquellos en los que colaboras.'
 
   const onLogout = async () => { await logout(); navigate('/login') }
+
+  const confirmDeleteProject = async () => {
+    if (!projectToDelete) return
+    setDeletingProject(true)
+    try {
+      await deleteProject(projectToDelete.id)
+      setExpedients((prev) => prev.filter((p) => p.id !== projectToDelete.id))
+      setProjectToDelete(null)
+    } catch {
+      // se mantiene el modal; el backend valida permisos.
+    } finally {
+      setDeletingProject(false)
+    }
+  }
 
   const openCreate = () => {
     setForm({ name: '', code: '', description: '', coordinator_user_id: user?.id ?? '', member_user_ids: [] })
@@ -450,11 +490,11 @@ export default function ProjectsPage() {
           <Section key={g.key} title={g.title} count={g.items.length} subtitle={g.subtitle}>
             {layout === 'grid' ? (
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(320px, 1fr))', gap: 16 }}>
-                {g.items.map((p) => <ProjectCard key={p.id} p={p} relation={relation(p)} byId={byId} onOpen={() => navigate(`/proyecto/${p.id}`)} />)}
+                {g.items.map((p) => <ProjectCard key={p.id} p={p} relation={relation(p)} byId={byId} onOpen={() => navigate(`/proyecto/${p.id}`)} onDelete={canDelete(p) ? () => setProjectToDelete(p) : undefined} />)}
               </div>
             ) : (
               <div style={{ background: 'var(--bg-elev)', border: '1px solid var(--border)', borderRadius: 12, overflow: 'hidden' }}>
-                {g.items.map((p) => <ProjectRow key={p.id} p={p} relation={relation(p)} byId={byId} onOpen={() => navigate(`/proyecto/${p.id}`)} />)}
+                {g.items.map((p) => <ProjectRow key={p.id} p={p} relation={relation(p)} byId={byId} onOpen={() => navigate(`/proyecto/${p.id}`)} onDelete={canDelete(p) ? () => setProjectToDelete(p) : undefined} />)}
               </div>
             )}
           </Section>
@@ -546,6 +586,34 @@ export default function ProjectsPage() {
                 onClick={submitCreate} disabled={submitting}
                 style={{ fontSize: 12.5, fontWeight: 600, padding: '8px 16px', borderRadius: 8, border: 'none', background: 'var(--accent)', color: 'var(--accent-fg)', cursor: submitting ? 'wait' : 'pointer', opacity: submitting ? 0.7 : 1 }}
               >{submitting ? 'Creando…' : 'Crear proyecto'}</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {projectToDelete && (
+        <div
+          onClick={() => { if (!deletingProject) setProjectToDelete(null) }}
+          style={{ position: 'fixed', inset: 0, zIndex: 60, background: 'rgba(0,0,0,0.55)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20 }}
+        >
+          <div onClick={(e) => e.stopPropagation()} style={{ width: '100%', maxWidth: 440, background: 'var(--bg-elev)', border: '1px solid var(--border)', borderRadius: 12, padding: 20 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10 }}>
+              <IcTrash size={18} style={{ color: 'var(--danger)' }} />
+              <h3 style={{ margin: 0, fontSize: 16, fontWeight: 600 }}>Eliminar proyecto</h3>
+            </div>
+            <p style={{ margin: '0 0 16px', fontSize: 13, color: 'var(--fg-muted)', lineHeight: 1.5 }}>
+              ¿Seguro que quieres eliminar <b style={{ color: 'var(--fg)' }}>{projectToDelete.name}</b> con{' '}
+              <b style={{ color: 'var(--fg)' }}>todos sus expedientes y documentos</b>? Esta acción no se puede deshacer.
+            </p>
+            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
+              <button
+                onClick={() => setProjectToDelete(null)} disabled={deletingProject}
+                style={{ fontSize: 12.5, padding: '8px 14px', borderRadius: 8, border: '1px solid var(--border)', background: 'var(--bg-elev-2)', color: 'var(--fg)', cursor: 'pointer' }}
+              >Cancelar</button>
+              <button
+                onClick={confirmDeleteProject} disabled={deletingProject}
+                style={{ fontSize: 12.5, fontWeight: 600, padding: '8px 16px', borderRadius: 8, border: 'none', background: 'var(--danger)', color: '#fff', cursor: deletingProject ? 'wait' : 'pointer', opacity: deletingProject ? 0.7 : 1 }}
+              >{deletingProject ? 'Eliminando…' : 'Eliminar proyecto'}</button>
             </div>
           </div>
         </div>

@@ -29,3 +29,6 @@ export const listProjects = () => client.get<ProjectItem[]>('/projects')
 
 export const createProject = (payload: CreateProjectPayload) =>
   client.post<ProjectItem>('/projects', payload)
+
+export const deleteProject = (id: string) =>
+  client.delete<{ deleted_count: number }>(`/projects/${id}`)

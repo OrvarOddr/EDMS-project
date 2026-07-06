@@ -11,13 +11,22 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.database import get_db
-from app.models import Document, Expedient, Project, ProjectMember
+from app.models import (
+    Document,
+    DocumentFavorite,
+    DocumentTag,
+    DocumentVersion,
+    Expedient,
+    ExpedientFolder,
+    Project,
+    ProjectMember,
+)
 from app.routers.versions import (
     _can_view_document,
     _fetch_batch_workflow_summaries,
     _is_admin,
 )
-from app.schemas import CreateProjectRequest, ProjectResponse
+from app.schemas import CreateProjectRequest, DocumentDeleteResponse, ProjectResponse
 
 
 def _clean_ids(values, exclude=None) -> list[str]:
@@ -216,3 +225,45 @@ def list_projects(
             )
         )
     return result
+
+
+@router.delete("/{project_id}", response_model=DocumentDeleteResponse)
+def delete_project(
+    project_id: str,
+    x_user_id: str | None = Header(default=None, alias="X-User-Id"),
+    x_user_roles: str | None = Header(default=None, alias="X-User-Roles"),
+    db: Session = Depends(get_db),
+):
+    """Elimina el proyecto y TODO su contenido: sus expedientes, con los
+    documentos de cada uno (versiones, favoritos, etiquetas) y sus carpetas, mas
+    los miembros del proyecto. Irreversible.
+
+    Solo el creador, el coordinador o un admin pueden eliminar el proyecto.
+    """
+    actor_user_id = _require_user(x_user_id)
+    project = db.query(Project).filter(Project.id == project_id.strip()).first()
+    if not project:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Proyecto no encontrado")
+    coordinator = project.coordinator_user_id or project.created_by_user_id
+    if not _is_admin(x_user_roles) and actor_user_id not in {project.created_by_user_id, coordinator}:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Solo el creador, el coordinador o un administrador puede eliminar el proyecto",
+        )
+
+    expedient_ids = [eid for (eid,) in db.query(Expedient.id).filter(Expedient.project_id == project.id).all()]
+    deleted_documents = 0
+    if expedient_ids:
+        # Subconsulta con los ids de documentos del proyecto (evita cargarlos en
+        # memoria cuando son miles).
+        doc_ids_q = db.query(Document.id).filter(Document.expedient_id.in_(expedient_ids))
+        db.query(DocumentVersion).filter(DocumentVersion.document_id.in_(doc_ids_q)).delete(synchronize_session=False)
+        db.query(DocumentFavorite).filter(DocumentFavorite.document_id.in_(doc_ids_q)).delete(synchronize_session=False)
+        db.query(DocumentTag).filter(DocumentTag.document_id.in_(doc_ids_q)).delete(synchronize_session=False)
+        deleted_documents = db.query(Document).filter(Document.expedient_id.in_(expedient_ids)).delete(synchronize_session=False)
+        db.query(ExpedientFolder).filter(ExpedientFolder.expedient_id.in_(expedient_ids)).delete(synchronize_session=False)
+        db.query(Expedient).filter(Expedient.id.in_(expedient_ids)).delete(synchronize_session=False)
+    db.query(ProjectMember).filter(ProjectMember.project_id == project.id).delete(synchronize_session=False)
+    db.delete(project)
+    db.commit()
+    return DocumentDeleteResponse(deleted_count=deleted_documents)
