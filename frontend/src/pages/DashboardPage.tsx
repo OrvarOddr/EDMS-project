@@ -6338,6 +6338,9 @@ function UploadFileModal({
           onSubmit={handleSubmit}
           style={{
             width: 'min(560px, 100%)',
+            maxHeight: 'calc(100vh - 48px)',
+            display: 'flex',
+            flexDirection: 'column',
             background: 'var(--bg-elev)',
             border: '1px solid var(--border-strong)',
             borderRadius: 14,
@@ -6353,7 +6356,7 @@ function UploadFileModal({
             </div>
           </div>
 
-          <div style={{ padding: 18, display: 'grid', gap: 14 }}>
+          <div style={{ padding: 18, display: 'grid', gap: 14, flex: 1, minHeight: 0, overflowY: 'auto' }}>
             <label
               style={{
                 display: 'grid',
