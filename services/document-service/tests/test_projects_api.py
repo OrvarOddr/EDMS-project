@@ -153,3 +153,43 @@ def test_eliminar_proyecto_borra_todo(client):
         for p in client.get("/projects", headers={"X-User-Id": USER, "X-User-Roles": "admin"}).json()
     )
     assert client.get(f"/documents/{doc['id']}", headers={"X-User-Id": USER}).status_code == 404
+
+
+@respx.mock
+def test_metricas_acotadas_por_proyecto(client):
+    """Las metricas del dashboard se acotan al proyecto (?project_id=): un
+    proyecto con documentos cuenta los suyos y uno vacio devuelve todo en cero
+    (antes heredaba los totales globales del usuario)."""
+    respx.post(BOOTSTRAP_URL).mock(return_value=_bootstrap_ok())
+
+    project_con, doc = _make_project_with_doc(client, USER, "Con documentos")
+    project_vacio = client.post(
+        "/projects", headers={"X-User-Id": USER}, json={"name": "Vacio"}
+    ).json()
+
+    respx.post(SUMMARIES_URL).mock(
+        return_value=httpx.Response(
+            200,
+            json={"summaries": {doc["id"]: {"state_code": "borrador", "assignee_user_id": USER}}},
+        )
+    )
+
+    con = client.get(
+        "/documents/metrics",
+        headers={"X-User-Id": USER},
+        params={"project_id": project_con["id"]},
+    )
+    assert con.status_code == 200, con.text
+    con_body = con.json()
+    assert con_body["total"] == 1
+    assert con_body["by_state"].get("borrador") == 1
+
+    vacio = client.get(
+        "/documents/metrics",
+        headers={"X-User-Id": USER},
+        params={"project_id": project_vacio["id"]},
+    )
+    assert vacio.status_code == 200, vacio.text
+    vacio_body = vacio.json()
+    assert vacio_body["total"] == 0
+    assert vacio_body["by_state"] == {}

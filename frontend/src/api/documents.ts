@@ -207,9 +207,15 @@ export interface DocumentMetricsResponse {
   proximos_7_dias: number
 }
 
-export async function getDocumentMetrics(scope?: 'all'): Promise<DocumentMetricsResponse> {
+export async function getDocumentMetrics(
+  scope?: 'all',
+  projectId?: string | null,
+): Promise<DocumentMetricsResponse> {
+  const params: Record<string, string> = {}
+  if (scope) params.scope = scope
+  if (projectId) params.project_id = projectId
   const { data } = await client.get<DocumentMetricsResponse>('/documents/metrics', {
-    params: scope ? { scope } : undefined,
+    params: Object.keys(params).length > 0 ? params : undefined,
   })
   return data
 }

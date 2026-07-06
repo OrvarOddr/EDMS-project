@@ -9345,12 +9345,12 @@ export default function DashboardPage() {
       })
       .catch(() => {})
 
-    getDocumentMetrics()
+    getDocumentMetrics(undefined, routeProjectId)
       .then((data) => { if (mounted) setMetrics(data) })
       .catch(() => {})
 
     if (user?.is_superuser) {
-      getDocumentMetrics('all')
+      getDocumentMetrics('all', routeProjectId)
         .then((data) => { if (mounted) setAdminMetrics(data) })
         .catch(() => {})
     }
