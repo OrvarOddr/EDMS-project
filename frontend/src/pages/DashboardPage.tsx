@@ -6370,7 +6370,7 @@ function UploadFileModal({
               <input
                 type="file"
                 multiple
-                accept="application/pdf,image/png,image/jpeg"
+                accept="application/pdf,image/png,image/jpeg,text/plain"
                 disabled={submitting}
                 onChange={(event) => {
                   if (event.target.files?.length) appendFiles(event.target.files)
@@ -6908,7 +6908,7 @@ function CreateDocumentModal({
                 >
                   <input
                     type="file"
-                    accept="application/pdf,image/png,image/jpeg"
+                    accept="application/pdf,image/png,image/jpeg,text/plain"
                     disabled={submitting}
                     onChange={(event) => {
                       setNewFile(event.target.files?.[0] ?? null)
@@ -7400,7 +7400,7 @@ function EditMetadataModal({
                 >
                   <input
                     type="file"
-                    accept="application/pdf,image/png,image/jpeg"
+                    accept="application/pdf,image/png,image/jpeg,text/plain"
                     disabled={submitting}
                     onChange={(event) => {
                       setNewFile(event.target.files?.[0] ?? null)
