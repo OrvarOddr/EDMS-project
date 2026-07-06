@@ -25,6 +25,9 @@ jobs:
           username: alejandroortiz2101
           key: ${{ secrets.SSH_PRIVATE_KEY }}
           envs: GH_TOKEN
+          # El rebuild de todos los servicios puede superar el timeout por
+          # defecto del action (10m). Se amplia a 30m como colchon.
+          command_timeout: 30m
           script: |
             set -e
             cd /home/alejandroortiz2101/EDMS-project
@@ -65,8 +68,11 @@ jobs:
             ensure_env_var BOOTSTRAP_ADMIN_EMAIL "admin@edms.dev"
             ensure_env_var BOOTSTRAP_ADMIN_PASSWORD "$(generate_secret 24)"
 
-            # Rebuild forzado sin caché y levantar todos los servicios
-            docker-compose build --no-cache
+            # Rebuild incremental (con caché de capas) y levantar servicios.
+            # Antes se usaba --no-cache, que reconstruia los 7 servicios desde
+            # cero en cada deploy y superaba el timeout del SSH (~10m). Con
+            # caché, solo se reconstruyen las capas que cambiaron.
+            docker-compose build
             docker-compose up -d || (docker-compose logs --tail=50 && exit 1)
 
             # Recargar nginx para aplicar cualquier cambio de config
