@@ -109,5 +109,7 @@ export interface StorageSummary {
   total_bytes: number
 }
 
-export const getStorageSummary = () =>
-  client.get<StorageSummary>('/files/storage/summary')
+export const getStorageSummary = (projectId?: string | null) =>
+  client.get<StorageSummary>('/files/storage/summary', {
+    params: projectId ? { project_id: projectId } : undefined,
+  })

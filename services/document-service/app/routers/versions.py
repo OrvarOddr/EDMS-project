@@ -1364,6 +1364,28 @@ def get_document_name(document_id: str, db: Session = Depends(get_db)):
     return {"document_id": document.id, "name": document.title}
 
 
+@internal_router.get("/ids-by-project")
+def get_document_ids_by_project(
+    project_id: str,
+    db: Session = Depends(get_db),
+):
+    """IDs de documentos cuyos expedientes pertenecen al proyecto.
+
+    Uso interno (file-service) para acotar el almacenamiento por proyecto.
+    Un proyecto sin expedientes/documentos devuelve lista vacia.
+    """
+    pid = (project_id or "").strip()
+    if not pid:
+        return {"document_ids": []}
+    expedient_ids = [
+        row.id for row in db.query(Expedient.id).filter(Expedient.project_id == pid).all()
+    ]
+    if not expedient_ids:
+        return {"document_ids": []}
+    rows = db.query(Document.id).filter(Document.expedient_id.in_(expedient_ids)).all()
+    return {"document_ids": [row.id for row in rows]}
+
+
 @internal_router.get("/{document_id}/access")
 def check_document_access(
     document_id: str,

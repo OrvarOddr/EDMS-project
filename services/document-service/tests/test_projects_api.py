@@ -193,3 +193,24 @@ def test_metricas_acotadas_por_proyecto(client):
     vacio_body = vacio.json()
     assert vacio_body["total"] == 0
     assert vacio_body["by_state"] == {}
+
+
+@respx.mock
+def test_internal_ids_by_project(client):
+    """El endpoint interno devuelve los document_ids del proyecto (via sus
+    expedientes); lista vacia si el proyecto no tiene documentos. Lo usa el
+    file-service para acotar el almacenamiento por proyecto."""
+    respx.post(BOOTSTRAP_URL).mock(return_value=_bootstrap_ok())
+
+    project, doc = _make_project_with_doc(client, USER, "Con docs internos")
+    vacio = client.post(
+        "/projects", headers={"X-User-Id": USER}, json={"name": "Sin docs"}
+    ).json()
+
+    res = client.get("/internal/documents/ids-by-project", params={"project_id": project["id"]})
+    assert res.status_code == 200, res.text
+    assert res.json()["document_ids"] == [doc["id"]]
+
+    res_vacio = client.get("/internal/documents/ids-by-project", params={"project_id": vacio["id"]})
+    assert res_vacio.status_code == 200
+    assert res_vacio.json()["document_ids"] == []
