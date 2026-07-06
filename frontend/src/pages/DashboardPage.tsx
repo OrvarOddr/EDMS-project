@@ -5826,12 +5826,7 @@ function ContextMenu({
   ]
 
   const items: Array<MenuItem | null> = [
-    { id: 'open', icon: <Icon.Eye size={13} />, label: 'Abrir' },
     { id: 'preview', icon: <Icon.Panel size={13} />, label: 'Vista previa', shortcut: 'Espacio' },
-    null,
-    { id: 'share', icon: <Icon.Share size={13} />, label: 'Compartir…', shortcut: '⌘⇧S' },
-    { id: 'sign', icon: <Icon.Signature size={13} />, label: 'Solicitar firma' },
-    { id: 'download', icon: <Icon.Download size={13} />, label: 'Descargar', shortcut: '⌘D' },
     null,
     { id: 'edit-metadata', icon: <Icon.File size={13} />, label: 'Editar metadata', shortcut: 'F2' },
     { id: 'move', icon: <Icon.Move size={13} />, label: 'Mover a…', submenu: moveSubmenu },
