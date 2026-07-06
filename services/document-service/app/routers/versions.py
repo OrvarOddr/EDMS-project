@@ -9,7 +9,7 @@ from sqlalchemy.orm import Session
 
 from app.config import settings
 from app.database import get_db
-from app.models import Document, DocumentFavorite, DocumentVersion
+from app.models import Document, DocumentFavorite, DocumentVersion, Expedient
 from app.schemas import (
     CreateDocumentRequest,
     CreateDocumentFromFileRequest,
@@ -854,6 +854,7 @@ def _aggregate_from_summaries(document_ids: list[str]) -> dict:
 @router.get("/metrics")
 def get_document_metrics(
     scope: str | None = Query(default=None, max_length=10),
+    project_id: str | None = Query(default=None, max_length=64),
     x_user_id: str | None = Header(default=None, alias="X-User-Id"),
     x_user_roles: str | None = Header(default=None, alias="X-User-Roles"),
     db: Session = Depends(get_db),
@@ -864,6 +865,10 @@ def get_document_metrics(
     o asignado). Si el caller es admin y pasa ?scope=all, se devuelven las
     metricas globales del workspace (todos los documentos activos). Para
     cualquier otro caller, scope=all → 403.
+
+    Si se pasa ?project_id=, las metricas se acotan ademas a ese proyecto
+    (documentos cuyos expedientes pertenecen al proyecto). Un proyecto sin
+    documentos devuelve todo en cero.
     """
     actor_user_id = _require_user(x_user_id)
     is_admin = _is_admin(x_user_roles)
@@ -876,11 +881,22 @@ def get_document_metrics(
     tomorrow_start = today_start + timedelta(days=1)
     week_end = today_start + timedelta(days=7)
 
-    active_rows = (
+    metrics_query = (
         db.query(Document.id, Document.owner_user_id, Document.created_by_user_id, Document.due_at)
         .filter(Document.archived_at.is_(None))
-        .all()
     )
+    project_id_clean = (project_id or "").strip()
+    if project_id_clean:
+        # Acota al proyecto: documentos cuyos expedientes pertenecen a el.
+        # Sin expedientes en el proyecto -> lista vacia -> sin documentos.
+        project_expedient_ids = [
+            row.id
+            for row in db.query(Expedient.id)
+            .filter(Expedient.project_id == project_id_clean)
+            .all()
+        ]
+        metrics_query = metrics_query.filter(Document.expedient_id.in_(project_expedient_ids))
+    active_rows = metrics_query.all()
     active_ids_all = [row.id for row in active_rows]
     summaries_all = _fetch_batch_workflow_summaries(active_ids_all)
 
