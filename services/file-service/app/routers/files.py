@@ -703,24 +703,57 @@ def get_file_metadata(
     return _to_file_response(stored_file)
 
 
+def _fetch_project_document_ids(project_id: str, user_id: str) -> list[str]:
+    """Pide al document-service los IDs de documentos del proyecto.
+
+    Se usa para acotar el almacenamiento por proyecto. Ante fallo de red o
+    respuesta invalida, se propaga un 502 (la cuota es informativa; el
+    frontend ya tolera el fallo sin bloquear la accion principal).
+    """
+    try:
+        with httpx.Client(timeout=5.0) as client:
+            response = client.get(
+                f"{settings.DOCUMENT_SERVICE_URL}/internal/documents/ids-by-project",
+                params={"project_id": project_id},
+                headers={"X-User-Id": user_id},
+            )
+    except httpx.HTTPError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail="No se pudo consultar el proyecto en document-service",
+        ) from exc
+    if response.status_code >= 400:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail="document-service rechazo la consulta del proyecto",
+        )
+    return list(response.json().get("document_ids", []))
+
+
 @router.get("/storage/summary", response_model=StorageSummaryResponse)
 def get_storage_summary(
+    project_id: str | None = None,
     x_user_id: str | None = Header(default=None, alias="X-User-Id"),
     db: Session = Depends(get_db),
 ):
     if not x_user_id:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED)
 
-    used_bytes: int = (
+    query = (
         db.query(func.sum(StoredFile.size_bytes))
         .join(FileUpload, FileUpload.stored_file_id == StoredFile.id)
         .filter(
             FileUpload.uploader_user_id == x_user_id,
             FileUpload.upload_status != "deleted",
         )
-        .scalar()
-        or 0
     )
+    project_id_clean = (project_id or "").strip()
+    if project_id_clean:
+        # Acota el almacenamiento a los documentos del proyecto. Sin
+        # documentos -> lista vacia -> suma 0.
+        document_ids = _fetch_project_document_ids(project_id_clean, x_user_id)
+        query = query.filter(FileUpload.document_id.in_(document_ids))
+    used_bytes: int = query.scalar() or 0
 
     # Opción A (activa): cuota fija configurada en STORAGE_QUOTA_GB
     total_bytes = settings.STORAGE_QUOTA_GB * 1024 ** 3

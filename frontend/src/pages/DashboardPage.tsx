@@ -668,8 +668,8 @@ async function fetchFileLists() {
   }
 }
 
-async function fetchStorageSummary() {
-  const res = await getStorageSummary()
+async function fetchStorageSummary(projectId?: string | null) {
+  const res = await getStorageSummary(projectId)
   return {
     usedBytes: res.data.used_bytes,
     totalBytes: res.data.total_bytes,
@@ -9338,7 +9338,7 @@ export default function DashboardPage() {
       })
       .catch(() => {})
 
-    fetchStorageSummary()
+    fetchStorageSummary(routeProjectId)
       .then((summary) => {
         if (!mounted) return
         setStorage(summary)
@@ -9787,7 +9787,7 @@ export default function DashboardPage() {
 
   async function refreshStorageSummary() {
     try {
-      setStorage(await fetchStorageSummary())
+      setStorage(await fetchStorageSummary(routeProjectId))
     } catch {
       // La cuota es informacion de apoyo; si falla, no bloquea la accion principal.
     }
