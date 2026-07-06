@@ -87,6 +87,7 @@ import {
   listDocumentPermissions,
   revokeDocumentPermission,
   PERMISSION_CODES,
+  permissionLabel,
   type DocumentPermissionGrant,
 } from '../api/permissions'
 import {
@@ -4987,7 +4988,7 @@ function DetailDrawer({
                             border: '1px solid var(--accent)', fontWeight: 500,
                             opacity: expired ? 0.55 : 1,
                           }}>
-                            {grant.permission_code}
+                            {permissionLabel(grant.permission_code)}
                           </span>
                           {expired && (
                             <span style={{
@@ -5056,7 +5057,7 @@ function DetailDrawer({
                       }}
                     >
                       {PERMISSION_CODES.map((code) => (
-                        <option key={code} value={code}>{code}</option>
+                        <option key={code} value={code}>{permissionLabel(code)}</option>
                       ))}
                     </select>
                   </div>

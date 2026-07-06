@@ -25,6 +25,23 @@ export const PERMISSION_CODES = [
 
 export type PermissionCode = (typeof PERMISSION_CODES)[number]
 
+// Etiquetas legibles en español para mostrar en la UI (el backend usa los códigos).
+export const PERMISSION_LABELS: Record<PermissionCode, string> = {
+  view: 'Ver',
+  comment: 'Comentar',
+  download: 'Descargar',
+  edit_metadata: 'Editar metadata',
+  upload_version: 'Subir versión',
+  move_state: 'Cambiar estado',
+  approve: 'Aprobar',
+  manage_permissions: 'Gestionar permisos',
+  share: 'Compartir',
+}
+
+export function permissionLabel(code: string): string {
+  return (PERMISSION_LABELS as Record<string, string>)[code] ?? code
+}
+
 export async function listDocumentPermissions(documentId: string): Promise<DocumentPermissionGrant[]> {
   const { data } = await client.get<{ grants: DocumentPermissionGrant[] }>(
     `/collaboration/documents/${documentId}/permissions`,
