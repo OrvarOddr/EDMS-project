@@ -3229,10 +3229,13 @@ function ExpedientDetailView({
   onDeleteFolder,
   onMoveDocumentToFolder,
   onDeleteExpedient,
-  hasMoreDocs,
   totalDocs,
-  loadingMoreDocs,
-  onLoadMoreDocs,
+  docsPage,
+  docsPageSize,
+  docsQuery,
+  docsLoading,
+  onDocsPageChange,
+  onDocsSearch,
 }: {
   expedient: ExpedientDetail | null
   loading: boolean
@@ -3246,10 +3249,13 @@ function ExpedientDetailView({
   onDeleteFolder?: (expedientId: string, folderId: string, name: string) => void
   onMoveDocumentToFolder?: (docId: string, expedientId: string, folderId: string | null) => Promise<void>
   onDeleteExpedient?: (expedientId: string) => void
-  hasMoreDocs?: boolean
   totalDocs?: number | null
-  loadingMoreDocs?: boolean
-  onLoadMoreDocs?: () => void
+  docsPage?: number
+  docsPageSize?: number
+  docsQuery?: string
+  docsLoading?: boolean
+  onDocsPageChange?: (page: number) => void
+  onDocsSearch?: (value: string) => void
 }) {
   const [confirmDelete, setConfirmDelete] = useState(false)
   if (loading) {
@@ -3445,37 +3451,42 @@ function ExpedientDetailView({
         </div>
       )}
 
-      {/* Sección Documentos (raíz del expediente) */}
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
+      {/* Sección Documentos del expediente (paginados + buscables) */}
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10, gap: 12, flexWrap: 'wrap' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-          <h3 style={{ fontSize: 14, fontWeight: 600, margin: 0 }}>Documentos en raíz</h3>
+          <h3 style={{ fontSize: 14, fontWeight: 600, margin: 0 }}>Documentos</h3>
           <span style={{ fontSize: 11, color: 'var(--fg-muted)' }}>
             {(() => {
-              const n = expedient.documents.filter((doc) => !doc.folder_id).length
+              const n = totalDocs ?? expedient.documents.length
               return `${n} ${n === 1 ? 'documento' : 'documentos'}`
             })()}
           </span>
         </div>
-        {onAddDocument && (
-          <button
-            onClick={onAddDocument}
-            style={{
-              display: 'flex',
-              alignItems: 'center',
-              gap: 6,
-              padding: '6px 11px',
-              borderRadius: 7,
-              border: '1px solid var(--border)',
-              background: 'var(--bg-elev)',
-              color: 'var(--fg)',
-              fontSize: 12.5,
-              cursor: 'pointer',
-            }}
-            title="Asociar documentos existentes a este expediente"
-          >
-            <Icon.Plus size={12} /> Agregar documento
-          </button>
-        )}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          {onDocsSearch && (
+            <div style={{ display: 'flex', alignItems: 'center', gap: 6, background: 'var(--bg-elev-2)', border: '1px solid var(--border)', borderRadius: 8, padding: '6px 10px', width: 220 }}>
+              <Icon.Search size={13} style={{ color: 'var(--fg-dim)' }} />
+              <input
+                value={docsQuery ?? ''}
+                onChange={(e) => onDocsSearch(e.target.value)}
+                placeholder="Buscar documentos…"
+                style={{ flex: 1, background: 'transparent', border: 0, outline: 'none', fontSize: 12.5, color: 'var(--fg)' }}
+              />
+            </div>
+          )}
+          {onAddDocument && (
+            <button
+              onClick={onAddDocument}
+              style={{
+                display: 'flex', alignItems: 'center', gap: 6, padding: '6px 11px', borderRadius: 7,
+                border: '1px solid var(--border)', background: 'var(--bg-elev)', color: 'var(--fg)', fontSize: 12.5, cursor: 'pointer',
+              }}
+              title="Asociar documentos existentes a este expediente"
+            >
+              <Icon.Plus size={12} /> Agregar documento
+            </button>
+          )}
+        </div>
       </div>
 
       <div
@@ -3495,11 +3506,13 @@ function ExpedientDetailView({
         }}
       >
         {(() => {
-          const rootDocs = expedient.documents.filter((doc) => !doc.folder_id)
+          const rootDocs = expedient.documents
           if (rootDocs.length === 0) {
             return (
               <div style={{ padding: '28px 14px', fontSize: 12, color: 'var(--fg-muted)', textAlign: 'center' }}>
-                No hay documentos en la raíz. Arrastra aquí para sacarlos de una carpeta.
+                {docsQuery
+                  ? `Sin resultados para "${docsQuery}".`
+                  : 'Este expediente aún no tiene documentos. Usa "Agregar documento".'}
               </div>
             )
           }
@@ -3572,24 +3585,36 @@ function ExpedientDetailView({
         })()}
       </div>
 
-      {hasMoreDocs && onLoadMoreDocs && (
-        <div style={{ display: 'flex', justifyContent: 'center', padding: '14px 0 4px' }}>
-          <button
-            onClick={onLoadMoreDocs}
-            disabled={loadingMoreDocs}
-            className="edms-nav-item"
-            style={{
-              fontSize: 12.5, fontWeight: 500, padding: '8px 16px', borderRadius: 8,
-              border: '1px solid var(--border)', background: 'var(--bg-elev)', color: 'var(--fg)',
-              cursor: loadingMoreDocs ? 'wait' : 'pointer',
-            }}
-          >
-            {loadingMoreDocs
-              ? 'Cargando…'
-              : `Cargar más${totalDocs ? ` · ${expedient.documents.length} de ${totalDocs}` : ''}`}
-          </button>
-        </div>
-      )}
+      {onDocsPageChange && (() => {
+        const size = docsPageSize || 50
+        const total = Math.max(1, Math.ceil((totalDocs ?? 0) / size))
+        const current = docsPage ?? 1
+        if (total <= 1) return null
+        const raw = [1, current - 1, current, current + 1, total].filter((p) => p >= 1 && p <= total)
+        const uniq = Array.from(new Set(raw)).sort((a, b) => a - b)
+        const items: (number | string)[] = []
+        uniq.forEach((p, i) => {
+          if (i > 0 && p - (uniq[i - 1] as number) > 1) items.push(`gap-${p}`)
+          items.push(p)
+        })
+        const bubble = (active: boolean): CSSProperties => ({
+          minWidth: 30, height: 30, borderRadius: 8, padding: '0 8px',
+          display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+          fontSize: 12.5, fontWeight: active ? 700 : 500, cursor: 'pointer',
+          border: '1px solid ' + (active ? 'transparent' : 'var(--border)'),
+          background: active ? 'var(--accent)' : 'var(--bg-elev)',
+          color: active ? 'var(--accent-fg)' : 'var(--fg)',
+        })
+        return (
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, flexWrap: 'wrap', padding: '16px 0 4px' }}>
+            <button disabled={current === 1 || docsLoading} onClick={() => onDocsPageChange(current - 1)} style={{ ...bubble(false), opacity: current === 1 ? 0.5 : 1 }}>‹</button>
+            {items.map((it) => typeof it === 'number'
+              ? <button key={it} disabled={docsLoading} onClick={() => onDocsPageChange(it)} style={bubble(it === current)}>{it}</button>
+              : <span key={it} style={{ color: 'var(--fg-dim)', padding: '0 2px' }}>…</span>)}
+            <button disabled={current === total || docsLoading} onClick={() => onDocsPageChange(current + 1)} style={{ ...bubble(false), opacity: current === total ? 0.5 : 1 }}>›</button>
+          </div>
+        )
+      })()}
 
       {confirmDelete && (
         <div
@@ -9065,7 +9090,9 @@ export default function DashboardPage() {
   const [folderWindow, setFolderWindow] = useState<{ expedientId: string; folderId: string } | null>(null)
   const [expedientLoading, setExpedientLoading] = useState(false)
   const [expedientError, setExpedientError] = useState<string | null>(null)
-  const [loadingMoreDocs, setLoadingMoreDocs] = useState(false)
+  // Paginacion numerada + busqueda de los documentos del expediente abierto.
+  const [expedientPage, setExpedientPage] = useState(1)
+  const [expedientQuery, setExpedientQuery] = useState('')
   const [expedientModalOpen, setExpedientModalOpen] = useState(false)
   const [expedientForm, setExpedientForm] = useState<{ name: string; code: string; description: string }>({ name: '', code: '', description: '' })
   const [expedientFormBusy, setExpedientFormBusy] = useState(false)
@@ -9338,9 +9365,9 @@ export default function DashboardPage() {
     }
   }, [user?.is_superuser, routeProjectId])
 
-  // Cargar detalle del expediente seleccionado. El reset cuando se deselecciona
-  // lo hacemos por handler (setSelectedExpedientId) — aqui solo respondemos a
-  // ids con valor para evitar setState sincrono en el cuerpo del efecto.
+  // Cargar la pagina actual de documentos del expediente (paginacion numerada +
+  // busqueda). Reemplaza (no agrega). El reset de pagina/busqueda al cambiar de
+  // expediente lo hacen los handlers de seleccion. Debounce cuando hay busqueda.
   useEffect(() => {
     if (!selectedExpedientId) return
     let mounted = true
@@ -9349,23 +9376,32 @@ export default function DashboardPage() {
       setExpedientLoading(true)
       setExpedientError(null)
     })
-    getExpedient(selectedExpedientId)
-      .then((res) => {
-        if (!mounted) return
-        setExpedientDetail(res.data)
-        setExpedientDetailsMap((current) => ({ ...current, [res.data.id]: res.data }))
+    const trimmed = expedientQuery.trim()
+    const run = () => {
+      getExpedient(selectedExpedientId, {
+        offset: (expedientPage - 1) * EXPEDIENT_DOCS_PAGE,
+        limit: EXPEDIENT_DOCS_PAGE,
+        q: trimmed || undefined,
       })
-      .catch((err) => {
-        if (!mounted) return
-        setExpedientError(getApiErrorMessage(err, 'No se pudo cargar el expediente'))
-      })
-      .finally(() => {
-        if (mounted) setExpedientLoading(false)
-      })
+        .then((res) => {
+          if (!mounted) return
+          setExpedientDetail(res.data)
+          setExpedientDetailsMap((current) => ({ ...current, [res.data.id]: res.data }))
+        })
+        .catch((err) => {
+          if (!mounted) return
+          setExpedientError(getApiErrorMessage(err, 'No se pudo cargar el expediente'))
+        })
+        .finally(() => {
+          if (mounted) setExpedientLoading(false)
+        })
+    }
+    const timer = setTimeout(run, trimmed ? 300 : 0)
     return () => {
       mounted = false
+      clearTimeout(timer)
     }
-  }, [selectedExpedientId])
+  }, [selectedExpedientId, expedientPage, expedientQuery])
 
   useEffect(() => {
     if (selectedExpedientId) return
@@ -10192,34 +10228,6 @@ export default function DashboardPage() {
     }
   }
 
-  async function handleLoadMoreExpedientDocs() {
-    if (!selectedExpedientId || !expedientDetail || loadingMoreDocs) return
-    setLoadingMoreDocs(true)
-    try {
-      const res = await getExpedient(selectedExpedientId, {
-        offset: expedientDetail.documents.length,
-        limit: EXPEDIENT_DOCS_PAGE,
-      })
-      setExpedientDetail((current) => {
-        if (!current || current.id !== res.data.id) return current
-        const seen = new Set(current.documents.map((d) => d.id))
-        const merged = [...current.documents, ...res.data.documents.filter((d) => !seen.has(d.id))]
-        const next: ExpedientDetail = {
-          ...current,
-          documents: merged,
-          has_more: res.data.has_more,
-          document_count: res.data.document_count,
-        }
-        setExpedientDetailsMap((m) => ({ ...m, [next.id]: next }))
-        return next
-      })
-    } catch (err) {
-      setToast(getApiErrorMessage(err, 'No se pudieron cargar más documentos'))
-    } finally {
-      setLoadingMoreDocs(false)
-    }
-  }
-
   async function handleToggleExpedient(expedientId: string) {
     const next = new Set(expandedExpedients)
     if (next.has(expedientId)) {
@@ -10594,6 +10602,8 @@ export default function DashboardPage() {
         selectedExpedientId={selectedExpedientId}
         onSelectExpedient={(expedientId) => {
           setSelectedExpedientId(expedientId)
+          setExpedientPage(1)
+          setExpedientQuery('')
           setSelectedView('expediente')
           setSelected(new Set())
           setSearch('')
@@ -10758,10 +10768,13 @@ export default function DashboardPage() {
             onDeleteFolder={(expId, folderId, name) => { void handleDeleteFolder(expId, folderId, name) }}
             onMoveDocumentToFolder={handleMoveDocumentToFolder}
             onDeleteExpedient={(expId) => { void handleDeleteExpedient(expId) }}
-            hasMoreDocs={Boolean(expedientDetail?.has_more)}
             totalDocs={expedientDetail?.document_count ?? null}
-            loadingMoreDocs={loadingMoreDocs}
-            onLoadMoreDocs={() => { void handleLoadMoreExpedientDocs() }}
+            docsPage={expedientPage}
+            docsPageSize={EXPEDIENT_DOCS_PAGE}
+            docsQuery={expedientQuery}
+            docsLoading={expedientLoading}
+            onDocsPageChange={(p) => setExpedientPage(p)}
+            onDocsSearch={(value) => { setExpedientQuery(value); setExpedientPage(1) }}
           />
         ) : showKanban ? (
           <>
@@ -10982,6 +10995,8 @@ export default function DashboardPage() {
         expedients={expedients}
         onOpenExpedient={(expedientId) => {
           setSelectedExpedientId(expedientId)
+          setExpedientPage(1)
+          setExpedientQuery('')
           setSelectedView('expediente')
           setOpenDocId(null)
           setFullDocId(null)
@@ -11211,6 +11226,8 @@ export default function DashboardPage() {
                     setExpedients((prev) => [res.data, ...prev])
                     setExpedientModalOpen(false)
                     setSelectedExpedientId(res.data.id)
+                    setExpedientPage(1)
+                    setExpedientQuery('')
                     setSelectedView('expediente')
                     setToast(`Expediente "${res.data.name}" creado`)
                   } catch (err) {

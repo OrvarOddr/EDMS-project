@@ -8,7 +8,7 @@ en el detalle filtramos la lista de documentos asociados por permiso de
 lectura del actor (admin ve todos).
 """
 from fastapi import APIRouter, Depends, Header, HTTPException, Query, status
-from sqlalchemy import func
+from sqlalchemy import func, or_
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
@@ -25,6 +25,7 @@ from app.routers.versions import (
     _can_view_document,
     _current_mime_map,
     _document_for_actor,
+    _escape_like_query,
     _fetch_batch_workflow_summaries,
     _is_admin,
     _record_metadata_activity,
@@ -128,15 +129,17 @@ def get_expedient(
     expedient_id: str,
     offset: int = Query(default=0, ge=0),
     limit: int = Query(default=50, ge=1, le=200),
+    q: str | None = Query(default=None, max_length=100),
     x_user_id: str | None = Header(default=None, alias="X-User-Id"),
     x_user_roles: str | None = Header(default=None, alias="X-User-Roles"),
     db: Session = Depends(get_db),
 ):
-    """Detalle del expediente con documentos **paginados** (50 por defecto).
+    """Detalle del expediente con documentos **paginados** (50 por defecto) y
+    **buscables** por `q` (titulo o codigo).
 
     Evita colgar la web al abrir un expediente con miles de documentos: se trae
-    una pagina (offset/limit) en vez de todos. `document_count` es el total y
-    `has_more` indica si quedan mas paginas.
+    una pagina (offset/limit) en vez de todos. `document_count` es el total (ya
+    filtrado por `q`) y `has_more` indica si quedan mas paginas.
     """
     actor_user_id = _require_user(x_user_id)
     is_admin = _is_admin(x_user_roles)
@@ -144,15 +147,22 @@ def get_expedient(
     if not expedient:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Expediente no encontrado")
 
-    document_count = (
-        db.query(func.count(Document.id))
-        .filter(Document.expedient_id == expedient.id, Document.archived_at.is_(None))
-        .scalar()
-    ) or 0
+    doc_filters = [Document.expedient_id == expedient.id, Document.archived_at.is_(None)]
+    search = (q or "").strip()
+    if search:
+        pattern = f"%{_escape_like_query(search)}%"
+        doc_filters.append(
+            or_(
+                Document.title.ilike(pattern, escape="\\"),
+                Document.code.ilike(pattern, escape="\\"),
+            )
+        )
+
+    document_count = db.query(func.count(Document.id)).filter(*doc_filters).scalar() or 0
 
     documents = (
         db.query(Document)
-        .filter(Document.expedient_id == expedient.id, Document.archived_at.is_(None))
+        .filter(*doc_filters)
         .order_by(Document.created_at.desc())
         .offset(offset)
         .limit(limit)
