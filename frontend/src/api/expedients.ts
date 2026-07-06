@@ -38,7 +38,7 @@ export const listExpedients = (projectId?: string) =>
 
 export const EXPEDIENT_DOCS_PAGE = 50
 
-export const getExpedient = (id: string, params?: { offset?: number; limit?: number }) =>
+export const getExpedient = (id: string, params?: { offset?: number; limit?: number; q?: string }) =>
   client.get<ExpedientDetail>(`/expedients/${id}`, params ? { params } : undefined)
 
 export const createExpedient = (payload: CreateExpedientPayload) =>

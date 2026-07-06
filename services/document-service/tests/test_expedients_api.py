@@ -343,3 +343,29 @@ def test_detalle_expediente_pagina_documentos(client):
     # Ultima pagina: sin has_more.
     r2 = client.get(f"/expedients/{exp['id']}", headers={"X-User-Id": USER}, params={"limit": 2, "offset": 4})
     assert r2.json()["has_more"] is False
+
+
+@respx.mock
+def test_detalle_expediente_busca_documentos(client):
+    """El detalle filtra por `q` (titulo) y el conteo refleja lo filtrado."""
+    respx.post(BOOTSTRAP_URL).mock(
+        return_value=httpx.Response(
+            201,
+            json={"document_id": "x", "state_code": "borrador", "assignee_user_id": USER, "assignment_role_code": "encargado"},
+        )
+    )
+    respx.post(SUMMARIES_URL).mock(return_value=httpx.Response(200, json={"summaries": {}}))
+
+    exp = client.post("/expedients", headers={"X-User-Id": USER}, json={"name": "Buscable"}).json()
+    for title in ["Contrato Alfa", "Factura Beta", "Contrato Gamma"]:
+        client.post(
+            "/documents",
+            headers={"X-User-Id": USER},
+            json={"title": title, "document_type_id": "t1", "description": "d", "expedient_id": exp["id"]},
+        )
+
+    r = client.get(f"/expedients/{exp['id']}", headers={"X-User-Id": USER}, params={"q": "Contrato"})
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert body["document_count"] == 2
+    assert {d["title"] for d in body["documents"]} == {"Contrato Alfa", "Contrato Gamma"}
