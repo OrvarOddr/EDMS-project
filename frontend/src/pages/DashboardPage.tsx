@@ -430,7 +430,8 @@ function getApiErrorMessage(error: unknown, fallback: string) {
 function formatFileSize(bytes: number) {
   if (bytes < 1024) return `${bytes} B`
   if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`
-  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`
+  if (bytes < BYTES_IN_GB) return `${(bytes / (1024 * 1024)).toFixed(1)} MB`
+  return `${(bytes / BYTES_IN_GB).toFixed(1)} GB`
 }
 
 function formatUploadedAt(value: string) {
@@ -666,11 +667,11 @@ async function fetchFileLists() {
   }
 }
 
-async function fetchStorageSummaryGb() {
+async function fetchStorageSummary() {
   const res = await getStorageSummary()
   return {
-    used: Math.round((res.data.used_bytes / BYTES_IN_GB) * 10) / 10,
-    total: Math.round((res.data.total_bytes / BYTES_IN_GB) * 10) / 10,
+    usedBytes: res.data.used_bytes,
+    totalBytes: res.data.total_bytes,
   }
 }
 
@@ -1797,7 +1798,7 @@ function Sidebar({
   onSelectTag: (tagId: string | null) => void
   unassignedCount: number
   onToggleCollapsed: () => void
-  storage: { used: number; total: number }
+  storage: { usedBytes: number; totalBytes: number }
   tags: ApiTag[]
   onCreateTag: () => void
   onEditTag: (tag: ApiTag) => void
@@ -2215,13 +2216,13 @@ function Sidebar({
         >
           <span>Almacenamiento</span>
           <span style={{ fontVariantNumeric: 'tabular-nums' }}>
-            {storage.used} / {storage.total} GB
+            {formatFileSize(storage.usedBytes)} / {formatFileSize(storage.totalBytes)}
           </span>
         </div>
         <div style={{ height: 4, background: 'var(--bg-active)', borderRadius: 3, overflow: 'hidden' }}>
           <div
             style={{
-              width: `${storage.total > 0 ? (storage.used / storage.total) * 100 : 0}%`,
+              width: `${storage.totalBytes > 0 ? (storage.usedBytes / storage.totalBytes) * 100 : 0}%`,
               height: '100%',
               background: 'var(--accent)',
               borderRadius: 3,
@@ -2750,7 +2751,9 @@ function GridView({
   )
 }
 
-function OverviewCards({ storage, metrics }: { storage: { used: number; total: number }; metrics: DocumentMetricsResponse | null }) {
+function OverviewCards({ storage, metrics }: { storage: { usedBytes: number; totalBytes: number }; metrics: DocumentMetricsResponse | null }) {
+  const usedPct = storage.totalBytes > 0 ? (storage.usedBytes / storage.totalBytes) * 100 : 0
+  const usedPctLabel = usedPct > 0 && usedPct < 1 ? '< 1% usado' : `${Math.round(usedPct)}% usado`
   const total = metrics?.total ?? 0
   const pendientesFirma = metrics?.pendientes_firma ?? 0
   const vencenHoy = metrics?.vencen_hoy ?? 0
@@ -2783,8 +2786,8 @@ function OverviewCards({ storage, metrics }: { storage: { used: number; total: n
     },
     {
       label: 'Almacenamiento',
-      value: `${storage.used} GB`,
-      delta: `${storage.total > 0 ? Math.round((storage.used / storage.total) * 100) : 0}% usado`,
+      value: formatFileSize(storage.usedBytes),
+      delta: usedPctLabel,
       deltaTone: 'var(--fg-muted)',
       accent: 'var(--ok)',
       icon: <Icon.Folder size={15} />,
@@ -9078,7 +9081,7 @@ export default function DashboardPage() {
   const [busyFileId, setBusyFileId] = useState<string | null>(null)
   const [dragging, setDragging] = useState(false)
   const [toast, setToast] = useState<string | null>(null)
-  const [storage, setStorage] = useState({ used: 0, total: 0 })
+  const [storage, setStorage] = useState({ usedBytes: 0, totalBytes: 0 })
   const [metrics, setMetrics] = useState<DocumentMetricsResponse | null>(null)
   const [adminMetrics, setAdminMetrics] = useState<DocumentMetricsResponse | null>(null)
   const [tags, setTags] = useState<ApiTag[]>([])
@@ -9335,7 +9338,7 @@ export default function DashboardPage() {
       })
       .catch(() => {})
 
-    fetchStorageSummaryGb()
+    fetchStorageSummary()
       .then((summary) => {
         if (!mounted) return
         setStorage(summary)
@@ -9784,7 +9787,7 @@ export default function DashboardPage() {
 
   async function refreshStorageSummary() {
     try {
-      setStorage(await fetchStorageSummaryGb())
+      setStorage(await fetchStorageSummary())
     } catch {
       // La cuota es informacion de apoyo; si falla, no bloquea la accion principal.
     }
